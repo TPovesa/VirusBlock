@@ -13,12 +13,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -89,7 +89,7 @@ fun LoginScreen(
                 )
                 ShieldStatusChip(
                     label = "LOCAL-FIRST",
-                    icon = Icons.Filled.Key,
+                    icon = Icons.Filled.VpnKey,
                     color = MaterialTheme.colorScheme.signalTone
                 )
             }

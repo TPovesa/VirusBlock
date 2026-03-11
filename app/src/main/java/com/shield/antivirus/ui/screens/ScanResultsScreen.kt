@@ -10,9 +10,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ReportProblem
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -92,7 +92,7 @@ fun ScanResultsScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ShieldStatusChip(
                                 label = if (current.threatsFound == 0) "CLEAN" else "${current.threatsFound} THREATS",
-                                icon = if (current.threatsFound == 0) Icons.Filled.Verified else Icons.Filled.Warning,
+                                icon = if (current.threatsFound == 0) Icons.Filled.CheckCircle else Icons.Filled.Warning,
                                 color = accent
                             )
                             ShieldStatusChip(
@@ -162,7 +162,7 @@ private fun ThreatCard(threat: ThreatInfo) {
             )
             ShieldStatusChip(
                 label = threat.severity.name,
-                icon = if (threat.severity == ThreatSeverity.CRITICAL) Icons.Filled.ReportProblem else Icons.Filled.Warning,
+                icon = if (threat.severity == ThreatSeverity.CRITICAL) Icons.Filled.Error else Icons.Filled.Warning,
                 color = accent
             )
         }

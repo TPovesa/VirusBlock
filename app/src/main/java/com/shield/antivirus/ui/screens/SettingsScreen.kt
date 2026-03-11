@@ -16,12 +16,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.SettingsSuggest
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -161,7 +160,7 @@ fun SettingsScreen(
                         onValueChange = { apiKeyInput = it },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("VirusTotal API key") },
-                        leadingIcon = { Icon(Icons.Filled.Key, contentDescription = null) },
+                        leadingIcon = { Icon(Icons.Filled.VpnKey, contentDescription = null) },
                         trailingIcon = {
                             TextButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
                                 Text(if (apiKeyVisible) "Hide" else "Show")
@@ -197,7 +196,7 @@ fun SettingsScreen(
                         onToggle = viewModel::setRealtimeProtection
                     )
                     SettingsToggleRow(
-                        icon = Icons.Filled.SettingsSuggest,
+                        icon = Icons.Filled.Tune,
                         title = "Scan on install",
                         subtitle = "Inspect new packages immediately after install.",
                         checked = scanOnInstall,
@@ -214,7 +213,7 @@ fun SettingsScreen(
                     )
                     SettingsInfoRow(icon = Icons.Filled.Tune, label = "UI system", value = "Material 3 Expressive")
                     SettingsInfoRow(icon = Icons.Filled.Security, label = "Session store", value = "EncryptedSharedPreferences")
-                    SettingsInfoRow(icon = Icons.Filled.Key, label = "Backend", value = "sosiskibot.ru")
+                    SettingsInfoRow(icon = Icons.Filled.VpnKey, label = "Backend", value = "sosiskibot.ru")
                 }
 
                 Button(
@@ -225,7 +224,7 @@ fun SettingsScreen(
                     colors = ShieldPrimaryButtonColors(MaterialTheme.colorScheme.criticalTone),
                     shape = MaterialTheme.shapes.medium
                 ) {
-                    Icon(Icons.Filled.Logout, contentDescription = null)
+                    Icon(Icons.Filled.ExitToApp, contentDescription = null)
                     Text("  Sign out and clear session")
                 }
             }

@@ -17,8 +17,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -110,7 +110,7 @@ fun ScanScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ShieldStatusChip(
                                 label = "${(animatedProgress * 100).toInt()}%",
-                                icon = Icons.Filled.Radar,
+                                icon = Icons.Filled.TrackChanges,
                                 color = MaterialTheme.colorScheme.signalTone
                             )
                             ShieldStatusChip(

@@ -12,13 +12,12 @@ import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.MonitorHeart
-import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -102,12 +101,12 @@ fun HomeScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ShieldStatusChip(
                                 label = if (state.isProtectionActive) "REALTIME ON" else "REALTIME OFF",
-                                icon = Icons.Filled.MonitorHeart,
+                                icon = Icons.Filled.Security,
                                 color = statusColor
                             )
                             ShieldStatusChip(
                                 label = "SCORE $protectionScore",
-                                icon = Icons.Filled.Radar,
+                                icon = Icons.Filled.TrackChanges,
                                 color = MaterialTheme.colorScheme.signalTone
                             )
                         }
@@ -172,7 +171,7 @@ fun HomeScreen(
                         title = "Quick scan",
                         subtitle = "Prioritises recent user apps and finishes fast.",
                         meta = "30 most recent packages",
-                        icon = Icons.Filled.Bolt,
+                        icon = Icons.Filled.FlashOn,
                         accent = MaterialTheme.colorScheme.primary,
                         onClick = { onStartScan("QUICK") }
                     )
