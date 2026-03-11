@@ -44,24 +44,39 @@ class HomeViewModel(private val context: Context) : ViewModel() {
                 prefs.lastScanTime,
                 prefs.realtimeProtection,
                 prefs.isGuest,
-                prefs.guestScanUsed,
-                scanRepo.getAllResults()
-            ) { name, lastScan, protection, isGuest, guestScanUsed, results ->
-                val appCount = PackageUtils.getUserApps(context).size
-                HomeUiState(
-                    userName = name,
-                    installedAppsCount = appCount,
-                    lastScanTime = lastScan,
-                    recentResults = if (isGuest) emptyList() else results.take(4),
-                    isProtectionActive = protection && !isGuest,
-                    totalThreatsEver = if (isGuest) 0 else results.sumOf { it.threatsFound },
-                    totalScans = if (isGuest) 0 else results.size,
+                prefs.guestScanUsed
+            ) { name, lastScan, protection, isGuest, guestScanUsed ->
+                HomeSnapshot(
+                    name = name,
+                    lastScan = lastScan,
+                    protection = protection,
                     isGuest = isGuest,
                     guestScanUsed = guestScanUsed
+                )
+            }.combine(scanRepo.getAllResults()) { snapshot, results ->
+                val appCount = PackageUtils.getUserApps(context).size
+                HomeUiState(
+                    userName = snapshot.name,
+                    installedAppsCount = appCount,
+                    lastScanTime = snapshot.lastScan,
+                    recentResults = if (snapshot.isGuest) emptyList() else results.take(4),
+                    isProtectionActive = snapshot.protection && !snapshot.isGuest,
+                    totalThreatsEver = if (snapshot.isGuest) 0 else results.sumOf { it.threatsFound },
+                    totalScans = if (snapshot.isGuest) 0 else results.size,
+                    isGuest = snapshot.isGuest,
+                    guestScanUsed = snapshot.guestScanUsed
                 )
             }.collect { _state.value = it }
         }
     }
+
+    private data class HomeSnapshot(
+        val name: String,
+        val lastScan: Long,
+        val protection: Boolean,
+        val isGuest: Boolean,
+        val guestScanUsed: Boolean
+    )
 
     class Factory(private val context: Context) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

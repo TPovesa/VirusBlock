@@ -311,14 +311,23 @@ class AuthRepository(context: Context) {
         return try {
             val json = JsonParser.parseString(body).asJsonObject
             when {
-                json.get("error")?.isJsonPrimitive == true -> json.get("error").asString
-                json.get("detail")?.isJsonPrimitive == true -> json.get("detail").asString
-                json.get("message")?.isJsonPrimitive == true -> json.get("message").asString
+                json.get("error")?.isJsonPrimitive == true -> localizeServerMessage(json.get("error").asString)
+                json.get("detail")?.isJsonPrimitive == true -> localizeServerMessage(json.get("detail").asString)
+                json.get("message")?.isJsonPrimitive == true -> localizeServerMessage(json.get("message").asString)
                 else -> null
             }
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun localizeServerMessage(message: String): String = when (message.trim()) {
+        "Mail service is not configured" -> "Почта сервера пока не настроена"
+        "Server error" -> "Ошибка сервера"
+        "Endpoint not found" -> "Маршрут не найден"
+        "Too many auth requests." -> "Слишком много попыток входа"
+        "Too many requests, please try again later." -> "Слишком много запросов, попробуйте позже"
+        else -> message
     }
 
     private fun Exception.toUserMessage(): String = when (this) {

@@ -20,6 +20,11 @@ object ApiClient {
 
     private val shieldEndpoints = listOf(
         ShieldEndpoint(
+            label = "Domain backend",
+            baseUrl = "https://sosiskibot.ru/basedata/",
+            usePinnedTls = true
+        ),
+        ShieldEndpoint(
             label = "Direct backend",
             baseUrl = "http://91.233.168.135:5001/",
             usePinnedTls = false
