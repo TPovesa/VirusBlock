@@ -79,10 +79,6 @@ app.get('/healths', (req, res) => {
     res.json(buildHealthPayload());
 });
 
-app.get('/api/healths', (req, res) => {
-    res.json(buildHealthPayload());
-});
-
 app.use((req, res) => {
     res.status(404).json({ error: 'Endpoint not found' });
 });
@@ -98,7 +94,7 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`\nShield Antivirus API running on port ${PORT}`);
-    console.log(`   Health: http://localhost:/healths`);
+    console.log(`   Health: http://localhost:${PORT}/healths`);
     console.log(`   Auth:   http://localhost:${PORT}/api/auth`);
 });
 

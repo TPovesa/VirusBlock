@@ -56,21 +56,22 @@ pm2 save
 | DELETE | /api/scans | Очистить историю |
 | POST | /api/purchases | Сохранить покупку |
 | GET | /api/purchases/active | Проверить Premium |
-| GET | /healths | Health check для Shield backend |
-| GET | /api/healths | Health check через API namespace |
+| GET | /healths | Внутренний health check Shield backend |
 
 ## Проверить что работает
 
 ```bash
 curl http://91.233.168.135:5001/healths
-curl https://sosiskibot.ru/healths
-curl https://sosiskibot.ru/api/healths
+curl https://sosiskibot.ru/basedata
+curl https://sosiskibot.ru/basedata/health
 ```
 
 Ожидаемый ответ:
 ```json
 {"status":"ok","service":"Shield Antivirus API","version":"1.0.0"}
 ```
+
+Публичные маршруты в общем nginx ограничены только `/basedata` и `/basedata/health`, чтобы не затрагивать чужие сервисы под `/api/*`.
 
 ## Открыть порт в firewall
 
