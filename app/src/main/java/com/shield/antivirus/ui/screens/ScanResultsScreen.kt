@@ -17,11 +17,16 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -48,18 +53,64 @@ import java.util.Locale
 fun ScanResultsScreen(
     viewModel: ScanViewModel,
     scanId: Long,
-    onBack: () -> Unit,
-    onGuestLogin: () -> Unit,
-    onGuestRegister: () -> Unit
+    onBack: () -> Unit
 ) {
     val result by viewModel.currentResult.collectAsState()
     val isGuest by viewModel.isGuest.collectAsState()
+    val explainState by viewModel.explainState.collectAsState()
+    var showExplainSheet by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(scanId) {
         viewModel.loadResult(scanId)
     }
 
     ShieldBackdrop {
+        if (showExplainSheet) {
+            ModalBottomSheet(
+                onDismissRequest = {
+                    showExplainSheet = false
+                    viewModel.clearExplanation()
+                }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 8.dp)
+                ) {
+                    when {
+                        explainState.isLoading -> {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(strokeWidth = 2.dp)
+                                Text(
+                                    text = "Собираем объяснение по этому отчёту",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        !explainState.error.isNullOrBlank() -> {
+                            Text(
+                                text = explainState.error.orEmpty(),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.criticalTone
+                            )
+                        }
+                        !explainState.explanation.isNullOrBlank() -> {
+                            Text(
+                                text = explainState.explanation.orEmpty(),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         ShieldScreenScaffold(
             title = "Результат",
             subtitle = "Проверка #$scanId",
@@ -73,7 +124,12 @@ fun ScanResultsScreen(
                 return@ShieldScreenScaffold
             }
 
-            val accent = if (current.threatsFound > 0) MaterialTheme.colorScheme.warningTone else MaterialTheme.colorScheme.safeTone
+            val accent = if (current.threatsFound > 0) {
+                MaterialTheme.colorScheme.warningTone
+            } else {
+                MaterialTheme.colorScheme.safeTone
+            }
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -99,6 +155,15 @@ fun ScanResultsScreen(
                                 icon = Icons.Filled.Security,
                                 color = MaterialTheme.colorScheme.signalTone
                             )
+                        }
+                        TextButton(
+                            onClick = {
+                                showExplainSheet = true
+                                viewModel.explainCurrentResult()
+                            },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text("Объяснить")
                         }
                     }
                 }

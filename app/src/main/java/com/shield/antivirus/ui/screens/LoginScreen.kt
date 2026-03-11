@@ -1,13 +1,11 @@
 package com.shield.antivirus.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -34,14 +32,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import com.shield.antivirus.data.datastore.PendingAuthFlow
-import com.shield.antivirus.ui.components.ShieldBottomFormPanel
 import com.shield.antivirus.ui.components.ShieldCalmBackdrop
-import com.shield.antivirus.ui.components.ShieldScreenScaffold
-import com.shield.antivirus.ui.components.ShieldSectionHeader
+import com.shield.antivirus.ui.components.ShieldFormScreenContent
+import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
+import com.shield.antivirus.ui.components.ShieldScreenScaffold
+import com.shield.antivirus.ui.components.bringIntoViewOnFocus
 import com.shield.antivirus.ui.components.shieldTextFieldColors
 import com.shield.antivirus.ui.theme.criticalTone
 import com.shield.antivirus.viewmodel.AuthViewModel
@@ -111,7 +108,7 @@ fun LoginScreen(
                     onClick = { viewModel.requestPasswordReset(resetEmail.trim()) },
                     enabled = !uiState.isLoading
                 ) {
-                    Text(if (uiState.isLoading) "Отправить" else "Отправить")
+                    Text("Отправить")
                 }
             },
             dismissButton = {
@@ -124,29 +121,11 @@ fun LoginScreen(
 
     ShieldCalmBackdrop {
         ShieldScreenScaffold(
-            title = "Вход",
+            title = if (uiState.requiresCode) "Код из почты" else "Вход",
             onBack = onBack
         ) { padding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
-            ) {
-                ShieldSectionHeader(
-                    eyebrow = "",
-                    title = if (uiState.requiresCode) "Код из почты" else "Вход",
-                    subtitle = "",
-                    modifier = Modifier.align(Alignment.TopStart)
-                )
-
-                ShieldBottomFormPanel(
-                    accent = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .imePadding()
-                ) {
+            ShieldFormScreenContent(padding = padding) {
+                ShieldPanel(accent = MaterialTheme.colorScheme.primary) {
                     if (!uiState.infoMessage.isNullOrBlank()) {
                         Text(
                             text = uiState.infoMessage.orEmpty(),
@@ -159,7 +138,9 @@ fun LoginScreen(
                         OutlinedTextField(
                             value = code,
                             onValueChange = { code = it.filter(Char::isDigit).take(6) },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .bringIntoViewOnFocus(),
                             label = { Text("Код из письма") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
@@ -179,7 +160,9 @@ fun LoginScreen(
                         OutlinedTextField(
                             value = email,
                             onValueChange = { email = it },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .bringIntoViewOnFocus(),
                             label = { Text("Почта") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
@@ -191,10 +174,16 @@ fun LoginScreen(
                         OutlinedTextField(
                             value = password,
                             onValueChange = { password = it },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .bringIntoViewOnFocus(),
                             label = { Text("Пароль") },
                             singleLine = true,
-                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            visualTransformation = if (passwordVisible) {
+                                VisualTransformation.None
+                            } else {
+                                PasswordVisualTransformation()
+                            },
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Password,
                                 imeAction = ImeAction.Done
@@ -209,7 +198,11 @@ fun LoginScreen(
                             trailingIcon = {
                                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
                                     Icon(
-                                        imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                        imageVector = if (passwordVisible) {
+                                            Icons.Filled.VisibilityOff
+                                        } else {
+                                            Icons.Filled.Visibility
+                                        },
                                         contentDescription = if (passwordVisible) "Скрыть пароль" else "Показать пароль"
                                     )
                                 }
@@ -235,14 +228,19 @@ fun LoginScreen(
                                 viewModel.login(email.trim(), password)
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isLoading && if (uiState.requiresCode) code.length >= 6 else email.isNotBlank() && password.isNotBlank(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .bringIntoViewOnFocus(),
+                        enabled = !uiState.isLoading && if (uiState.requiresCode) {
+                            code.length >= 6
+                        } else {
+                            email.isNotBlank() && password.isNotBlank()
+                        },
                         colors = ShieldPrimaryButtonColors(),
                         shape = MaterialTheme.shapes.medium
                     ) {
                         if (uiState.isLoading) {
                             CircularProgressIndicator(
-                                modifier = Modifier.padding(vertical = 2.dp),
                                 color = MaterialTheme.colorScheme.onPrimary,
                                 strokeWidth = 2.dp
                             )

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkManager
 import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.data.model.ScanResult
+import com.shield.antivirus.data.repository.InsightRepository
 import com.shield.antivirus.data.repository.ScanProgress
 import com.shield.antivirus.data.repository.ScanRepository
 import com.shield.antivirus.worker.DeepScanWorker
@@ -21,8 +22,15 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+data class ScanExplainUiState(
+    val isLoading: Boolean = false,
+    val explanation: String? = null,
+    val error: String? = null
+)
+
 class ScanViewModel(private val context: Context) : ViewModel() {
     private val repo = ScanRepository(context)
+    private val insightRepo = InsightRepository(context)
     private val prefs = UserPreferences(context)
     private val workManager = WorkManager.getInstance(context.applicationContext)
 
@@ -40,6 +48,9 @@ class ScanViewModel(private val context: Context) : ViewModel() {
 
     private val _currentResult = MutableStateFlow<ScanResult?>(null)
     val currentResult: StateFlow<ScanResult?> = _currentResult.asStateFlow()
+
+    private val _explainState = MutableStateFlow(ScanExplainUiState())
+    val explainState: StateFlow<ScanExplainUiState> = _explainState.asStateFlow()
 
     private var scanJob: Job? = null
     private var workObserverJob: Job? = null
@@ -126,6 +137,30 @@ class ScanViewModel(private val context: Context) : ViewModel() {
         viewModelScope.launch {
             _currentResult.value = repo.getResultById(id)
         }
+    }
+
+    fun explainCurrentResult() {
+        viewModelScope.launch {
+            val result = _currentResult.value ?: run {
+                _explainState.value = ScanExplainUiState(error = "Сначала откройте готовый отчёт")
+                return@launch
+            }
+            _explainState.value = ScanExplainUiState(isLoading = true)
+            insightRepo.explainResult(
+                result = result,
+                isGuest = prefs.isGuest.first()
+            ).onSuccess { explanation ->
+                _explainState.value = ScanExplainUiState(explanation = explanation)
+            }.onFailure { error ->
+                _explainState.value = ScanExplainUiState(
+                    error = error.message ?: "Не удалось получить объяснение"
+                )
+            }
+        }
+    }
+
+    fun clearExplanation() {
+        _explainState.value = ScanExplainUiState()
     }
 
     fun clearHistory() {

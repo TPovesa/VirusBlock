@@ -37,7 +37,6 @@ class AuthViewModel(private val context: Context) : ViewModel() {
 
     val userName = prefs.userName.stateIn(viewModelScope, SharingStarted.Lazily, "")
     val userEmail = prefs.userEmail.stateIn(viewModelScope, SharingStarted.Lazily, "")
-    val vtApiKey = prefs.vtApiKey.stateIn(viewModelScope, SharingStarted.Lazily, "")
     val realtimeProtection = prefs.realtimeProtection.stateIn(viewModelScope, SharingStarted.Lazily, true)
     val scanOnInstall = prefs.scanOnInstall.stateIn(viewModelScope, SharingStarted.Lazily, true)
     val isGuest = prefs.isGuest.stateIn(viewModelScope, SharingStarted.Lazily, false)
@@ -223,10 +222,6 @@ class AuthViewModel(private val context: Context) : ViewModel() {
             ProtectionServiceController.stop(context)
             onComplete?.invoke()
         }
-    }
-
-    fun saveVtApiKey(key: String) {
-        viewModelScope.launch { prefs.setVtApiKey(key) }
     }
 
     fun setRealtimeProtection(enabled: Boolean) {

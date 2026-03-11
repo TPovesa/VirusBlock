@@ -1,13 +1,8 @@
 package com.shield.antivirus.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -25,18 +20,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import com.shield.antivirus.ui.components.ShieldBottomFormPanel
 import com.shield.antivirus.ui.components.ShieldCalmBackdrop
+import com.shield.antivirus.ui.components.ShieldFormScreenContent
+import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
 import com.shield.antivirus.ui.components.ShieldScreenScaffold
-import com.shield.antivirus.ui.components.ShieldSectionHeader
+import com.shield.antivirus.ui.components.bringIntoViewOnFocus
 import com.shield.antivirus.ui.components.shieldTextFieldColors
 import com.shield.antivirus.ui.theme.criticalTone
 import com.shield.antivirus.viewmodel.AuthViewModel
@@ -70,30 +65,22 @@ fun ResetPasswordScreen(
             title = "Новый пароль",
             onBack = onBack
         ) { padding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
-            ) {
-                ShieldSectionHeader(
-                    eyebrow = "",
-                    title = "Новый пароль",
-                    subtitle = if (token.isBlank()) "Ссылка недействительна" else "",
-                    modifier = Modifier.align(Alignment.TopStart)
-                )
+            ShieldFormScreenContent(padding = padding) {
+                ShieldPanel(accent = MaterialTheme.colorScheme.primary) {
+                    if (token.isBlank()) {
+                        Text(
+                            text = "Ссылка недействительна",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.criticalTone
+                        )
+                    }
 
-                ShieldBottomFormPanel(
-                    accent = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .imePadding()
-                ) {
                     OutlinedTextField(
                         value = emailInput,
                         onValueChange = { emailInput = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .bringIntoViewOnFocus(),
                         label = { Text("Почта") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(
@@ -105,10 +92,16 @@ fun ResetPasswordScreen(
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .bringIntoViewOnFocus(),
                         label = { Text("Новый пароль") },
                         singleLine = true,
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        visualTransformation = if (passwordVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Password,
                             imeAction = ImeAction.Next
@@ -116,7 +109,11 @@ fun ResetPasswordScreen(
                         trailingIcon = {
                             IconButton(onClick = { passwordVisible = !passwordVisible }) {
                                 Icon(
-                                    imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    imageVector = if (passwordVisible) {
+                                        Icons.Filled.VisibilityOff
+                                    } else {
+                                        Icons.Filled.Visibility
+                                    },
                                     contentDescription = if (passwordVisible) "Скрыть пароль" else "Показать пароль"
                                 )
                             }
@@ -126,11 +123,17 @@ fun ResetPasswordScreen(
                     OutlinedTextField(
                         value = confirmPassword,
                         onValueChange = { confirmPassword = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .bringIntoViewOnFocus(),
                         label = { Text("Повтор пароля") },
                         singleLine = true,
                         isError = confirmPassword.isNotBlank() && confirmPassword != password,
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        visualTransformation = if (passwordVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Password,
                             imeAction = ImeAction.Done
@@ -169,14 +172,19 @@ fun ResetPasswordScreen(
 
                     Button(
                         onClick = { viewModel.confirmPasswordReset(token, emailInput.trim(), password) },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isLoading && token.isNotBlank() && emailInput.isNotBlank() && password.length >= 6 && password == confirmPassword,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .bringIntoViewOnFocus(),
+                        enabled = !uiState.isLoading &&
+                            token.isNotBlank() &&
+                            emailInput.isNotBlank() &&
+                            password.length >= 6 &&
+                            password == confirmPassword,
                         colors = ShieldPrimaryButtonColors(),
                         shape = MaterialTheme.shapes.medium
                     ) {
                         if (uiState.isLoading) {
                             CircularProgressIndicator(
-                                modifier = Modifier.padding(vertical = 2.dp),
                                 color = MaterialTheme.colorScheme.onPrimary,
                                 strokeWidth = 2.dp
                             )

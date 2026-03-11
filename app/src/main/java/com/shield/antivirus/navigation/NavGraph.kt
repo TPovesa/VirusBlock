@@ -10,6 +10,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -182,8 +183,7 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                 onOpenHistory = { navController.navigate(Screen.History.route) },
                 onOpenSettings = { navController.navigate(Screen.Settings.route) },
                 onOpenLogin = { navController.navigate(Screen.Login.route) },
-                onOpenRegister = { navController.navigate(Screen.Register.route) },
-                onOpenExplain = { }
+                onOpenRegister = { navController.navigate(Screen.Register.route) }
             )
         }
         composable(
@@ -229,30 +229,14 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                             }
                         }
                     }
-                },
-                onGuestLogin = {
-                    vm.clearHistory()
-                    scope.launch {
-                        vm.exitGuestMode()
-                        navController.navigate(Screen.Login.route) {
-                            popUpTo(Screen.Home.route) { inclusive = true }
-                            launchSingleTop = true
-                        }
-                    }
-                },
-                onGuestRegister = {
-                    vm.clearHistory()
-                    scope.launch {
-                        vm.exitGuestMode()
-                        navController.navigate(Screen.Register.route) {
-                            popUpTo(Screen.Home.route) { inclusive = true }
-                            launchSingleTop = true
-                        }
-                    }
                 }
             )
         }
         composable(Screen.History.route) {
+            if (gate.isGuest) {
+                LaunchedEffect(Unit) { navController.popBackStack() }
+                return@composable
+            }
             val vm: ScanViewModel = viewModel(factory = ScanViewModel.Factory(context))
             HistoryScreen(
                 viewModel = vm,
@@ -261,6 +245,10 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
             )
         }
         composable(Screen.Settings.route) {
+            if (gate.isGuest) {
+                LaunchedEffect(Unit) { navController.popBackStack() }
+                return@composable
+            }
             val authVm: AuthViewModel = viewModel(factory = AuthViewModel.Factory(context))
             SettingsScreen(
                 viewModel = authVm,

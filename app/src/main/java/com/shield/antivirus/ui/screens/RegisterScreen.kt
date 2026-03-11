@@ -1,12 +1,8 @@
 package com.shield.antivirus.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -35,11 +31,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.shield.antivirus.data.datastore.PendingAuthFlow
-import com.shield.antivirus.ui.components.ShieldBottomFormPanel
 import com.shield.antivirus.ui.components.ShieldCalmBackdrop
+import com.shield.antivirus.ui.components.ShieldFormScreenContent
+import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
 import com.shield.antivirus.ui.components.ShieldScreenScaffold
-import com.shield.antivirus.ui.components.ShieldSectionHeader
+import com.shield.antivirus.ui.components.bringIntoViewOnFocus
 import com.shield.antivirus.ui.components.shieldTextFieldColors
 import com.shield.antivirus.ui.theme.criticalTone
 import com.shield.antivirus.viewmodel.AuthViewModel
@@ -69,29 +66,11 @@ fun RegisterScreen(
 
     ShieldCalmBackdrop {
         ShieldScreenScaffold(
-            title = "Регистрация",
+            title = if (uiState.requiresCode) "Код из почты" else "Регистрация",
             onBack = onBack
         ) { padding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
-            ) {
-                ShieldSectionHeader(
-                    eyebrow = "",
-                    title = if (uiState.requiresCode) "Код из почты" else "Регистрация",
-                    subtitle = "",
-                    modifier = Modifier.align(Alignment.TopStart)
-                )
-
-                ShieldBottomFormPanel(
-                    accent = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .imePadding()
-                ) {
+            ShieldFormScreenContent(padding = padding) {
+                ShieldPanel(accent = MaterialTheme.colorScheme.tertiary) {
                     if (!uiState.infoMessage.isNullOrBlank()) {
                         Text(
                             text = uiState.infoMessage.orEmpty(),
@@ -104,7 +83,9 @@ fun RegisterScreen(
                         OutlinedTextField(
                             value = code,
                             onValueChange = { code = it.filter(Char::isDigit).take(6) },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .bringIntoViewOnFocus(),
                             label = { Text("Код из письма") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
@@ -124,7 +105,9 @@ fun RegisterScreen(
                         OutlinedTextField(
                             value = name,
                             onValueChange = { name = it },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .bringIntoViewOnFocus(),
                             label = { Text("Имя") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
@@ -133,7 +116,9 @@ fun RegisterScreen(
                         OutlinedTextField(
                             value = email,
                             onValueChange = { email = it },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .bringIntoViewOnFocus(),
                             label = { Text("Почта") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
@@ -145,10 +130,16 @@ fun RegisterScreen(
                         OutlinedTextField(
                             value = password,
                             onValueChange = { password = it },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .bringIntoViewOnFocus(),
                             label = { Text("Пароль") },
                             singleLine = true,
-                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            visualTransformation = if (passwordVisible) {
+                                VisualTransformation.None
+                            } else {
+                                PasswordVisualTransformation()
+                            },
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Password,
                                 imeAction = ImeAction.Next
@@ -156,7 +147,11 @@ fun RegisterScreen(
                             trailingIcon = {
                                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
                                     Icon(
-                                        imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                        imageVector = if (passwordVisible) {
+                                            Icons.Filled.VisibilityOff
+                                        } else {
+                                            Icons.Filled.Visibility
+                                        },
                                         contentDescription = if (passwordVisible) "Скрыть пароль" else "Показать пароль"
                                     )
                                 }
@@ -166,11 +161,17 @@ fun RegisterScreen(
                         OutlinedTextField(
                             value = confirmPassword,
                             onValueChange = { confirmPassword = it },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .bringIntoViewOnFocus(),
                             label = { Text("Повтор пароля") },
                             singleLine = true,
-                            isError = confirmPassword.isNotEmpty() && confirmPassword != password,
-                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            isError = confirmPassword.isNotBlank() && confirmPassword != password,
+                            visualTransformation = if (passwordVisible) {
+                                VisualTransformation.None
+                            } else {
+                                PasswordVisualTransformation()
+                            },
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Password,
                                 imeAction = ImeAction.Done
@@ -211,14 +212,22 @@ fun RegisterScreen(
                                 viewModel.register(name.trim(), email.trim(), password)
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isLoading && if (uiState.requiresCode) code.length >= 6 else name.isNotBlank() && email.isNotBlank() && password.length >= 6 && password == confirmPassword,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .bringIntoViewOnFocus(),
+                        enabled = !uiState.isLoading && if (uiState.requiresCode) {
+                            code.length >= 6
+                        } else {
+                            name.isNotBlank() &&
+                                email.isNotBlank() &&
+                                password.length >= 6 &&
+                                password == confirmPassword
+                        },
                         colors = ShieldPrimaryButtonColors(MaterialTheme.colorScheme.tertiary),
                         shape = MaterialTheme.shapes.medium
                     ) {
                         if (uiState.isLoading) {
                             CircularProgressIndicator(
-                                modifier = Modifier.padding(vertical = 2.dp),
                                 color = MaterialTheme.colorScheme.onTertiary,
                                 strokeWidth = 2.dp
                             )

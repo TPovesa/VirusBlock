@@ -73,7 +73,6 @@ class ScanRepository(private val context: Context) {
             }
         }
 
-        val vtApiKey = withContext(Dispatchers.IO) { prefs.vtApiKey.first() }
         val accessToken = withContext(Dispatchers.IO) { sessionManager.getValidAccessToken() }
         val useServerDeepScan = scanType != "QUICK" && !accessToken.isNullOrBlank()
 
@@ -106,19 +105,8 @@ class ScanRepository(private val context: Context) {
                 }
                 mergeThreats(localThreat, serverThreats)
             } else {
-                val shouldAskVirusTotal = vtApiKey.isNotBlank() && (
-                    localThreat == null ||
-                        localThreat.severity == ThreatSeverity.LOW ||
-                        localThreat.severity == ThreatSeverity.MEDIUM
-                    )
-                val cloudThreat = if (shouldAskVirusTotal) {
-                    withContext(Dispatchers.IO) { checkWithVirusTotal(app, vtApiKey) }
-                } else {
-                    null
-                }
                 buildList {
                     localThreat?.let { add(it) }
-                    cloudThreat?.let { add(it) }
                 }
             }
 
@@ -162,46 +150,6 @@ class ScanRepository(private val context: Context) {
             )
         )
     }.flowOn(Dispatchers.Default)
-
-    private suspend fun checkWithVirusTotal(app: AppInfo, apiKey: String): ThreatInfo? {
-        return try {
-            val apkFile = File(app.apkPath)
-            if (!apkFile.exists()) return null
-            val hash = HashUtils.sha256(apkFile) ?: return null
-
-            val response = ApiClient.virusTotalApi.getFileReport(apiKey, hash)
-            if (!response.isSuccessful) return null
-
-            val data = response.body()?.data?.attributes ?: return null
-            val stats = data.lastAnalysisStats ?: return null
-            val malicious = stats.malicious + stats.suspicious
-
-            if (malicious > 0) {
-                val topResult = data.lastAnalysisResults?.values
-                    ?.firstOrNull { it.category == "malicious" || it.category == "suspicious" }
-
-                ThreatInfo(
-                    packageName = app.packageName,
-                    appName = app.appName,
-                    threatName = topResult?.result ?: "Репутационный флаг",
-                    severity = when {
-                        stats.malicious > 20 -> ThreatSeverity.CRITICAL
-                        stats.malicious > 10 -> ThreatSeverity.HIGH
-                        stats.malicious > 3 -> ThreatSeverity.MEDIUM
-                        else -> ThreatSeverity.LOW
-                    },
-                    detectionEngine = topResult?.engineName ?: "VirusTotal",
-                    detectionCount = malicious,
-                    totalEngines = stats.malicious + stats.suspicious + stats.undetected + stats.harmless,
-                    summary = "VirusTotal: malicious=${stats.malicious}, suspicious=${stats.suspicious}, harmless=${stats.harmless}."
-                )
-            } else {
-                null
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
 
     private suspend fun checkWithServerDeepScan(app: AppInfo, accessToken: String, scanType: String): List<ThreatInfo> {
         return try {

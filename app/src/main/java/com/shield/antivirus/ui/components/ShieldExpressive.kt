@@ -341,7 +341,7 @@ fun ShieldPanel(
     content: @Composable ColumnScope.() -> Unit
 ) {
     Card(
-        modifier = modifier,
+        modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f)
