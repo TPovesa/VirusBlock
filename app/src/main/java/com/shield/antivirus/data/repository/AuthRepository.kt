@@ -27,13 +27,13 @@ class AuthRepository(context: Context) {
         withContext(Dispatchers.IO) {
             try {
                 if (name.isBlank() || email.isBlank() || password.isBlank()) {
-                    return@withContext AuthResult.Error("All fields are required")
+                    return@withContext AuthResult.Error("Заполните все поля")
                 }
                 if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
-                    return@withContext AuthResult.Error("Invalid email address")
+                    return@withContext AuthResult.Error("Неверный email")
                 }
                 if (password.length < 6) {
-                    return@withContext AuthResult.Error("Password must be at least 6 characters")
+                    return@withContext AuthResult.Error("Пароль слишком короткий")
                 }
 
                 val response = ApiClient.executeShieldCall { api ->
@@ -51,14 +51,14 @@ class AuthRepository(context: Context) {
                     if (body?.success == true && body.user != null && sessionManager.persistAuth(body)) {
                         AuthResult.Success(User(body.user.id, body.user.name, body.user.email))
                     } else {
-                        AuthResult.Error(body?.error ?: "Registration failed")
+                        AuthResult.Error(body?.error ?: "Не удалось зарегистрироваться")
                     }
                 } else {
                     val message = parseError(response.errorBody()?.string())
                         ?: if (response.code() == 404) {
-                            "Auth API path is missing on the active backend. Check the deployed /api/auth routes."
+                            "Сервер авторизации недоступен"
                         } else {
-                            "Registration failed (${response.code()})"
+                            "Ошибка регистрации (${response.code()})"
                         }
                     AuthResult.Error(message)
                 }
@@ -71,7 +71,7 @@ class AuthRepository(context: Context) {
         withContext(Dispatchers.IO) {
             try {
                 if (email.isBlank() || password.isBlank()) {
-                    return@withContext AuthResult.Error("Email and password required")
+                    return@withContext AuthResult.Error("Введите email и пароль")
                 }
 
                 val response = ApiClient.executeShieldCall { api ->
@@ -88,14 +88,14 @@ class AuthRepository(context: Context) {
                     if (body?.success == true && body.user != null && sessionManager.persistAuth(body)) {
                         AuthResult.Success(User(body.user.id, body.user.name, body.user.email))
                     } else {
-                        AuthResult.Error(body?.error ?: "Login failed")
+                        AuthResult.Error(body?.error ?: "Не удалось войти")
                     }
                 } else {
                     val message = parseError(response.errorBody()?.string())
                         ?: if (response.code() == 404) {
-                            "Auth API path is missing on the active backend."
+                            "Сервер авторизации недоступен"
                         } else {
-                            "Invalid email or password"
+                            "Неверный email или пароль"
                         }
                     AuthResult.Error(message)
                 }
@@ -137,11 +137,11 @@ class AuthRepository(context: Context) {
     }
 
     private fun Exception.toUserMessage(): String = when (this) {
-        is ConnectException -> "Cannot connect to auth server. Check internet access or backend port 5001."
-        is UnknownHostException -> "Shield domain could not be resolved. Check DNS or the direct VPS fallback."
-        is SocketTimeoutException -> "Server timed out while authorizing. Try again in a moment."
-        is SSLException -> "Secure connection failed. Check the SSL certificate on the primary domain."
-        else -> message?.takeIf { it.isNotBlank() }?.let { "Error: $it" }
-            ?: "Authorization request failed"
+        is ConnectException -> "Нет соединения с сервером"
+        is UnknownHostException -> "Не удаётся найти сервер"
+        is SocketTimeoutException -> "Сервер не ответил вовремя"
+        is SSLException -> "Ошибка защищённого соединения"
+        else -> message?.takeIf { it.isNotBlank() }?.let { "Ошибка: $it" }
+            ?: "Ошибка авторизации"
     }
 }

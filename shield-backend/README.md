@@ -5,34 +5,34 @@
 ### Шаг 1 — Зайти на сервер по SSH
 
 ```bash
-ssh vertiggo@91.233.168.135
-# пароль: vertiggo
+ssh fatalerror@91.233.168.135
+# пароль: fatalerror
 ```
 
 ### Шаг 2 — Залить файлы на сервер
 
 С твоего компьютера (в папке `shield-backend`):
 ```bash
-scp -r . vertiggo@91.233.168.135:/home/vertiggo/shield-backend/
+scp -r . fatalerror@91.233.168.135:/home/fatalerror/shield-backend/
 ```
 
 Или через FileZilla / WinSCP (SFTP):
 - Host: 91.233.168.135
-- User: vertiggo
-- Password: vertiggo
+- User: fatalerror
+- Password: fatalerror
 - Port: 22
 
 ### Шаг 3 — Запустить setup (от root)
 
 ```bash
 su root
-bash /home/vertiggo/shield-backend/scripts/setup.sh
+bash /home/fatalerror/shield-backend/scripts/setup.sh
 ```
 
 ### Шаг 4 — Запустить API
 
 ```bash
-cd /home/vertiggo/shield-backend
+cd /home/fatalerror/shield-backend
 cp .env.example .env
 # отредактируй JWT_SECRET — вставь длинную случайную строку
 nano .env

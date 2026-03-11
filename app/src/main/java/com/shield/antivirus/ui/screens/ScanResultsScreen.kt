@@ -1,6 +1,7 @@
 package com.shield.antivirus.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,13 +20,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.Box
-import androidx.compose.runtime.collectAsState
 import com.shield.antivirus.data.model.ThreatInfo
 import com.shield.antivirus.data.model.ThreatSeverity
 import com.shield.antivirus.ui.components.ShieldBackdrop
@@ -58,8 +58,8 @@ fun ScanResultsScreen(
 
     ShieldBackdrop {
         ShieldScreenScaffold(
-            title = "Scan report",
-            subtitle = "Local result #$scanId",
+            title = "Результат",
+            subtitle = "Проверка #$scanId",
             onBack = onBack
         ) { padding ->
             val current = result
@@ -75,24 +75,19 @@ fun ScanResultsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = 8.dp,
-                    bottom = 24.dp
-                ),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
                     ShieldPanel(accent = accent) {
                         ShieldSectionHeader(
-                            eyebrow = "Summary",
-                            title = if (current.threatsFound == 0) "Device baseline is clean" else "Threats require manual action",
-                            subtitle = "${current.totalScanned} packages checked during the ${current.scanType.lowercase()} scan."
+                            eyebrow = "Итог",
+                            title = if (current.threatsFound == 0) "Угроз не найдено" else "Найдены угрозы",
+                            subtitle = "${scanTypeLabel(current.scanType)} • ${current.totalScanned} пакетов"
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ShieldStatusChip(
-                                label = if (current.threatsFound == 0) "CLEAN" else "${current.threatsFound} THREATS",
+                                label = if (current.threatsFound == 0) "Чисто" else "Угроз: ${current.threatsFound}",
                                 icon = if (current.threatsFound == 0) Icons.Filled.CheckCircle else Icons.Filled.Warning,
                                 color = accent
                             )
@@ -109,35 +104,20 @@ fun ScanResultsScreen(
                     item {
                         ShieldEmptyState(
                             icon = Icons.Filled.Security,
-                            title = "No malicious packages detected",
-                            subtitle = "Keep realtime protection enabled and re-run a quick sweep after installing new apps."
+                            title = "Всё чисто",
+                            subtitle = "Защита активна"
                         )
                     }
                 } else {
                     item {
                         ShieldSectionHeader(
-                            eyebrow = "Findings",
-                            title = "Detected packages",
-                            subtitle = "Review severity and uninstall suspicious apps from system settings if confirmed."
+                            eyebrow = "Угрозы",
+                            title = "Список совпадений",
+                            subtitle = "Проверьте отмеченные приложения"
                         )
                     }
                     items(current.threats, key = { it.packageName + it.threatName }) { threat ->
                         ThreatCard(threat)
-                    }
-                    item {
-                        ShieldPanel(accent = MaterialTheme.colorScheme.secondary) {
-                            Text(
-                                text = "Recommended next step",
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Verify package source, remove side-loaded apps first, then rerun a full scan to confirm the device state.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
                     }
                 }
             }
@@ -162,7 +142,7 @@ private fun ThreatCard(threat: ThreatInfo) {
                 fontWeight = FontWeight.Bold
             )
             ShieldStatusChip(
-                label = threat.severity.name,
+                label = severityLabel(threat.severity),
                 icon = if (threat.severity == ThreatSeverity.CRITICAL) Icons.Filled.Error else Icons.Filled.Warning,
                 color = accent
             )
@@ -178,7 +158,7 @@ private fun ThreatCard(threat: ThreatInfo) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = "${threat.detectionCount}/${threat.totalEngines} engines flagged this package via ${threat.detectionEngine}.",
+            text = "${threat.detectionCount}/${threat.totalEngines} • ${threat.detectionEngine}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -186,4 +166,18 @@ private fun ThreatCard(threat: ThreatInfo) {
 }
 
 private fun formatResultsTime(timestamp: Long): String =
-    SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(timestamp))
+    SimpleDateFormat("dd MMM, HH:mm", Locale("ru")).format(Date(timestamp))
+
+private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
+    "QUICK" -> "Быстрая проверка"
+    "FULL" -> "Полная проверка"
+    "SELECTIVE" -> "Выборочная проверка"
+    else -> scanType
+}
+
+private fun severityLabel(severity: ThreatSeverity): String = when (severity) {
+    ThreatSeverity.CRITICAL -> "Критично"
+    ThreatSeverity.HIGH -> "Высокая"
+    ThreatSeverity.MEDIUM -> "Средняя"
+    ThreatSeverity.LOW -> "Низкая"
+}

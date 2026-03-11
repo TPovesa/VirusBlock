@@ -39,9 +39,9 @@ class LocalThreatDetector(context: Context) {
             return ThreatInfo(
                 packageName = app.packageName,
                 appName = app.appName,
-                threatName = "Local signature match",
+                threatName = "Локальная сигнатура",
                 severity = ThreatSeverity.CRITICAL,
-                detectionEngine = "Shield Local Rules",
+                detectionEngine = "Shield локальные правила",
                 detectionCount = 1,
                 totalEngines = 1
             )
@@ -51,9 +51,9 @@ class LocalThreatDetector(context: Context) {
             return ThreatInfo(
                 packageName = app.packageName,
                 appName = app.appName,
-                threatName = "Blocked package family",
+                threatName = "Запрещённое семейство пакетов",
                 severity = ThreatSeverity.HIGH,
-                detectionEngine = "Shield Local Rules",
+                detectionEngine = "Shield локальные правила",
                 detectionCount = 1,
                 totalEngines = 1
             )
@@ -80,9 +80,9 @@ class LocalThreatDetector(context: Context) {
         }
 
         val threatName = when {
-            matchedCombos.isNotEmpty() -> "Heuristic: privileged permission abuse"
-            keywordHits.isNotEmpty() -> "Heuristic: suspicious package markers"
-            else -> "Heuristic: sideloaded high-risk app"
+            matchedCombos.isNotEmpty() -> "Эвристика: опасные разрешения"
+            keywordHits.isNotEmpty() -> "Эвристика: подозрительные признаки"
+            else -> "Эвристика: рискованная установка"
         }
 
         return ThreatInfo(
@@ -90,7 +90,7 @@ class LocalThreatDetector(context: Context) {
             appName = app.appName,
             threatName = threatName,
             severity = severity,
-            detectionEngine = "Shield Local Rules",
+            detectionEngine = "Shield локальные правила",
             detectionCount = keywordHits.size + matchedCombos.size,
             totalEngines = riskyPermissions.size.coerceAtLeast(1)
         )

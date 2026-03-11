@@ -22,6 +22,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -42,7 +43,6 @@ import com.shield.antivirus.viewmodel.HomeViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.compose.runtime.collectAsState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,21 +60,21 @@ fun HomeScreen(
         else -> MaterialTheme.colorScheme.safeTone
     }
     val statusLabel = when {
-        !state.isProtectionActive -> "Protection offline"
-        state.totalThreatsEver > 0 -> "Threats require review"
-        else -> "Protected locally"
+        !state.isProtectionActive -> "Защита выключена"
+        state.totalThreatsEver > 0 -> "Есть угрозы"
+        else -> "Устройство защищено"
     }
 
     ShieldBackdrop {
         ShieldScreenScaffold(
-            title = "Shield Control",
-            subtitle = state.userName.ifBlank { "Operator" },
+            title = "Главная",
+            subtitle = state.userName.ifBlank { "Пользователь" },
             actions = {
                 IconButton(onClick = onOpenHistory) {
-                    Icon(Icons.Filled.History, contentDescription = "History")
+                    Icon(Icons.Filled.History, contentDescription = "История")
                 }
                 IconButton(onClick = onOpenSettings) {
-                    Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                    Icon(Icons.Filled.Settings, contentDescription = "Настройки")
                 }
             }
         ) { padding ->
@@ -82,29 +82,24 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = 8.dp,
-                    bottom = 28.dp
-                ),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
                     ShieldPanel(accent = statusColor) {
                         ShieldSectionHeader(
-                            eyebrow = "Security cockpit",
+                            eyebrow = "Статус",
                             title = statusLabel,
-                            subtitle = "Local-first scanning, encrypted auth, and cloud lookup only when confidence is low."
+                            subtitle = "Последняя проверка ${formatTime(state.lastScanTime)}"
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ShieldStatusChip(
-                                label = if (state.isProtectionActive) "REALTIME ON" else "REALTIME OFF",
+                                label = if (state.isProtectionActive) "Защита включена" else "Защита выключена",
                                 icon = Icons.Filled.Security,
                                 color = statusColor
                             )
                             ShieldStatusChip(
-                                label = "SCORE $protectionScore",
+                                label = "Индекс $protectionScore",
                                 icon = Icons.Filled.TrackChanges,
                                 color = MaterialTheme.colorScheme.signalTone
                             )
@@ -113,11 +108,6 @@ fun HomeScreen(
                             text = protectionScore.toString(),
                             style = MaterialTheme.typography.displayLarge,
                             color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Last sweep ${formatTime(state.lastScanTime)}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -129,17 +119,17 @@ fun HomeScreen(
                     ) {
                         ShieldMetricTile(
                             modifier = Modifier.weight(1f),
-                            title = "Apps monitored",
+                            title = "Приложений",
                             value = state.installedAppsCount.toString(),
-                            support = "User-installed packages in scope",
+                            support = "В проверке",
                             icon = Icons.Filled.Security,
                             accent = MaterialTheme.colorScheme.primary
                         )
                         ShieldMetricTile(
                             modifier = Modifier.weight(1f),
-                            title = "Threats logged",
+                            title = "Угроз",
                             value = state.totalThreatsEver.toString(),
-                            support = if (state.totalThreatsEver == 0) "No malicious hits recorded" else "Review results and remove flagged apps",
+                            support = if (state.totalThreatsEver == 0) "Не найдено" else "Нужно проверить",
                             icon = Icons.Filled.BugReport,
                             accent = if (state.totalThreatsEver == 0) MaterialTheme.colorScheme.safeTone else MaterialTheme.colorScheme.warningTone
                         )
@@ -149,9 +139,9 @@ fun HomeScreen(
                 item {
                     ShieldMetricTile(
                         modifier = Modifier.fillMaxWidth(),
-                        title = "Completed scans",
+                        title = "Проверок",
                         value = state.totalScans.toString(),
-                        support = if (state.totalScans == 0) "Run the first sweep to establish a baseline" else "Historical results stay available offline",
+                        support = if (state.totalScans == 0) "История пуста" else "Сохранено локально",
                         icon = Icons.Filled.History,
                         accent = MaterialTheme.colorScheme.signalTone
                     )
@@ -159,17 +149,17 @@ fun HomeScreen(
 
                 item {
                     ShieldSectionHeader(
-                        eyebrow = "Actions",
-                        title = "Start a new sweep",
-                        subtitle = "Choose the scan depth that matches the incident you are investigating."
+                        eyebrow = "Сканирование",
+                        title = "Новая проверка",
+                        subtitle = "Выберите режим"
                     )
                 }
 
                 item {
                     ShieldActionCard(
-                        title = "Quick scan",
-                        subtitle = "Prioritises recent user apps and finishes fast.",
-                        meta = "30 most recent packages",
+                        title = "Быстрая проверка",
+                        subtitle = "Недавние приложения",
+                        meta = "До 30 пакетов",
                         icon = Icons.Filled.FlashOn,
                         accent = MaterialTheme.colorScheme.primary,
                         onClick = { onStartScan("QUICK") }
@@ -177,9 +167,9 @@ fun HomeScreen(
                 }
                 item {
                     ShieldActionCard(
-                        title = "Full scan",
-                        subtitle = "Sweeps system and user packages for broad compromise detection.",
-                        meta = "Full package inventory",
+                        title = "Полная проверка",
+                        subtitle = "Все приложения",
+                        meta = "Вся система",
                         icon = Icons.Filled.Security,
                         accent = MaterialTheme.colorScheme.tertiary,
                         onClick = { onStartScan("FULL") }
@@ -187,9 +177,9 @@ fun HomeScreen(
                 }
                 item {
                     ShieldActionCard(
-                        title = "Selective scan",
-                        subtitle = "Use when you only need to inspect suspicious installs or side-loads.",
-                        meta = "Focused package list",
+                        title = "Выборочная проверка",
+                        subtitle = "Отдельные приложения",
+                        meta = "Ручной выбор",
                         icon = Icons.Filled.Tune,
                         accent = MaterialTheme.colorScheme.signalTone,
                         onClick = { onStartScan("SELECTIVE") }
@@ -198,13 +188,9 @@ fun HomeScreen(
 
                 item {
                     ShieldSectionHeader(
-                        eyebrow = "Activity",
-                        title = "Recent sweeps",
-                        subtitle = if (state.recentResults.isEmpty()) {
-                            "No completed scans yet."
-                        } else {
-                            "Latest results from the local scan database."
-                        }
+                        eyebrow = "История",
+                        title = "Последние проверки",
+                        subtitle = if (state.recentResults.isEmpty()) "История пуста" else "Последние результаты"
                     )
                 }
 
@@ -212,12 +198,12 @@ fun HomeScreen(
                     item {
                         ShieldPanel(accent = MaterialTheme.colorScheme.surfaceVariant) {
                             Text(
-                                text = "No sweep history yet",
+                                text = "Пока пусто",
                                 style = MaterialTheme.typography.titleLarge,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Run a quick scan to populate your security timeline.",
+                                text = "Запустите первую проверку",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -232,19 +218,19 @@ fun HomeScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "${result.scanType} scan",
+                                    text = scanTypeLabel(result.scanType),
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     fontWeight = FontWeight.Bold
                                 )
                                 ShieldStatusChip(
-                                    label = if (result.threatsFound > 0) "${result.threatsFound} THREATS" else "CLEAN",
+                                    label = if (result.threatsFound > 0) "Угроз: ${result.threatsFound}" else "Чисто",
                                     icon = if (result.threatsFound > 0) Icons.Filled.BugReport else Icons.Filled.Security,
                                     color = accent
                                 )
                             }
                             Text(
-                                text = "${result.totalScanned} packages checked on ${formatAbsoluteTime(result.completedAt)}",
+                                text = "${result.totalScanned} пакетов • ${formatAbsoluteTime(result.completedAt)}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -266,15 +252,22 @@ private fun calculateProtectionScore(state: HomeUiState): Int {
 }
 
 private fun formatTime(timestamp: Long): String {
-    if (timestamp == 0L) return "has not completed yet"
+    if (timestamp == 0L) return "ещё не запускалась"
     val delta = System.currentTimeMillis() - timestamp
     return when {
-        delta < 60_000L -> "just now"
-        delta < 3_600_000L -> "${delta / 60_000L} min ago"
-        delta < 86_400_000L -> "${delta / 3_600_000L} h ago"
-        else -> SimpleDateFormat("dd MMM", Locale.getDefault()).format(Date(timestamp))
+        delta < 60_000L -> "только что"
+        delta < 3_600_000L -> "${delta / 60_000L} мин назад"
+        delta < 86_400_000L -> "${delta / 3_600_000L} ч назад"
+        else -> SimpleDateFormat("dd MMM", Locale("ru")).format(Date(timestamp))
     }
 }
 
 private fun formatAbsoluteTime(timestamp: Long): String =
-    SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(timestamp))
+    SimpleDateFormat("dd MMM yyyy, HH:mm", Locale("ru")).format(Date(timestamp))
+
+private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
+    "QUICK" -> "Быстрая проверка"
+    "FULL" -> "Полная проверка"
+    "SELECTIVE" -> "Выборочная проверка"
+    else -> scanType
+}

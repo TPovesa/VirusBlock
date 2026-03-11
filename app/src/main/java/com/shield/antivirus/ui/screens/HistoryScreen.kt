@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -23,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,17 +30,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.collectAsState
 import com.shield.antivirus.data.model.ScanResult
 import com.shield.antivirus.ui.components.ShieldBackdrop
 import com.shield.antivirus.ui.components.ShieldEmptyState
 import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldScreenScaffold
-import com.shield.antivirus.ui.components.ShieldSectionHeader
 import com.shield.antivirus.ui.components.ShieldStatusChip
 import com.shield.antivirus.ui.theme.criticalTone
 import com.shield.antivirus.ui.theme.safeTone
-import com.shield.antivirus.ui.theme.signalTone
 import com.shield.antivirus.ui.theme.warningTone
 import com.shield.antivirus.viewmodel.ScanViewModel
 import java.text.SimpleDateFormat
@@ -75,8 +72,8 @@ fun HistoryScreen(
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text("Clear scan history") },
-            text = { Text("Delete all locally stored scan results from this device?") },
+            title = { Text("Очистить историю") },
+            text = { Text("Удалить все локальные результаты?") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -84,12 +81,12 @@ fun HistoryScreen(
                         showClearDialog = false
                     }
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.criticalTone)
+                    Text("Удалить", color = MaterialTheme.colorScheme.criticalTone)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) {
-                    Text("Cancel")
+                    Text("Отмена")
                 }
             }
         )
@@ -97,13 +94,12 @@ fun HistoryScreen(
 
     ShieldBackdrop {
         ShieldScreenScaffold(
-            title = "Scan Timeline",
-            subtitle = "Local database history",
+            title = "История",
             onBack = onBack,
             actions = {
                 if (results.isNotEmpty()) {
                     IconButton(onClick = { showClearDialog = true }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Clear history")
+                        Icon(Icons.Filled.Delete, contentDescription = "Очистить")
                     }
                 }
             }
@@ -112,40 +108,9 @@ fun HistoryScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = 8.dp,
-                    bottom = 24.dp
-                ),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                item {
-                    ShieldPanel(accent = MaterialTheme.colorScheme.secondary) {
-                        ShieldSectionHeader(
-                            eyebrow = "Forensics",
-                            title = "Incident timeline",
-                            subtitle = if (results.isEmpty()) {
-                                "This device has not produced any local scan evidence yet."
-                            } else {
-                                "${results.size} scans recorded, ${results.sumOf { it.threatsFound }} threats total."
-                            }
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ShieldStatusChip(
-                                label = "${results.size} SCANS",
-                                icon = Icons.Filled.History,
-                                color = MaterialTheme.colorScheme.signalTone
-                            )
-                            ShieldStatusChip(
-                                label = "${results.sumOf { it.threatsFound }} THREATS",
-                                icon = Icons.Filled.Warning,
-                                color = if (results.sumOf { it.threatsFound } > 0) MaterialTheme.colorScheme.warningTone else MaterialTheme.colorScheme.safeTone
-                            )
-                        }
-                    }
-                }
-
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         HistoryFilter.values().forEach { option ->
@@ -155,9 +120,9 @@ fun HistoryScreen(
                                 label = {
                                     Text(
                                         when (option) {
-                                            HistoryFilter.ALL -> "All"
-                                            HistoryFilter.CLEAN -> "Clean"
-                                            HistoryFilter.THREATS -> "Threats"
+                                            HistoryFilter.ALL -> "Все"
+                                            HistoryFilter.CLEAN -> "Чистые"
+                                            HistoryFilter.THREATS -> "Угрозы"
                                         }
                                     )
                                 }
@@ -170,12 +135,8 @@ fun HistoryScreen(
                     item {
                         ShieldEmptyState(
                             icon = Icons.Filled.Security,
-                            title = if (results.isEmpty()) "No scans yet" else "Nothing in this filter",
-                            subtitle = if (results.isEmpty()) {
-                                "Run a scan to start building a local investigation timeline."
-                            } else {
-                                "Switch filters or trigger another sweep to refresh the timeline."
-                            }
+                            title = if (results.isEmpty()) "История пуста" else "По фильтру ничего нет",
+                            subtitle = if (results.isEmpty()) "Запустите проверку" else "Попробуйте другой фильтр"
                         )
                     }
                 } else {
@@ -199,19 +160,19 @@ private fun HistoryCard(result: ScanResult, onClick: () -> Unit) {
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
-                text = "${result.scanType} scan",
+                text = scanTypeLabel(result.scanType),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold
             )
             ShieldStatusChip(
-                label = if (result.threatsFound > 0) "${result.threatsFound} THREATS" else "CLEAN",
+                label = if (result.threatsFound > 0) "Угроз: ${result.threatsFound}" else "Чисто",
                 icon = if (result.threatsFound > 0) Icons.Filled.Warning else Icons.Filled.Security,
                 color = accent
             )
         }
         Text(
-            text = "${result.totalScanned} packages checked",
+            text = "${result.totalScanned} пакетов",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -224,4 +185,11 @@ private fun HistoryCard(result: ScanResult, onClick: () -> Unit) {
 }
 
 private fun formatHistoryTime(timestamp: Long): String =
-    SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(timestamp))
+    SimpleDateFormat("dd MMM yyyy, HH:mm", Locale("ru")).format(Date(timestamp))
+
+private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
+    "QUICK" -> "Быстрая проверка"
+    "FULL" -> "Полная проверка"
+    "SELECTIVE" -> "Выборочная проверка"
+    else -> scanType
+}

@@ -98,7 +98,7 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`\nShield Antivirus API running on port ${PORT}`);
-    console.log(`   Health: http://localhost:${PORT}/healths`);
+    console.log(`   Health: http://localhost:/healths`);
     console.log(`   Auth:   http://localhost:${PORT}/api/auth`);
 });
 

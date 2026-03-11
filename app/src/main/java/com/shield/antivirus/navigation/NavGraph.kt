@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,7 +25,6 @@ import androidx.navigation.navArgument
 import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.ui.components.ShieldBackdrop
 import com.shield.antivirus.ui.components.ShieldBrandMark
-import com.shield.antivirus.ui.components.ShieldStatusChip
 import com.shield.antivirus.ui.screens.HistoryScreen
 import com.shield.antivirus.ui.screens.HomeScreen
 import com.shield.antivirus.ui.screens.LoginScreen
@@ -58,14 +55,9 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                     modifier = Modifier.padding(24.dp)
                 ) {
                     ShieldBrandMark()
-                    ShieldStatusChip(
-                        label = "SESSION CHECK",
-                        icon = Icons.Filled.Security,
-                        color = MaterialTheme.colorScheme.primary
-                    )
                     CircularProgressIndicator()
                     Text(
-                        text = "Securing control room",
+                        text = "Проверка сессии",
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onBackground
                     )

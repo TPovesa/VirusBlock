@@ -19,11 +19,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.VpnKey
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -53,12 +52,8 @@ import com.shield.antivirus.ui.components.ShieldBrandMark
 import com.shield.antivirus.ui.components.ShieldCalmBackdrop
 import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
-import com.shield.antivirus.ui.components.ShieldSectionHeader
-import com.shield.antivirus.ui.components.ShieldStatusChip
 import com.shield.antivirus.ui.components.shieldTextFieldColors
 import com.shield.antivirus.ui.theme.criticalTone
-import com.shield.antivirus.ui.theme.safeTone
-import com.shield.antivirus.ui.theme.signalTone
 import com.shield.antivirus.viewmodel.AuthViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -74,12 +69,26 @@ fun LoginScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var showResetDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val emailBringIntoView = remember { BringIntoViewRequester() }
     val passwordBringIntoView = remember { BringIntoViewRequester() }
 
     LaunchedEffect(uiState.success) {
         if (uiState.success) onLoginSuccess()
+    }
+
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetDialog = false },
+            title = { Text("Сброс пароля") },
+            text = { Text("Пока сброс пароля делает администратор.") },
+            confirmButton = {
+                TextButton(onClick = { showResetDialog = false }) {
+                    Text("Понятно")
+                }
+            }
+        )
     }
 
     ShieldCalmBackdrop {
@@ -92,44 +101,21 @@ fun LoginScreen(
                 .padding(horizontal = 20.dp, vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-                }
-                ShieldStatusChip(
-                    label = "LIVE AUTH",
-                    icon = Icons.Filled.Security,
-                    color = MaterialTheme.colorScheme.safeTone
-                )
+            IconButton(onClick = onBack) {
+                Icon(Icons.Filled.ArrowBack, contentDescription = "Назад")
             }
 
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(18.dp)
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                ShieldBrandMark(modifier = Modifier.padding(start = 8.dp))
-                ShieldSectionHeader(
-                    eyebrow = "Operator access",
-                    title = "Sign in without losing the flow",
-                    subtitle = "The form stays above the keyboard, retries the direct VPS fallback on port 5001, and keeps the current Material 3 dynamic palette."
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ShieldStatusChip(
-                    label = "SSL PINNED",
-                    icon = Icons.Filled.VpnKey,
-                    color = MaterialTheme.colorScheme.signalTone
-                )
-                ShieldStatusChip(
-                    label = "LOCAL TOKENS",
-                    icon = Icons.Filled.Security,
-                    color = MaterialTheme.colorScheme.primary
+                ShieldBrandMark()
+                Text(
+                    text = "Вход",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontWeight = FontWeight.Bold
                 )
             }
 
@@ -137,12 +123,6 @@ fun LoginScreen(
                 modifier = Modifier.navigationBarsPadding(),
                 accent = MaterialTheme.colorScheme.primary
             ) {
-                Text(
-                    text = "Operator login",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Bold
-                )
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
@@ -157,7 +137,7 @@ fun LoginScreen(
                                 }
                             }
                         },
-                    label = { Text("Email") },
+                    label = { Text("Почта") },
                     leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
@@ -180,13 +160,13 @@ fun LoginScreen(
                                 }
                             }
                         },
-                    label = { Text("Password") },
+                    label = { Text("Пароль") },
                     leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
                     trailingIcon = {
                         IconButton(onClick = { passwordVisible = !passwordVisible }) {
                             Icon(
                                 imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                                contentDescription = if (passwordVisible) "Hide password" else "Show password"
+                                contentDescription = if (passwordVisible) "Скрыть пароль" else "Показать пароль"
                             )
                         }
                     },
@@ -206,6 +186,14 @@ fun LoginScreen(
                     ),
                     colors = shieldTextFieldColors()
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = { showResetDialog = true }) {
+                        Text("Забыли пароль?")
+                    }
+                }
                 if (uiState.error != null) {
                     ShieldPanel(accent = MaterialTheme.colorScheme.criticalTone) {
                         Row(
@@ -242,14 +230,9 @@ fun LoginScreen(
                             strokeWidth = 2.dp
                         )
                     } else {
-                        Text("Sign in to cockpit", style = MaterialTheme.typography.titleMedium)
+                        Text("Войти", style = MaterialTheme.typography.titleMedium)
                     }
                 }
-                Text(
-                    text = "Primary domain uses certificate pinning. If the domain path is misrouted, the app can fall back to the direct VPS endpoint.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
 
             Row(
@@ -258,12 +241,12 @@ fun LoginScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "No operator account yet?",
+                    text = "Нет аккаунта?",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 TextButton(onClick = onNavigateRegister) {
-                    Text("Create one")
+                    Text("Зарегистрироваться")
                 }
             }
         }

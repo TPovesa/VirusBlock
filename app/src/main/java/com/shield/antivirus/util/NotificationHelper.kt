@@ -27,25 +27,25 @@ object NotificationHelper {
             nm.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_PROTECTION,
-                    "Real-time Protection",
+                    "Фоновая защита",
                     NotificationManager.IMPORTANCE_LOW
-                ).apply { description = "Persistent shield status" }
+                ).apply { description = "Постоянный статус защиты" }
             )
 
             nm.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_THREATS,
-                    "Threat Alerts",
+                    "Угрозы",
                     NotificationManager.IMPORTANCE_HIGH
-                ).apply { description = "Detected malware alerts" }
+                ).apply { description = "Оповещения об угрозах" }
             )
 
             nm.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_SCAN,
-                    "Scan Progress",
+                    "Проверка",
                     NotificationManager.IMPORTANCE_DEFAULT
-                ).apply { description = "Scan progress updates" }
+                ).apply { description = "Ход проверки" }
             )
         }
     }
@@ -54,7 +54,7 @@ object NotificationHelper {
         NotificationCompat.Builder(context, CHANNEL_PROTECTION)
             .setSmallIcon(R.drawable.ic_notification_shield)
             .setContentTitle("Shield Antivirus")
-            .setContentText("Real-time protection and threat alerts stay active")
+            .setContentText("Фоновая защита активна")
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -65,11 +65,11 @@ object NotificationHelper {
     fun showThreatNotification(context: Context, appName: String, threatName: String, id: Int) {
         val notification = NotificationCompat.Builder(context, CHANNEL_THREATS)
             .setSmallIcon(R.drawable.ic_notification_shield)
-            .setContentTitle("Threat detected")
-            .setContentText("$appName flagged as $threatName")
+            .setContentTitle("Обнаружена угроза")
+            .setContentText("$appName: $threatName")
             .setStyle(
                 NotificationCompat.BigTextStyle().bigText(
-                    "Application \"$appName\" was flagged as $threatName. Open Shield Antivirus to review the incident and remove the package if needed."
+                    "Приложение \"$appName\" помечено как угроза: $threatName. Откройте Shield Antivirus и проверьте результат."
                 )
             )
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -83,7 +83,7 @@ object NotificationHelper {
     fun showScanNotification(context: Context, progress: Int, current: String) {
         val notification = NotificationCompat.Builder(context, CHANNEL_SCAN)
             .setSmallIcon(R.drawable.ic_notification_shield)
-            .setContentTitle("Shield scan in progress")
+            .setContentTitle("Идёт проверка")
             .setContentText(current)
             .setProgress(100, progress, progress == 0)
             .setOnlyAlertOnce(true)

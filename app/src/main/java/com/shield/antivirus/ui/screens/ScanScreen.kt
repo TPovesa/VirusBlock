@@ -26,12 +26,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.collectAsState
 import com.shield.antivirus.data.model.ThreatSeverity
 import com.shield.antivirus.data.repository.ScanProgress
 import com.shield.antivirus.ui.components.ShieldBackdrop
@@ -71,17 +71,14 @@ fun ScanScreen(
     val animatedProgress by animateFloatAsState(
         targetValue = fraction,
         animationSpec = spring(),
-        label = "scan-progress"
+        label = "scanProgress"
     )
     val threatCount = progress?.threats?.size ?: 0
-    val accent = when {
-        threatCount > 0 -> MaterialTheme.colorScheme.warningTone
-        else -> MaterialTheme.colorScheme.primary
-    }
+    val accent = if (threatCount > 0) MaterialTheme.colorScheme.warningTone else MaterialTheme.colorScheme.primary
 
     ShieldBackdrop {
         ShieldScreenScaffold(
-            title = "$scanType scan",
+            title = scanTypeLabel(scanType),
             subtitle = scanPhase(progress),
             onBack = {
                 viewModel.cancelScan()
@@ -92,19 +89,14 @@ fun ScanScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = 8.dp,
-                    bottom = 24.dp
-                ),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
                     ShieldPanel(accent = accent) {
                         ShieldSectionHeader(
-                            eyebrow = "Runtime",
-                            title = if (progress?.isComplete == true) "Sweep complete" else "Scanning now",
+                            eyebrow = "Проверка",
+                            title = if (progress?.isComplete == true) "Готово" else "Идёт сканирование",
                             subtitle = scanPhase(progress)
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -114,7 +106,7 @@ fun ScanScreen(
                                 color = MaterialTheme.colorScheme.signalTone
                             )
                             ShieldStatusChip(
-                                label = if (threatCount > 0) "$threatCount THREATS" else "NO HITS",
+                                label = if (threatCount > 0) "Угроз: $threatCount" else "Совпадений нет",
                                 icon = if (threatCount > 0) Icons.Filled.Warning else Icons.Filled.Security,
                                 color = if (threatCount > 0) MaterialTheme.colorScheme.warningTone else MaterialTheme.colorScheme.safeTone
                             )
@@ -140,7 +132,7 @@ fun ScanScreen(
                         )
                         if (!progress?.currentApp.isNullOrBlank()) {
                             Text(
-                                text = "Current package: ${progress?.currentApp}",
+                                text = "Сейчас: ${progress?.currentApp}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -151,9 +143,9 @@ fun ScanScreen(
                 if (threatCount > 0) {
                     item {
                         ShieldSectionHeader(
-                            eyebrow = "Detections",
-                            title = "Suspicious packages",
-                            subtitle = "Current findings before the final report is saved."
+                            eyebrow = "Найдено",
+                            title = "Подозрительные приложения",
+                            subtitle = "Текущие совпадения"
                         )
                     }
                     items(progress?.threats.orEmpty(), key = { it.packageName + it.threatName }) { threat ->
@@ -175,7 +167,7 @@ fun ScanScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 ShieldStatusChip(
-                                    label = threat.severity.name,
+                                    label = severityLabel(threat.severity),
                                     icon = Icons.Filled.BugReport,
                                     color = threatColor
                                 )
@@ -186,7 +178,7 @@ fun ScanScreen(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "${threat.detectionCount}/${threat.totalEngines} engines • ${threat.packageName}",
+                                text = "${threat.detectionCount}/${threat.totalEngines} • ${threat.packageName}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -205,7 +197,7 @@ fun ScanScreen(
                         shape = MaterialTheme.shapes.medium
                     ) {
                         Icon(Icons.Filled.Close, contentDescription = null)
-                        Text("  Cancel scan")
+                        Text("  Остановить")
                     }
                 }
             }
@@ -219,17 +211,31 @@ private fun progressFraction(progress: ScanProgress?): Float {
 }
 
 private fun scanPhase(progress: ScanProgress?): String {
-    if (progress == null) return "Preparing package inventory"
-    if (progress.isComplete) return "All packages checked and local results saved"
+    if (progress == null) return "Подготовка"
+    if (progress.isComplete) return "Результат сохранён"
     return when (progressFraction(progress)) {
-        in 0f..0.15f -> "Collecting packages and warm-starting heuristics"
-        in 0.15f..0.45f -> "Hashing APKs and matching local signatures"
-        in 0.45f..0.75f -> "Evaluating heuristics and suspicious permissions"
-        else -> "Finalising results and persisting the report"
+        in 0f..0.15f -> "Сбор пакетов"
+        in 0.15f..0.45f -> "Проверка хэшей"
+        in 0.45f..0.75f -> "Анализ эвристики"
+        else -> "Сохранение результата"
     }
 }
 
 private fun progressSummary(progress: ScanProgress?): String {
-    if (progress == null) return "Initializing scan engine"
-    return "${progress.scannedCount} of ${progress.totalCount.coerceAtLeast(0)} packages checked"
+    if (progress == null) return "Запуск движка"
+    return "${progress.scannedCount} из ${progress.totalCount.coerceAtLeast(0)}"
+}
+
+private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
+    "QUICK" -> "Быстрая проверка"
+    "FULL" -> "Полная проверка"
+    "SELECTIVE" -> "Выборочная проверка"
+    else -> scanType
+}
+
+private fun severityLabel(severity: ThreatSeverity): String = when (severity) {
+    ThreatSeverity.CRITICAL -> "Критично"
+    ThreatSeverity.HIGH -> "Высокая"
+    ThreatSeverity.MEDIUM -> "Средняя"
+    ThreatSeverity.LOW -> "Низкая"
 }

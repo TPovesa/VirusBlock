@@ -20,7 +20,6 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
@@ -53,11 +52,8 @@ import com.shield.antivirus.ui.components.ShieldBrandMark
 import com.shield.antivirus.ui.components.ShieldCalmBackdrop
 import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
-import com.shield.antivirus.ui.components.ShieldSectionHeader
-import com.shield.antivirus.ui.components.ShieldStatusChip
 import com.shield.antivirus.ui.components.shieldTextFieldColors
 import com.shield.antivirus.ui.theme.criticalTone
-import com.shield.antivirus.ui.theme.safeTone
 import com.shield.antivirus.viewmodel.AuthViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -95,31 +91,21 @@ fun RegisterScreen(
                 .padding(horizontal = 20.dp, vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-                }
-                ShieldStatusChip(
-                    label = "NEW OPERATOR",
-                    icon = Icons.Filled.Security,
-                    color = MaterialTheme.colorScheme.safeTone
-                )
+            IconButton(onClick = onBack) {
+                Icon(Icons.Filled.ArrowBack, contentDescription = "Назад")
             }
 
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(18.dp)
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                ShieldBrandMark(modifier = Modifier.padding(start = 8.dp))
-                ShieldSectionHeader(
-                    eyebrow = "Onboarding",
-                    title = "Create the account once",
-                    subtitle = "Registration keeps the form reachable above the keyboard and writes an encrypted session immediately after success."
+                ShieldBrandMark()
+                Text(
+                    text = "Регистрация",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontWeight = FontWeight.Bold
                 )
             }
 
@@ -127,12 +113,6 @@ fun RegisterScreen(
                 modifier = Modifier.navigationBarsPadding(),
                 accent = MaterialTheme.colorScheme.tertiary
             ) {
-                Text(
-                    text = "Provision operator",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Bold
-                )
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -147,7 +127,7 @@ fun RegisterScreen(
                                 }
                             }
                         },
-                    label = { Text("Display name") },
+                    label = { Text("Имя") },
                     leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
@@ -167,7 +147,7 @@ fun RegisterScreen(
                                 }
                             }
                         },
-                    label = { Text("Email") },
+                    label = { Text("Почта") },
                     leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
@@ -190,13 +170,13 @@ fun RegisterScreen(
                                 }
                             }
                         },
-                    label = { Text("Password") },
+                    label = { Text("Пароль") },
                     leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
                     trailingIcon = {
                         IconButton(onClick = { passwordVisible = !passwordVisible }) {
                             Icon(
                                 imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                                contentDescription = if (passwordVisible) "Hide password" else "Show password"
+                                contentDescription = if (passwordVisible) "Скрыть пароль" else "Показать пароль"
                             )
                         }
                     },
@@ -222,7 +202,7 @@ fun RegisterScreen(
                                 }
                             }
                         },
-                    label = { Text("Confirm password") },
+                    label = { Text("Повтор пароля") },
                     leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
                     singleLine = true,
                     isError = confirmPassword.isNotEmpty() && confirmPassword != password,
@@ -243,7 +223,7 @@ fun RegisterScreen(
                 )
                 if (confirmPassword.isNotBlank() && confirmPassword != password) {
                     Text(
-                        text = "Passwords must match before account provisioning.",
+                        text = "Пароли не совпадают",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.criticalTone
                     )
@@ -286,14 +266,9 @@ fun RegisterScreen(
                             strokeWidth = 2.dp
                         )
                     } else {
-                        Text("Create operator account", style = MaterialTheme.typography.titleMedium)
+                        Text("Зарегистрироваться", style = MaterialTheme.typography.titleMedium)
                     }
                 }
-                Text(
-                    text = "The server validates the final request, then stores the session in encrypted preferences for seamless return to the app.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
 
             Row(
@@ -302,12 +277,12 @@ fun RegisterScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Already provisioned?",
+                    text = "Уже есть аккаунт?",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 TextButton(onClick = onNavigateLogin) {
-                    Text("Return to sign in")
+                    Text("Войти")
                 }
             }
         }

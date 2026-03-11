@@ -253,7 +253,7 @@ fun ShieldScreenScaffold(
                         IconButton(onClick = onBack) {
                             Icon(
                                 imageVector = Icons.Filled.ArrowBack,
-                                contentDescription = "Back"
+                                contentDescription = "Назад"
                             )
                         }
                     }
@@ -296,7 +296,7 @@ fun ShieldBrandMark(
         Box(contentAlignment = Alignment.Center) {
             Box(
                 modifier = Modifier
-                    .size(82.dp)
+                    .size(80.dp)
                     .clip(CircleShape)
                     .background(
                         Brush.radialGradient(
@@ -311,7 +311,12 @@ fun ShieldBrandMark(
                 painter = rememberVectorPainter(ImageVector.vectorResource(id = R.drawable.ic_brand_emblem)),
                 contentDescription = null,
                 tint = Color.Unspecified,
-                modifier = Modifier.size(72.dp)
+                modifier = Modifier
+                    .size(70.dp)
+                    .graphicsLayer {
+                        translationX = -1.5f
+                        translationY = -1.5f
+                    }
             )
         }
     }
@@ -347,21 +352,25 @@ fun ShieldSectionHeader(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = eyebrow.uppercase(),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
+        if (eyebrow.isNotBlank()) {
+            Text(
+                text = eyebrow.uppercase(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
         Text(
             text = title,
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onBackground
         )
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        if (subtitle.isNotBlank()) {
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

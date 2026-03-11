@@ -5,14 +5,23 @@ import com.google.gson.Gson
 import com.shield.antivirus.data.api.ApiClient
 import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.data.local.AppDatabase
-import com.shield.antivirus.data.model.*
+import com.shield.antivirus.data.model.AppInfo
+import com.shield.antivirus.data.model.SaveScanRequest
+import com.shield.antivirus.data.model.ScanResult
+import com.shield.antivirus.data.model.ScanResultEntity
+import com.shield.antivirus.data.model.ThreatInfo
+import com.shield.antivirus.data.model.ThreatSeverity
 import com.shield.antivirus.data.scanner.LocalThreatDetector
 import com.shield.antivirus.data.security.ShieldSessionManager
 import com.shield.antivirus.util.HashUtils
 import com.shield.antivirus.util.NotificationHelper
 import com.shield.antivirus.util.PackageUtils
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -26,9 +35,9 @@ data class ScanProgress(
 )
 
 class ScanRepository(private val context: Context) {
-    private val dao  = AppDatabase.getInstance(context).scanResultDao()
+    private val dao = AppDatabase.getInstance(context).scanResultDao()
     private val prefs = UserPreferences(context)
-    private val gson  = Gson()
+    private val gson = Gson()
     private val localThreatDetector = LocalThreatDetector(context)
     private val sessionManager = ShieldSessionManager(context)
 
@@ -50,10 +59,10 @@ class ScanRepository(private val context: Context) {
         val allApps = withContext(Dispatchers.IO) {
             when (scanType) {
                 "QUICK" -> PackageUtils.getUserApps(context).take(30)
-                "FULL"  -> PackageUtils.getAllInstalledApps(context, includeSystem = true)
+                "FULL" -> PackageUtils.getAllInstalledApps(context, includeSystem = true)
                 "SELECTIVE" -> PackageUtils.getUserApps(context)
                     .filter { it.packageName in selectedPackages }
-                else    -> PackageUtils.getUserApps(context)
+                else -> PackageUtils.getUserApps(context)
             }
         }
 
@@ -67,12 +76,14 @@ class ScanRepository(private val context: Context) {
         var notifId = 0
 
         allApps.forEachIndexed { index, app ->
-            emit(ScanProgress(
-                currentApp = app.appName,
-                scannedCount = index,
-                totalCount = total,
-                threats = threats.toList()
-            ))
+            emit(
+                ScanProgress(
+                    currentApp = app.appName,
+                    scannedCount = index,
+                    totalCount = total,
+                    threats = threats.toList()
+                )
+            )
 
             NotificationHelper.showScanNotification(
                 context,
@@ -97,7 +108,7 @@ class ScanRepository(private val context: Context) {
                 when {
                     cloudThreat != null && localThreat != null -> cloudThreat.copy(
                         threatName = "${localThreat.threatName} / ${cloudThreat.threatName}",
-                        detectionEngine = "Shield Local + VirusTotal"
+                        detectionEngine = "Shield + VirusTotal"
                     )
                     cloudThreat != null -> cloudThreat
                     else -> localThreat
@@ -109,7 +120,10 @@ class ScanRepository(private val context: Context) {
             if (finalThreat != null) {
                 threats.add(finalThreat)
                 NotificationHelper.showThreatNotification(
-                    context, app.appName, finalThreat.threatName, notifId++
+                    context,
+                    app.appName,
+                    finalThreat.threatName,
+                    notifId++
                 )
             }
         }
@@ -131,14 +145,16 @@ class ScanRepository(private val context: Context) {
             syncScanToCloud(entity, threats)
         }
 
-        emit(ScanProgress(
-            currentApp = "",
-            scannedCount = total,
-            totalCount = total,
-            threats = threats.toList(),
-            isComplete = true,
-            savedId = savedId
-        ))
+        emit(
+            ScanProgress(
+                currentApp = "",
+                scannedCount = total,
+                totalCount = total,
+                threats = threats.toList(),
+                isComplete = true,
+                savedId = savedId
+            )
+        )
     }.flowOn(Dispatchers.Default)
 
     private suspend fun checkWithVirusTotal(app: AppInfo, apiKey: String): ThreatInfo? {
@@ -161,19 +177,23 @@ class ScanRepository(private val context: Context) {
                 ThreatInfo(
                     packageName = app.packageName,
                     appName = app.appName,
-                    threatName = topResult?.result ?: "Unknown Malware",
+                    threatName = topResult?.result ?: "Неизвестная угроза",
                     severity = when {
                         stats.malicious > 20 -> ThreatSeverity.CRITICAL
                         stats.malicious > 10 -> ThreatSeverity.HIGH
-                        stats.malicious > 3  -> ThreatSeverity.MEDIUM
-                        else                 -> ThreatSeverity.LOW
+                        stats.malicious > 3 -> ThreatSeverity.MEDIUM
+                        else -> ThreatSeverity.LOW
                     },
                     detectionEngine = topResult?.engineName ?: "VirusTotal",
                     detectionCount = malicious,
                     totalEngines = stats.malicious + stats.suspicious + stats.undetected + stats.harmless
                 )
-            } else null
-        } catch (e: Exception) { null }
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private suspend fun syncScanToCloud(entity: ScanResultEntity, threats: List<ThreatInfo>) {
@@ -200,7 +220,9 @@ class ScanRepository(private val context: Context) {
         val threatType = object : com.google.gson.reflect.TypeToken<List<ThreatInfo>>() {}.type
         val threats: List<ThreatInfo> = try {
             gson.fromJson(threatsJson, threatType) ?: emptyList()
-        } catch (e: Exception) { emptyList() }
+        } catch (e: Exception) {
+            emptyList()
+        }
 
         return ScanResult(
             id = id,
