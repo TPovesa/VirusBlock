@@ -3,12 +3,9 @@ package com.shield.antivirus.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.calculateBottomPadding
-import androidx.compose.foundation.layout.calculateTopPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -82,12 +79,14 @@ fun HomeScreen(
             }
         ) { padding ->
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     end = 16.dp,
-                    top = padding.calculateTopPadding() + 8.dp,
-                    bottom = padding.calculateBottomPadding() + 28.dp
+                    top = 8.dp,
+                    bottom = 28.dp
                 ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {

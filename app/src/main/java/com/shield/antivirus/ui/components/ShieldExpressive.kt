@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -42,6 +41,9 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Tune
 import com.shield.antivirus.ui.theme.criticalTone
 
 @Composable
@@ -116,7 +118,7 @@ fun ShieldScreenScaffold(
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
                             Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Default.ArrowBack,
+                                imageVector = androidx.compose.material.icons.Icons.Filled.ArrowBack,
                                 contentDescription = "Back"
                             )
                         }
@@ -291,7 +293,7 @@ fun ShieldActionCard(
                 }
                 Spacer(Modifier.weight(1f))
                 Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Default.ArrowForward,
+                    imageVector = androidx.compose.material.icons.Icons.Filled.ArrowForward,
                     contentDescription = null,
                     tint = accent
                 )
@@ -300,7 +302,7 @@ fun ShieldActionCard(
             Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             ShieldStatusChip(
                 label = meta,
-                icon = androidx.compose.material.icons.Icons.Default.Tune,
+                icon = androidx.compose.material.icons.Icons.Filled.Tune,
                 color = accent
             )
         }
