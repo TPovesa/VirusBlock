@@ -1,0 +1,26 @@
+{
+  "name": "shield-antivirus-backend",
+  "version": "1.0.0",
+  "description": "Shield Antivirus Backend API",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js",
+    "pm2:start": "pm2 start src/index.js --name shield-api --update-env",
+    "pm2:stop": "pm2 stop shield-api",
+    "pm2:logs": "pm2 logs shield-api",
+    "pm2:restart": "pm2 restart shield-api --update-env",
+    "check": "node --check src/index.js && node --check src/routes/auth.js && node --check src/routes/scans.js && node --check src/routes/purchases.js && node --check src/middleware/auth.js"
+  },
+  "dependencies": {
+    "argon2": "^0.41.1",
+    "express": "^4.18.2",
+    "mysql2": "^3.6.5",
+    "jsonwebtoken": "^9.0.2",
+    "uuid": "^9.0.1",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0"
+  }
+}

@@ -1,0 +1,12 @@
+.gradle/
+build/
+app/build/
+local.properties
+Shield_FULL_fixed4.zip
+shield-backend/node_modules/
+shield-backend/.env
+shield-backend/server.log
+shield-backend/.npmrc
+/{gradle/
+/shield-backend/{src/
+*.log

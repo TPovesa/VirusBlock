@@ -1,0 +1,58 @@
+{
+  "trustedInstallers": [
+    "com.android.vending",
+    "org.fdroid.fdroid",
+    "com.android.packageinstaller",
+    "com.google.android.packageinstaller",
+    "com.miui.packageinstaller",
+    "com.samsung.android.app.samsungapps"
+  ],
+  "suspiciousKeywords": [
+    "rat",
+    "spy",
+    "dropper",
+    "loader",
+    "inject",
+    "hook",
+    "stealer",
+    "banker",
+    "overlay",
+    "keylogger",
+    "exploit",
+    "crack",
+    "modmenu",
+    "autoclick",
+    "cheat"
+  ],
+  "riskyPermissions": [
+    "android.permission.BIND_ACCESSIBILITY_SERVICE",
+    "android.permission.SYSTEM_ALERT_WINDOW",
+    "android.permission.RECEIVE_SMS",
+    "android.permission.READ_SMS",
+    "android.permission.SEND_SMS",
+    "android.permission.READ_CONTACTS",
+    "android.permission.READ_CALL_LOG",
+    "android.permission.QUERY_ALL_PACKAGES",
+    "android.permission.REQUEST_INSTALL_PACKAGES",
+    "android.permission.PACKAGE_USAGE_STATS",
+    "android.permission.RECORD_AUDIO"
+  ],
+  "highRiskPermissionCombos": [
+    [
+      "android.permission.BIND_ACCESSIBILITY_SERVICE",
+      "android.permission.SYSTEM_ALERT_WINDOW"
+    ],
+    [
+      "android.permission.RECEIVE_SMS",
+      "android.permission.READ_SMS",
+      "android.permission.SEND_SMS"
+    ],
+    [
+      "android.permission.QUERY_ALL_PACKAGES",
+      "android.permission.REQUEST_INSTALL_PACKAGES",
+      "android.permission.PACKAGE_USAGE_STATS"
+    ]
+  ],
+  "blockedPackagePrefixes": [],
+  "blockedHashes": []
+}
