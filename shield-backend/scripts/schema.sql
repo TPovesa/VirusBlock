@@ -116,3 +116,30 @@ CREATE TABLE IF NOT EXISTS threat_reports (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_threat_reports_user_reported (user_id, reported_at)
 );
+
+CREATE TABLE IF NOT EXISTS deep_scan_jobs (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    package_name VARCHAR(255) DEFAULT NULL,
+    app_name VARCHAR(255) DEFAULT NULL,
+    sha256 VARCHAR(64) DEFAULT NULL,
+    status ENUM('QUEUED','RUNNING','COMPLETED','FAILED') NOT NULL DEFAULT 'QUEUED',
+    verdict VARCHAR(20) DEFAULT NULL,
+    risk_score INT NOT NULL DEFAULT 0,
+    vt_status VARCHAR(32) DEFAULT NULL,
+    vt_malicious INT DEFAULT NULL,
+    vt_suspicious INT DEFAULT NULL,
+    vt_harmless INT DEFAULT NULL,
+    request_json LONGTEXT NOT NULL,
+    summary_json LONGTEXT DEFAULT NULL,
+    findings_json LONGTEXT DEFAULT NULL,
+    error_message VARCHAR(255) DEFAULT NULL,
+    created_at BIGINT NOT NULL,
+    started_at BIGINT DEFAULT NULL,
+    completed_at BIGINT DEFAULT NULL,
+    updated_at BIGINT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_deep_scan_jobs_user_created (user_id, created_at),
+    INDEX idx_deep_scan_jobs_status_created (status, created_at),
+    INDEX idx_deep_scan_jobs_sha256 (sha256)
+);

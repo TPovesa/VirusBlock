@@ -1,19 +1,21 @@
 package com.shield.antivirus.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -33,11 +35,13 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.shield.antivirus.data.datastore.PendingAuthFlow
+import com.shield.antivirus.ui.components.ShieldBottomFormPanel
 import com.shield.antivirus.ui.components.ShieldCalmBackdrop
-import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
 import com.shield.antivirus.ui.components.ShieldScreenScaffold
+import com.shield.antivirus.ui.components.ShieldSectionHeader
 import com.shield.antivirus.ui.components.shieldTextFieldColors
+import com.shield.antivirus.ui.components.shieldBottomInsets
 import com.shield.antivirus.ui.theme.criticalTone
 import com.shield.antivirus.viewmodel.AuthViewModel
 
@@ -69,18 +73,30 @@ fun RegisterScreen(
             title = "Регистрация",
             onBack = onBack
         ) { padding ->
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .imePadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
             ) {
-                ShieldPanel(
-                    modifier = Modifier.navigationBarsPadding(),
-                    accent = MaterialTheme.colorScheme.tertiary
+                ShieldSectionHeader(
+                    eyebrow = "Новый аккаунт",
+                    title = if (uiState.requiresCode) "Подтвердите почту" else "Регистрация",
+                    subtitle = if (uiState.requiresCode) {
+                        "Код отправлен на ${uiState.pendingEmail}"
+                    } else {
+                        ""
+                    },
+                    modifier = Modifier.align(Alignment.TopStart)
+                )
+
+                ShieldBottomFormPanel(
+                    accent = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .shieldBottomInsets()
+                        .imePadding()
                 ) {
                     if (!uiState.infoMessage.isNullOrBlank()) {
                         Text(
@@ -91,11 +107,6 @@ fun RegisterScreen(
                     }
 
                     if (uiState.requiresCode) {
-                        Text(
-                            text = "Код отправлен на ${uiState.pendingEmail}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
                         OutlinedTextField(
                             value = code,
                             onValueChange = { code = it.filter(Char::isDigit).take(6) },
@@ -149,8 +160,11 @@ fun RegisterScreen(
                                 imeAction = ImeAction.Next
                             ),
                             trailingIcon = {
-                                TextButton(onClick = { passwordVisible = !passwordVisible }) {
-                                    Text(if (passwordVisible) "Скрыть" else "Показать")
+                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                    Icon(
+                                        imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                        contentDescription = if (passwordVisible) "Скрыть пароль" else "Показать пароль"
+                                    )
                                 }
                             },
                             colors = shieldTextFieldColors()
@@ -229,22 +243,15 @@ fun RegisterScreen(
                         ) {
                             Text("Ввести заново")
                         }
-                    }
-                }
-
-                if (!uiState.requiresCode) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Уже есть аккаунт?",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        TextButton(onClick = onNavigateLogin) {
-                            Text("Войти")
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(onClick = onNavigateLogin) {
+                                Text("Войти")
+                            }
                         }
                     }
                 }

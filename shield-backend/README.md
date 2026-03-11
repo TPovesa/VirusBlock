@@ -22,6 +22,9 @@ mysql -u root shield_auth < scripts/schema.sql
 - `SMTP_PASS`
 - `MAIL_FROM`
 - `APP_RESET_URL`
+- `VT_API_KEY` for VirusTotal hash lookups
+- `AIH_API_KEY` for server-side scan explanations
+- optional `AIH_MODEL` to pin a specific upstream model
 
 For Gmail SMTP use:
 - `SMTP_HOST=smtp.gmail.com`
@@ -81,12 +84,90 @@ For Gmail SMTP use:
 - `POST /api/auth/refresh`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
+- `POST /api/scans/deep/start`
+- `GET /api/scans/deep/:id`
 - `POST /api/scans`
 - `GET /api/scans`
 - `DELETE /api/scans`
+- `POST /api/ai/explain-scan`
 - `POST /api/purchases`
 - `GET /api/purchases/active`
 - `GET /healths`
+
+## Deep scan API
+
+### Start a deep scan job
+- `POST /api/scans/deep/start`
+- auth: `Bearer <access_token>`
+- body example:
+```json
+{
+  "app_name": "Telegram",
+  "package_name": "org.telegram.messenger",
+  "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "installer_package": "com.android.vending",
+  "permissions": [
+    "android.permission.INTERNET",
+    "android.permission.SYSTEM_ALERT_WINDOW"
+  ],
+  "target_sdk": 34,
+  "is_debuggable": false,
+  "uses_cleartext_traffic": false
+}
+```
+
+- response:
+```json
+{
+  "success": true,
+  "scan": {
+    "id": "uuid",
+    "status": "QUEUED",
+    "created_at": 1710000000000
+  }
+}
+```
+
+### Poll deep scan status/result
+- `GET /api/scans/deep/:id`
+- auth: `Bearer <access_token>`
+- response contains:
+  - `status`: `QUEUED | RUNNING | COMPLETED | FAILED`
+  - `verdict`: `clean | low_risk | suspicious | malicious`
+  - `risk_score`
+  - `summary`
+  - `findings`
+  - VirusTotal counters when available
+
+Deep scan combines:
+- local server heuristics on package metadata, install source, permission combos, debuggable/cleartext flags
+- VirusTotal file-hash reputation if `VT_API_KEY` is configured and `sha256` is present
+
+If VirusTotal is not configured, deep scan still runs heuristics and returns a result.
+
+## AI scan explain API
+
+- `POST /api/ai/explain-scan`
+- auth: `Bearer <access_token>`
+- body example:
+```json
+{
+  "summary": {
+    "verdict": "suspicious",
+    "risk_score": 58
+  },
+  "result": {
+    "findings": [
+      {
+        "title": "Overlay permission",
+        "detail": "Screen overlays are often used for phishing."
+      }
+    ]
+  }
+}
+```
+
+The backend calls the upstream compatible API at `https://sosiskibot.ru/api/v1/chat/completions` with a bearer key from env, so the Android client never sees the key.
 
 ## Health checks
 ```bash
@@ -98,6 +179,7 @@ curl https://sosiskibot.ru/basedata/health
 ## Schema additions
 - `email_auth_challenges` — one-time mail codes for login and registration
 - `password_reset_tokens` — one-time reset links
+- `deep_scan_jobs` — queued deep scan tasks and completed findings
 
 ## Logs
 ```bash

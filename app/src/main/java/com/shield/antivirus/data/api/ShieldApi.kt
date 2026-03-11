@@ -60,6 +60,25 @@ interface ShieldApi {
     @DELETE("api/scans")
     suspend fun clearScans(@Header("Authorization") token: String): Response<Map<String, Boolean>>
 
+    @POST("api/scans/deep/start")
+    suspend fun startDeepScan(
+        @Header("Authorization") token: String,
+        @Body request: DeepScanStartRequest
+    ): Response<DeepScanStartResponse>
+
+    @GET("api/scans/deep/{id}")
+    suspend fun getDeepScan(
+        @Header("Authorization") token: String,
+        @Path("id") id: String
+    ): Response<DeepScanPollResponse>
+
+    // --- AI ---
+    @POST("api/ai/explain-scan")
+    suspend fun explainScan(
+        @Header("Authorization") token: String? = null,
+        @Body request: ExplainScanRequest
+    ): Response<ExplainScanResponse>
+
     // --- Purchases ---
     @POST("api/purchases")
     suspend fun savePurchase(

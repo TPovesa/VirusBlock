@@ -71,6 +71,13 @@ SMTP_USER=
 SMTP_PASS=
 MAIL_FROM=
 APP_RESET_URL=shieldsecurity://auth/reset-password
+VT_API_KEY=
+VT_API_BASE=https://www.virustotal.com/api/v3
+VT_TIMEOUT_MS=8000
+AIH_API_KEY=
+AIH_BASE_URL=https://sosiskibot.ru/api/v1
+AIH_MODEL=
+AIH_TIMEOUT_MS=15000
 ENV_FILE
 
 echo "[6/8] Installing phpMyAdmin..."

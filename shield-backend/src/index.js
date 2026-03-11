@@ -6,8 +6,11 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 const authRoutes = require('./routes/auth');
+const aiRoutes = require('./routes/ai');
+const deepScansRoutes = require('./routes/deepScans');
 const scansRoutes = require('./routes/scans');
 const purchasesRoutes = require('./routes/purchases');
+const { resumePendingDeepScans } = require('./services/deepScanService');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -59,6 +62,8 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/ai', authLimiter, aiRoutes);
+app.use('/api/scans/deep', deepScansRoutes);
 app.use('/api/scans', scansRoutes);
 app.use('/api/purchases', purchasesRoutes);
 
@@ -96,6 +101,8 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`\nShield Antivirus API running on port ${PORT}`);
     console.log(`   Health: http://localhost:${PORT}/healths`);
     console.log(`   Auth:   http://localhost:${PORT}/api/auth`);
+    console.log(`   Deep:   http://localhost:${PORT}/api/scans/deep/start`);
+    resumePendingDeepScans();
 });
 
 module.exports = app;

@@ -10,7 +10,7 @@
     "pm2:stop": "pm2 stop shield-api",
     "pm2:logs": "pm2 logs shield-api",
     "pm2:restart": "pm2 restart shield-api --update-env",
-    "check": "node --check src/index.js && node --check src/routes/auth.js && node --check src/routes/scans.js && node --check src/routes/purchases.js && node --check src/middleware/auth.js && node --check src/utils/mail.js"
+    "check": "node --check src/index.js && node --check src/routes/auth.js && node --check src/routes/scans.js && node --check src/routes/deepScans.js && node --check src/routes/ai.js && node --check src/routes/purchases.js && node --check src/middleware/auth.js && node --check src/services/deepScanService.js && node --check src/services/aiExplainService.js && node --check src/utils/deepScanHeuristics.js && node --check src/utils/mail.js"
   },
   "dependencies": {
     "argon2": "^0.41.1",

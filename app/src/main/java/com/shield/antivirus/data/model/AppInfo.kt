@@ -10,6 +10,14 @@ data class AppInfo(
     val isSystemApp: Boolean,
     val requestedPermissions: List<String> = emptyList(),
     val installerPackage: String? = null,
+    val targetSdk: Int? = null,
+    val minSdk: Int? = null,
+    val lastUpdateTime: Long = 0L,
+    val sizeBytes: Long = 0L,
+    val signatureSha256: String? = null,
+    val certificateSubject: String? = null,
+    val isDebuggable: Boolean = false,
+    val usesCleartextTraffic: Boolean = false,
     var sha256: String = "",
     var scanStatus: ScanStatus = ScanStatus.PENDING
 )

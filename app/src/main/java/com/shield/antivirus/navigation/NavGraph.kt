@@ -181,7 +181,8 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                 onOpenHistory = { navController.navigate(Screen.History.route) },
                 onOpenSettings = { navController.navigate(Screen.Settings.route) },
                 onOpenLogin = { navController.navigate(Screen.Login.route) },
-                onOpenRegister = { navController.navigate(Screen.Register.route) }
+                onOpenRegister = { navController.navigate(Screen.Register.route) },
+                onOpenExplain = { }
             )
         }
         composable(

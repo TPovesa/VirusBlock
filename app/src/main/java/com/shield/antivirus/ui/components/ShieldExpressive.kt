@@ -28,11 +28,16 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -55,6 +60,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.graphics.graphicsLayer
@@ -149,8 +155,10 @@ private fun ShieldBackdropSurface(
         modifier = modifier
             .fillMaxSize()
             .background(
-                Brush.verticalGradient(
-                    colors = listOf(topColor, middleColor, colors.background)
+                Brush.linearGradient(
+                    colors = listOf(topColor, middleColor, colors.background),
+                    start = Offset(-220f, -160f),
+                    end = Offset(1180f, 2140f)
                 )
             )
     ) {
@@ -212,15 +220,17 @@ private fun ShieldBackdropSurface(
         )
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(if (vivid) 280.dp else 220.dp)
-                .align(Alignment.TopCenter)
+                .fillMaxSize()
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            colors.surface.copy(alpha = if (vivid) 0.3f else 0.16f),
-                            Color.Transparent
-                        )
+                            colors.surface.copy(alpha = if (vivid) 0.12f else 0.06f),
+                            Color.Transparent,
+                            colors.background.copy(alpha = if (vivid) 0.05f else 0.03f),
+                            colors.surfaceContainerLow.copy(alpha = if (vivid) 0.05f else 0.02f)
+                        ),
+                        start = Offset.Zero,
+                        end = Offset(1400f, 2400f)
                     )
                 )
         )
@@ -234,6 +244,7 @@ fun ShieldScreenScaffold(
     title: String,
     subtitle: String? = null,
     onBack: (() -> Unit)? = null,
+    leadingContent: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable (PaddingValues) -> Unit
 ) {
@@ -249,13 +260,16 @@ fun ShieldScreenScaffold(
                     scrolledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
                 ),
                 navigationIcon = {
-                    if (onBack != null) {
+                    when {
+                        leadingContent != null -> leadingContent()
+                        onBack != null -> {
                         IconButton(onClick = onBack) {
                             Icon(
                                 imageVector = Icons.Filled.ArrowBack,
                                 contentDescription = "Назад"
                             )
                         }
+                    }
                     }
                 },
                 title = {
@@ -311,12 +325,7 @@ fun ShieldBrandMark(
                 painter = rememberVectorPainter(ImageVector.vectorResource(id = R.drawable.ic_brand_emblem)),
                 contentDescription = null,
                 tint = Color.Unspecified,
-                modifier = Modifier
-                    .size(70.dp)
-                    .graphicsLayer {
-                        translationX = -1.5f
-                        translationY = -1.5f
-                    }
+                modifier = Modifier.size(70.dp)
             )
         }
     }
@@ -339,6 +348,26 @@ fun ShieldPanel(
         Column(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = content
+        )
+    }
+}
+
+@Composable
+fun ShieldBottomFormPanel(
+    accent: Color,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    ShieldPanel(
+        modifier = modifier,
+        accent = accent
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
             content = content
         )
     }
@@ -489,6 +518,158 @@ fun ShieldActionCard(
 }
 
 @Composable
+fun ShieldModeCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    accent: Color,
+    enabled: Boolean,
+    actionLabel: String,
+    onAction: () -> Unit,
+    modifier: Modifier = Modifier,
+    meta: String? = null
+) {
+    val containerColor = if (enabled) {
+        accent.copy(alpha = 0.11f)
+    } else {
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.78f)
+    }
+    val contentColor = if (enabled) accent else MaterialTheme.colorScheme.outline
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = BorderStroke(1.dp, contentColor.copy(alpha = 0.18f))
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(contentColor.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (enabled) icon else Icons.Filled.Lock,
+                        contentDescription = null,
+                        tint = contentColor
+                    )
+                }
+                Button(
+                    onClick = onAction,
+                    colors = ShieldPrimaryButtonColors(if (enabled) accent else MaterialTheme.colorScheme.outline),
+                    shape = MaterialTheme.shapes.medium
+                ) {
+                    Text(actionLabel)
+                }
+            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (!meta.isNullOrBlank()) {
+                ShieldStatusChip(
+                    label = meta,
+                    icon = Icons.Filled.Tune,
+                    color = contentColor
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ShieldLoadingState(
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier
+) {
+    val transition = rememberInfiniteTransition(label = "shieldLoading")
+    val pulseA by transition.animateFloat(
+        initialValue = 0.82f,
+        targetValue = 1.18f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseA"
+    )
+    val pulseB by transition.animateFloat(
+        initialValue = 0.92f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseB"
+    )
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)
+    ) {
+        Box(
+            modifier = Modifier.size(120.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(104.dp)
+                    .graphicsLayer {
+                        scaleX = pulseA
+                        scaleY = pulseA
+                    }
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+            )
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .graphicsLayer {
+                        scaleX = pulseB
+                        scaleY = pulseB
+                    }
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f))
+            )
+            Icon(
+                painter = rememberVectorPainter(ImageVector.vectorResource(id = R.drawable.ic_brand_emblem)),
+                contentDescription = null,
+                tint = Color.Unspecified,
+                modifier = Modifier.size(56.dp)
+            )
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
 fun ShieldEmptyState(
     icon: ImageVector,
     title: String,
@@ -509,6 +690,9 @@ fun ShieldEmptyState(
         Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+fun Modifier.shieldBottomInsets(): Modifier =
+    windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
 
 @Composable
 fun shieldTextFieldColors() = OutlinedTextFieldDefaults.colors(

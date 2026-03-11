@@ -9,8 +9,8 @@
         android:pivotY="12"
         android:scaleX="0.68"
         android:scaleY="0.68"
-        android:translateX="3.1"
-        android:translateY="3.0">
+        android:translateX="3.84"
+        android:translateY="3.84">
         <path
             android:fillColor="#FFFFFFFF"
             android:pathData="M12,1L3,5v6c0,5.55 3.84,10.74 9,12 5.16,-1.26 9,-6.45 9,-12V5L12,1z" />

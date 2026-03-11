@@ -61,7 +61,7 @@ class AuthRepository(context: Context) {
                 }
                 if (!response.isSuccessful) {
                     val parsedError = parseError(response.errorBody()?.string())
-                    if (response.code() == 404 || response.code() >= 500) {
+                    if (response.code() == 404) {
                         return@withContext performDirectRegister(name.trim(), normalizedEmail, password)
                     }
                     return@withContext AuthResult.Error(
@@ -109,7 +109,7 @@ class AuthRepository(context: Context) {
                 }
                 if (!response.isSuccessful) {
                     val parsedError = parseError(response.errorBody()?.string())
-                    if (response.code() == 404 || response.code() >= 500) {
+                    if (response.code() == 404) {
                         return@withContext performDirectLogin(normalizedEmail, password)
                     }
                     return@withContext AuthResult.Error(
@@ -327,6 +327,18 @@ class AuthRepository(context: Context) {
         "Endpoint not found" -> "Маршрут не найден"
         "Too many auth requests." -> "Слишком много попыток входа"
         "Too many requests, please try again later." -> "Слишком много запросов, попробуйте позже"
+        "All fields are required" -> "Заполните все поля"
+        "Invalid email address" -> "Неверный email"
+        "Password must be at least 6 characters" -> "Пароль должен быть не короче 6 символов"
+        "Email already registered" -> "Почта уже зарегистрирована"
+        "Invalid email or password" -> "Неверная почта или пароль"
+        "Email and password required" -> "Введите почту и пароль"
+        "Invalid verification code" -> "Неверный код"
+        "Challenge expired" -> "Код истёк"
+        "Challenge already used" -> "Код уже использован"
+        "Reset link sent to email" -> "Ссылка для сброса отправлена на почту"
+        "If the email exists, a reset link has been sent" -> "Если почта существует, ссылка уже отправлена"
+        "Password updated successfully" -> "Пароль обновлён"
         else -> message
     }
 

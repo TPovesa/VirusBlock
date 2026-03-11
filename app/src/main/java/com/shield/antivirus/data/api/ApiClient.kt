@@ -23,11 +23,6 @@ object ApiClient {
             label = "Domain backend",
             baseUrl = "https://sosiskibot.ru/basedata/",
             usePinnedTls = true
-        ),
-        ShieldEndpoint(
-            label = "Direct backend",
-            baseUrl = "http://91.233.168.135:5001/",
-            usePinnedTls = false
         )
     )
 
@@ -38,9 +33,9 @@ object ApiClient {
 
     private fun newHttpClient(usePinnedTls: Boolean): OkHttpClient {
         val builder = OkHttpClient.Builder()
-            .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(25, TimeUnit.SECONDS)
+            .writeTimeout(20, TimeUnit.SECONDS)
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = if (BuildConfig.DEBUG) {
                     HttpLoggingInterceptor.Level.BASIC

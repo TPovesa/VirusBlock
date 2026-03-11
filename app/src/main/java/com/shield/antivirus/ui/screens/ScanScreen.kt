@@ -257,7 +257,7 @@ private fun progressSummary(progress: ScanProgress?): String {
 
 private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
     "QUICK" -> "Быстрая проверка"
-    "FULL" -> "Полная проверка"
+    "FULL" -> "Глубокая проверка"
     "SELECTIVE" -> "Выборочная проверка"
     else -> scanType
 }

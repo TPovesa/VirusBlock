@@ -98,6 +98,38 @@ data class ScansListResponse(
     val scans: List<RemoteScan>?
 )
 
+data class ExplainScanRequest(
+    val summary: ExplainSummaryPayload,
+    val result: ExplainResultPayload
+)
+
+data class ExplainSummaryPayload(
+    val verdict: String,
+    @SerializedName("risk_score") val riskScore: Int,
+    val mode: String,
+    @SerializedName("is_guest") val isGuest: Boolean,
+    @SerializedName("protection_active") val protectionActive: Boolean,
+    @SerializedName("total_scans") val totalScans: Int,
+    @SerializedName("total_threats") val totalThreats: Int,
+    @SerializedName("last_scan_time") val lastScanTime: Long
+)
+
+data class ExplainResultPayload(
+    val findings: List<ThreatInfo> = emptyList(),
+    @SerializedName("scan_type") val scanType: String? = null,
+    @SerializedName("total_scanned") val totalScanned: Int? = null,
+    @SerializedName("threats_found") val threatsFound: Int? = null,
+    @SerializedName("latest_completed_at") val latestCompletedAt: Long? = null,
+    val notes: String? = null
+)
+
+data class ExplainScanResponse(
+    val success: Boolean,
+    val explanation: String?,
+    val title: String? = null,
+    val error: String? = null
+)
+
 data class RemoteScan(
     val id: Long,
     @SerializedName("scan_type")     val scanType: String,
@@ -106,6 +138,62 @@ data class RemoteScan(
     @SerializedName("total_scanned") val totalScanned: Int,
     @SerializedName("threats_found") val threatsFound: Int,
     val status: String
+)
+
+data class DeepScanStartRequest(
+    @SerializedName("app_name") val appName: String,
+    @SerializedName("package_name") val packageName: String,
+    val sha256: String?,
+    @SerializedName("installer_package") val installerPackage: String?,
+    val permissions: List<String>,
+    @SerializedName("target_sdk") val targetSdk: Int? = null,
+    @SerializedName("min_sdk") val minSdk: Int? = null,
+    @SerializedName("version_code") val versionCode: Long? = null,
+    @SerializedName("version_name") val versionName: String? = null,
+    @SerializedName("first_install_time") val firstInstallTime: Long? = null,
+    @SerializedName("last_update_time") val lastUpdateTime: Long? = null,
+    @SerializedName("size_bytes") val sizeBytes: Long? = null,
+    @SerializedName("signature_sha256") val signatureSha256: String? = null,
+    @SerializedName("certificate_subject") val certificateSubject: String? = null,
+    @SerializedName("is_debuggable") val isDebuggable: Boolean = false,
+    @SerializedName("uses_cleartext_traffic") val usesCleartextTraffic: Boolean = false
+)
+
+data class DeepScanFinding(
+    val type: String,
+    val severity: String,
+    val title: String,
+    val detail: String
+)
+
+data class DeepScanSummary(
+    val verdict: String?,
+    @SerializedName("risk_score") val riskScore: Int? = null,
+    val recommendations: List<String>? = emptyList()
+)
+
+data class DeepScanJob(
+    val id: String,
+    val status: String,
+    @SerializedName("package_name") val packageName: String? = null,
+    @SerializedName("app_name") val appName: String? = null,
+    val verdict: String? = null,
+    @SerializedName("risk_score") val riskScore: Int? = null,
+    val summary: DeepScanSummary? = null,
+    val findings: List<DeepScanFinding>? = emptyList(),
+    val error: String? = null
+)
+
+data class DeepScanStartResponse(
+    val success: Boolean,
+    val scan: DeepScanJob?,
+    val error: String? = null
+)
+
+data class DeepScanPollResponse(
+    val success: Boolean,
+    val scan: DeepScanJob?,
+    val error: String? = null
 )
 
 // ---- Purchases ----

@@ -1,20 +1,21 @@
 package com.shield.antivirus.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -33,12 +34,16 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import com.shield.antivirus.data.datastore.PendingAuthFlow
+import com.shield.antivirus.ui.components.ShieldBottomFormPanel
 import com.shield.antivirus.ui.components.ShieldCalmBackdrop
-import com.shield.antivirus.ui.components.ShieldPanel
-import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
 import com.shield.antivirus.ui.components.ShieldScreenScaffold
+import com.shield.antivirus.ui.components.ShieldSectionHeader
+import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
 import com.shield.antivirus.ui.components.shieldTextFieldColors
+import com.shield.antivirus.ui.components.shieldBottomInsets
 import com.shield.antivirus.ui.theme.criticalTone
 import com.shield.antivirus.viewmodel.AuthViewModel
 
@@ -70,11 +75,11 @@ fun LoginScreen(
             onDismissRequest = {
                 showResetDialog = false
                 viewModel.clearError()
+                viewModel.clearInfo()
             },
             title = { Text("Сброс пароля") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Введите почту, и мы отправим ссылку для сброса.")
                     OutlinedTextField(
                         value = resetEmail,
                         onValueChange = { resetEmail = it },
@@ -107,7 +112,7 @@ fun LoginScreen(
                     onClick = { viewModel.requestPasswordReset(resetEmail.trim()) },
                     enabled = !uiState.isLoading
                 ) {
-                    Text(if (uiState.isLoading) "Отправляем..." else "Отправить")
+                    Text(if (uiState.isLoading) "Отправить" else "Отправить")
                 }
             },
             dismissButton = {
@@ -123,18 +128,30 @@ fun LoginScreen(
             title = "Вход",
             onBack = onBack
         ) { padding ->
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .imePadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
             ) {
-                ShieldPanel(
-                    modifier = Modifier.navigationBarsPadding(),
-                    accent = MaterialTheme.colorScheme.primary
+                ShieldSectionHeader(
+                    eyebrow = "Аккаунт",
+                    title = if (uiState.requiresCode) "Подтвердите вход" else "Вход",
+                    subtitle = if (uiState.requiresCode) {
+                        "Код отправлен на ${uiState.pendingEmail}"
+                    } else {
+                        ""
+                    },
+                    modifier = Modifier.align(Alignment.TopStart)
+                )
+
+                ShieldBottomFormPanel(
+                    accent = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .shieldBottomInsets()
+                        .imePadding()
                 ) {
                     if (!uiState.infoMessage.isNullOrBlank()) {
                         Text(
@@ -145,11 +162,6 @@ fun LoginScreen(
                     }
 
                     if (uiState.requiresCode) {
-                        Text(
-                            text = "Код отправлен на ${uiState.pendingEmail}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
                         OutlinedTextField(
                             value = code,
                             onValueChange = { code = it.filter(Char::isDigit).take(6) },
@@ -201,8 +213,11 @@ fun LoginScreen(
                                 }
                             ),
                             trailingIcon = {
-                                TextButton(onClick = { passwordVisible = !passwordVisible }) {
-                                    Text(if (passwordVisible) "Скрыть" else "Показать")
+                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                    Icon(
+                                        imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                        contentDescription = if (passwordVisible) "Скрыть пароль" else "Показать пароль"
+                                    )
                                 }
                             },
                             colors = shieldTextFieldColors()
@@ -255,8 +270,12 @@ fun LoginScreen(
                     } else {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            TextButton(onClick = onNavigateRegister) {
+                                Text("Регистрация")
+                            }
                             TextButton(onClick = {
                                 resetEmail = email.trim()
                                 viewModel.clearError()
@@ -265,23 +284,6 @@ fun LoginScreen(
                             }) {
                                 Text("Забыли пароль?")
                             }
-                        }
-                    }
-                }
-
-                if (!uiState.requiresCode) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Нет аккаунта?",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        TextButton(onClick = onNavigateRegister) {
-                            Text("Зарегистрироваться")
                         }
                     }
                 }
