@@ -42,7 +42,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.collectAsState
-import com.shield.antivirus.ui.components.ShieldBackdrop
+import com.shield.antivirus.ui.components.ShieldCalmBackdrop
 import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
 import com.shield.antivirus.ui.components.ShieldSectionHeader
@@ -69,7 +69,7 @@ fun RegisterScreen(
         if (uiState.success) onRegisterSuccess()
     }
 
-    ShieldBackdrop {
+    ShieldCalmBackdrop {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -83,7 +83,7 @@ fun RegisterScreen(
             ShieldSectionHeader(
                 eyebrow = "Onboarding",
                 title = "Provision a new operator",
-                subtitle = "Create an account for synced scan history, token refresh, and security preferences."
+                subtitle = "Create an account for synced scan history, token refresh, and security preferences without the noisy auth backdrop."
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ShieldStatusChip(

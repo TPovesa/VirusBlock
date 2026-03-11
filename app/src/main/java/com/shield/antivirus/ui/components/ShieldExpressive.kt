@@ -97,6 +97,46 @@ fun ShieldBackdrop(
     }
 }
 
+@Composable
+fun ShieldCalmBackdrop(
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(colors.surfaceContainerLowest)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(220.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            colors.primary.copy(alpha = 0.06f),
+                            colors.secondary.copy(alpha = 0.04f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+        Box(
+            modifier = Modifier
+                .size(180.dp)
+                .align(Alignment.TopEnd)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(colors.primary.copy(alpha = 0.05f), Color.Transparent),
+                        radius = 220f
+                    )
+                )
+        )
+        content()
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShieldScreenScaffold(

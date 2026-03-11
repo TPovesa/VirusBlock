@@ -40,7 +40,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import com.shield.antivirus.ui.components.ShieldBackdrop
+import com.shield.antivirus.ui.components.ShieldCalmBackdrop
 import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
 import com.shield.antivirus.ui.components.ShieldSectionHeader
@@ -67,7 +67,7 @@ fun LoginScreen(
         if (uiState.success) onLoginSuccess()
     }
 
-    ShieldBackdrop {
+    ShieldCalmBackdrop {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -77,9 +77,9 @@ fun LoginScreen(
         ) {
             Spacer(Modifier.height(24.dp))
             ShieldSectionHeader(
-                eyebrow = "Material 3 expressive",
+                eyebrow = "Shield access",
                 title = "Secure the device",
-                subtitle = "Sign in to sync your scan timeline with the pinned backend at sosiskibot.ru."
+                subtitle = "Sign in to sync your scan timeline. The app now retries the backup auth endpoint if the main domain is misrouted."
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ShieldStatusChip(

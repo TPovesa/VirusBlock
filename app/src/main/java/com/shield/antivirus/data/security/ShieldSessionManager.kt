@@ -10,7 +10,6 @@ import com.shield.antivirus.data.model.RefreshRequest
 class ShieldSessionManager(context: Context) {
     private val prefs = UserPreferences(context.applicationContext)
     private val secureStore = SecureSessionStore(context.applicationContext)
-    private val api = ApiClient.shieldApi
 
     suspend fun persistAuth(response: AuthResponse): Boolean {
         val user = response.user ?: return false
@@ -43,13 +42,15 @@ class ShieldSessionManager(context: Context) {
         }
 
         return try {
-            val response = api.refresh(
-                RefreshRequest(
-                    refreshToken = session.refreshToken,
-                    sessionId = session.sessionId,
-                    deviceId = prefs.getOrCreateDeviceId()
+            val response = ApiClient.executeShieldCall { api ->
+                api.refresh(
+                    RefreshRequest(
+                        refreshToken = session.refreshToken,
+                        sessionId = session.sessionId,
+                        deviceId = prefs.getOrCreateDeviceId()
+                    )
                 )
-            )
+            }
             if (!response.isSuccessful) {
                 clearLocalSession()
                 return null
@@ -71,7 +72,9 @@ class ShieldSessionManager(context: Context) {
         val session = secureStore.getSession() ?: return
         val accessToken = getValidAccessToken() ?: return
         try {
-            api.logout("Bearer $accessToken", LogoutRequest(session.refreshToken))
+            ApiClient.executeShieldCall { api ->
+                api.logout("Bearer $accessToken", LogoutRequest(session.refreshToken))
+            }
         } catch (_: Exception) {
         }
     }

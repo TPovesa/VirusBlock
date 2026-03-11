@@ -9,4 +9,8 @@
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">sosiskibot.ru</domain>
     </domain-config>
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">91.233.168.135</domain>
+    </domain-config>
 </network-security-config>

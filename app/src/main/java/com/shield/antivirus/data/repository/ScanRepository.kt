@@ -31,7 +31,6 @@ class ScanRepository(private val context: Context) {
     private val gson  = Gson()
     private val localThreatDetector = LocalThreatDetector(context)
     private val sessionManager = ShieldSessionManager(context)
-    private val shieldApi = ApiClient.shieldApi
 
     fun getAllResults() = dao.getAllResults().map { list ->
         list.map { it.toDomain() }
@@ -180,18 +179,20 @@ class ScanRepository(private val context: Context) {
     private suspend fun syncScanToCloud(entity: ScanResultEntity, threats: List<ThreatInfo>) {
         val token = sessionManager.getValidAccessToken() ?: return
         runCatching {
-            shieldApi.saveScan(
-                token = "Bearer $token",
-                request = SaveScanRequest(
-                    scanType = entity.scanType,
-                    startedAt = entity.startedAt,
-                    completedAt = entity.completedAt,
-                    totalScanned = entity.totalScanned,
-                    threatsFound = entity.threatsFound,
-                    threatsJson = threats,
-                    status = entity.status
+            ApiClient.executeShieldCall { api ->
+                api.saveScan(
+                    token = "Bearer $token",
+                    request = SaveScanRequest(
+                        scanType = entity.scanType,
+                        startedAt = entity.startedAt,
+                        completedAt = entity.completedAt,
+                        totalScanned = entity.totalScanned,
+                        threatsFound = entity.threatsFound,
+                        threatsJson = threats,
+                        status = entity.status
+                    )
                 )
-            )
+            }
         }
     }
 

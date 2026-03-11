@@ -18,7 +18,6 @@ sealed class AuthResult {
 class AuthRepository(context: Context) {
     private val prefs = UserPreferences(context)
     private val sessionManager = ShieldSessionManager(context)
-    private val api   = ApiClient.shieldApi
 
     suspend fun register(name: String, email: String, password: String): AuthResult =
         withContext(Dispatchers.IO) {
@@ -30,14 +29,16 @@ class AuthRepository(context: Context) {
                 if (password.length < 6)
                     return@withContext AuthResult.Error("Password must be at least 6 characters")
 
-                val response = api.register(
-                    RegisterRequest(
-                        name = name.trim(),
-                        email = email.trim().lowercase(),
-                        password = password,
-                        deviceId = prefs.getOrCreateDeviceId()
+                val response = ApiClient.executeShieldCall { api ->
+                    api.register(
+                        RegisterRequest(
+                            name = name.trim(),
+                            email = email.trim().lowercase(),
+                            password = password,
+                            deviceId = prefs.getOrCreateDeviceId()
+                        )
                     )
-                )
+                }
                 if (response.isSuccessful) {
                     val body = response.body()
                     if (body?.success == true && body.user != null && sessionManager.persistAuth(body)) {
@@ -46,7 +47,12 @@ class AuthRepository(context: Context) {
                         AuthResult.Error(body?.error ?: "Registration failed")
                     }
                 } else {
-                    val msg = parseError(response.errorBody()?.string()) ?: "Registration failed (${response.code()})"
+                    val msg = parseError(response.errorBody()?.string())
+                        ?: if (response.code() == 404) {
+                            "Auth server was not found on the current backend. Check the deployed auth URL."
+                        } else {
+                            "Registration failed (${response.code()})"
+                        }
                     AuthResult.Error(msg)
                 }
             } catch (e: java.net.ConnectException) {
@@ -62,13 +68,15 @@ class AuthRepository(context: Context) {
                 if (email.isBlank() || password.isBlank())
                     return@withContext AuthResult.Error("Email and password required")
 
-                val response = api.login(
-                    LoginRequest(
-                        email = email.trim().lowercase(),
-                        password = password,
-                        deviceId = prefs.getOrCreateDeviceId()
+                val response = ApiClient.executeShieldCall { api ->
+                    api.login(
+                        LoginRequest(
+                            email = email.trim().lowercase(),
+                            password = password,
+                            deviceId = prefs.getOrCreateDeviceId()
+                        )
                     )
-                )
+                }
                 if (response.isSuccessful) {
                     val body = response.body()
                     if (body?.success == true && body.user != null && sessionManager.persistAuth(body)) {
@@ -96,14 +104,22 @@ class AuthRepository(context: Context) {
         return try {
             val token = sessionManager.getValidAccessToken()
             if (token.isNullOrBlank()) return false
-            api.getMe("Bearer $token").isSuccessful
+            ApiClient.executeShieldCall { api ->
+                api.getMe("Bearer $token")
+            }.isSuccessful
         } catch (e: Exception) { false }
     }
 
     private fun parseError(body: String?): String? {
         if (body.isNullOrBlank()) return null
         return try {
-            com.google.gson.JsonParser.parseString(body).asJsonObject.get("error")?.asString
+            val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+            when {
+                json.get("error")?.isJsonPrimitive == true -> json.get("error").asString
+                json.get("detail")?.isJsonPrimitive == true -> json.get("detail").asString
+                json.get("message")?.isJsonPrimitive == true -> json.get("message").asString
+                else -> null
+            }
         } catch (e: Exception) { null }
     }
 }
