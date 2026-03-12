@@ -59,6 +59,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -97,10 +98,33 @@ private fun ShieldBackdropSurface(
     content: @Composable BoxScope.() -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
+    val topColor = if (vivid) {
+        colors.surface.copy(alpha = 0.98f)
+    } else {
+        colors.surfaceContainerLow.copy(alpha = 0.98f)
+    }
+    val midColor = if (vivid) {
+        colors.surfaceContainerLow.copy(alpha = 0.98f)
+    } else {
+        colors.surfaceContainer.copy(alpha = 0.98f)
+    }
+    val bottomColor = if (vivid) {
+        colors.surfaceContainerHigh.copy(alpha = 0.99f)
+    } else {
+        colors.surfaceContainerHighest.copy(alpha = 0.99f)
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(if (vivid) colors.background else colors.surfaceContainerLowest)
+            .drawBehind {
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(bottomColor, midColor, topColor),
+                        startY = size.height,
+                        endY = 0f
+                    )
+                )
+            }
     ) {
         content()
     }
