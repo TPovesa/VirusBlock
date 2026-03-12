@@ -1,6 +1,7 @@
 package com.shield.antivirus.worker
 
 import android.content.Context
+import android.content.pm.ServiceInfo
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -110,7 +111,11 @@ class DeepScanWorker(
             stage = progress.stageLabel(scanType),
             deepMode = true
         )
-        return ForegroundInfo(NotificationHelper.NOTIF_SCAN_ID, notification)
+        return ForegroundInfo(
+            NotificationHelper.NOTIF_SCAN_ID,
+            notification,
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        )
     }
 
     companion object {

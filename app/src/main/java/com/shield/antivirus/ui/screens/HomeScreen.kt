@@ -331,7 +331,7 @@ private fun HomeContent(
                     title = "Глубокая",
                     icon = Icons.Filled.Security,
                     accent = MaterialTheme.colorScheme.tertiary,
-                    enabled = !state.isGuest && !fullLimitReached && !scanLocked,
+                    enabled = !fullLimitReached && !scanLocked,
                     onAction = {
                         modeMessage = null
                         actionOverlay = true
@@ -370,7 +370,7 @@ private fun HomeContent(
                         title = "Выборочная",
                         icon = Icons.Filled.TrackChanges,
                         accent = MaterialTheme.colorScheme.signalTone,
-                        enabled = !state.isGuest && !selectiveLimitReached && !scanLocked,
+                        enabled = !selectiveLimitReached && !scanLocked,
                         onAction = {
                             modeMessage = null
                             actionOverlay = true

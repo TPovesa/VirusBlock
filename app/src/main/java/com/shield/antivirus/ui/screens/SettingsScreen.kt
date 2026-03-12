@@ -234,38 +234,40 @@ fun SettingsScreen(
                             }
                         }
                     )
-                    Button(
-                        onClick = {
-                            if (exportInProgress) return@Button
-                            exportInProgress = true
-                            scope.launch {
-                                try {
-                                    val file = AppLogger.exportLogsSnapshot()
-                                    if (file == null) {
+                    if (isDeveloperMode) {
+                        Button(
+                            onClick = {
+                                if (exportInProgress) return@Button
+                                exportInProgress = true
+                                scope.launch {
+                                    try {
+                                        val file = AppLogger.exportLogsSnapshot()
+                                        if (file == null) {
+                                            exportInProgress = false
+                                            Toast.makeText(
+                                                context,
+                                                "Логи пока не найдены",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        } else {
+                                            pendingLogZip = file
+                                            exportLogsLauncher.launch(file.name)
+                                        }
+                                    } catch (error: Exception) {
                                         exportInProgress = false
                                         Toast.makeText(
                                             context,
-                                            "Логи пока не найдены",
-                                            Toast.LENGTH_SHORT
+                                            "Ошибка подготовки логов: ${error.message}",
+                                            Toast.LENGTH_LONG
                                         ).show()
-                                    } else {
-                                        pendingLogZip = file
-                                        exportLogsLauncher.launch(file.name)
                                     }
-                                } catch (error: Exception) {
-                                    exportInProgress = false
-                                    Toast.makeText(
-                                        context,
-                                        "Ошибка подготовки логов: ${error.message}",
-                                        Toast.LENGTH_LONG
-                                    ).show()
                                 }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !exportInProgress
-                    ) {
-                        Text(if (exportInProgress) "Подготовка логов..." else "Экспорт логов")
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !exportInProgress
+                        ) {
+                            Text(if (exportInProgress) "Подготовка логов..." else "Экспорт логов")
+                        }
                     }
                 }
 
