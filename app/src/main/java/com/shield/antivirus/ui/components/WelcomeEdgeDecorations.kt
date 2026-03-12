@@ -118,8 +118,9 @@ fun WelcomeEdgeDecorations(
                 if (useContainedStyle) {
                     ContainedLoadingIndicator(
                         modifier = Modifier.fillMaxSize(),
-                        color = color,
-                        containerColor = color.copy(alpha = 0.20f)
+                        containerColor = color.copy(alpha = 0.20f),
+                        indicatorColor = color,
+                        polygons = LoadingIndicatorDefaults.IndeterminateIndicatorPolygons
                     )
                 } else {
                     LoadingIndicator(
