@@ -100,10 +100,10 @@ class ScanRepository(private val context: Context) {
                 ?: throw IllegalStateException("Требуется вход в аккаунт")
             val reportIds = result.threats
                 .mapNotNull { it.serverScanId?.trim() }
-                .filter { it.isNotBlank() }
+                .filter { it.isNotBlank() && it.matches(Regex("^[a-zA-Z0-9-]{20,64}$")) }
                 .distinct()
             if (reportIds.isEmpty()) {
-                throw IllegalStateException("Для этого отчёта нет серверных deep-scan данных")
+                throw IllegalStateException("Для этого результата нет валидных серверных deep-scan ID")
             }
 
             val response = requestFullReportWithRetry(token = token, reportIds = reportIds)

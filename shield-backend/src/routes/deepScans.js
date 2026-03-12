@@ -122,19 +122,14 @@ router.post('/full-report', auth, async (req, res) => {
         const normalizedIds = ids
             .map((value) => String(value || '').trim())
             .filter(Boolean);
-        if (normalizedIds.length > 80) {
+        const validIds = normalizedIds.filter((value) => /^[a-zA-Z0-9-]{20,64}$/.test(value));
+        if (validIds.length === 0) {
             return res.status(400).json({
-                error: 'ids exceeds maximum of 80 scan identifiers'
-            });
-        }
-        const allValid = normalizedIds.length > 0 && normalizedIds.every((value) => /^[a-zA-Z0-9-]{20,64}$/.test(value));
-        if (!allValid) {
-            return res.status(400).json({
-                error: 'ids contains invalid scan identifiers'
+                error: 'ids contains no valid scan identifiers'
             });
         }
 
-        const reports = await getDeepScanFullReports(normalizedIds, req.userId);
+        const reports = await getDeepScanFullReports(validIds, req.userId);
         if (!Array.isArray(reports) || reports.length === 0) {
             return res.status(404).json({
                 error: 'No deep scan reports found for current user',
@@ -143,12 +138,14 @@ router.post('/full-report', auth, async (req, res) => {
         }
 
         const foundIds = new Set(reports.map((item) => item.scan_id));
-        const missing_ids = normalizedIds.filter((id) => !foundIds.has(id));
+        const missing_ids = validIds.filter((id) => !foundIds.has(id));
+        const invalid_ids = normalizedIds.filter((id) => !/^[a-zA-Z0-9-]{20,64}$/.test(id));
         return res.json({
             success: true,
             generated_at: Date.now(),
             reports,
-            missing_ids
+            missing_ids,
+            invalid_ids
         });
     } catch (error) {
         console.error('Deep scan full-report error:', error);

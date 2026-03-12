@@ -6,32 +6,55 @@ function isAiConfigured() {
     return Boolean(String(process.env.AIH_API_KEY || '').trim());
 }
 
-async function apiRequest(path, body = null) {
-    const response = await fetch(`${AIH_BASE_URL}${path}`, {
-        method: body ? 'POST' : 'GET',
-        headers: {
-            'authorization': `Bearer ${process.env.AIH_API_KEY}`,
-            'content-type': 'application/json'
-        },
-        body: body ? JSON.stringify(body) : undefined,
-        signal: AbortSignal.timeout(AIH_TIMEOUT_MS)
-    });
+function shouldRetryAiStatus(statusCode) {
+    return [408, 425, 429, 500, 502, 503, 504].includes(Number(statusCode || 0));
+}
 
-    if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        throw new Error(`AI upstream failed: ${response.status} ${text.slice(0, 200)}`);
+async function apiRequest(path, body = null) {
+    const maxAttempts = 2;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            const response = await fetch(`${AIH_BASE_URL}${path}`, {
+                method: body ? 'POST' : 'GET',
+                headers: {
+                    'authorization': `Bearer ${process.env.AIH_API_KEY}`,
+                    'content-type': 'application/json'
+                },
+                body: body ? JSON.stringify(body) : undefined,
+                signal: AbortSignal.timeout(AIH_TIMEOUT_MS)
+            });
+
+            if (!response.ok) {
+                const text = await response.text().catch(() => '');
+                const error = new Error(`AI upstream failed: ${response.status} ${text.slice(0, 200)}`);
+                error.statusCode = response.status;
+                throw error;
+            }
+
+            return response.json();
+        } catch (error) {
+            lastError = error;
+            const statusCode = Number(error?.statusCode || 0);
+            if (attempt < maxAttempts && shouldRetryAiStatus(statusCode)) {
+                await new Promise((resolve) => setTimeout(resolve, attempt * 900));
+                continue;
+            }
+            break;
+        }
     }
 
-    return response.json();
+    throw lastError || new Error('AI upstream request failed');
 }
 
 function sanitizeInput(value) {
     if (value === null || value === undefined) return null;
-    if (typeof value === 'string') return value.trim().slice(0, 20000);
+    if (typeof value === 'string') return value.trim().slice(0, 8000);
     try {
-        return JSON.stringify(value, null, 2).slice(0, 20000);
+        return JSON.stringify(value, null, 2).slice(0, 8000);
     } catch (_) {
-        return String(value).slice(0, 20000);
+        return String(value).slice(0, 8000);
     }
 }
 
@@ -364,7 +387,9 @@ async function resolveModel() {
 
 async function explainScan({ summary, result }) {
     if (!isAiConfigured()) {
-        return buildFallbackExplanation({ summary, result });
+        const error = new Error('AI service is not configured');
+        error.statusCode = 503;
+        throw error;
     }
 
     try {
@@ -432,8 +457,11 @@ async function explainScan({ summary, result }) {
             structured_v1
         };
     } catch (error) {
-        console.error('AI explain fallback:', error);
-        return buildFallbackExplanation({ summary, result });
+        console.error('AI explain failed:', error);
+        if (!error.statusCode) {
+            error.statusCode = 502;
+        }
+        throw error;
     }
 }
 

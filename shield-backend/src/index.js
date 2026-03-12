@@ -62,13 +62,20 @@ const authLimiter = rateLimit({
     legacyHeaders: false,
     message: { error: 'Too many auth requests.' }
 });
+const aiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 240,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many AI requests.' }
+});
 
 app.use(limiter);
 app.use(express.json({ limit: '12mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/ai', authLimiter, aiRoutes);
+app.use('/api/ai', aiLimiter, aiRoutes);
 app.use('/api/scans/deep', deepScansRoutes);
 app.use('/api/scans', scansRoutes);
 app.use('/api/purchases', purchasesRoutes);

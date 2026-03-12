@@ -1262,7 +1262,7 @@ async function getDeepScanFullReports(ids, userId) {
         new Set((Array.isArray(ids) ? ids : [])
             .map((value) => String(value || '').trim())
             .filter((value) => /^[a-zA-Z0-9-]{20,64}$/.test(value)))
-    ).slice(0, 80);
+    );
     if (normalizedIds.length === 0) {
         return [];
     }

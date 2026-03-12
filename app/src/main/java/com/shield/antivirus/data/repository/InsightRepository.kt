@@ -11,6 +11,7 @@ import com.shield.antivirus.data.model.ScanResult
 import com.shield.antivirus.data.model.ThreatSeverity
 import com.shield.antivirus.data.security.ShieldSessionManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 class InsightRepository(context: Context) {
@@ -25,51 +26,47 @@ class InsightRepository(context: Context) {
             return@withContext Result.failure(IllegalStateException("Функция доступна только после входа в аккаунт"))
         }
         runCatching {
-            val response = ApiClient.executeShieldCall { api ->
-                api.explainScan(
-                    token = "Bearer $token",
-                    request = ExplainScanRequest(
-                        summary = ExplainSummaryPayload(
-                            verdict = when {
-                                result.threatsFound > 0 -> "warning"
-                                else -> "clean"
-                            },
-                            riskScore = when {
-                                result.threatsFound > 6 -> 88
-                                result.threatsFound > 0 -> 61
-                                else -> 14
-                            },
-                            mode = if (isGuest) "guest-result" else "scan-result",
-                            isGuest = isGuest,
-                            protectionActive = !isGuest,
-                            totalScans = 1,
-                            totalThreats = result.threatsFound,
-                            lastScanTime = result.completedAt
-                        ),
-                        result = ExplainResultPayload(
-                            findings = result.threats,
-                            scanType = result.scanType,
-                            totalScanned = result.totalScanned,
-                            threatsFound = result.threatsFound,
-                            latestCompletedAt = result.completedAt,
-                            notes = buildDetailedNotes(
-                                title = if (isGuest) "Гостевая проверка завершена" else "Проверка завершена",
-                                result = result
-                            )
-                        )
+            val request = ExplainScanRequest(
+                summary = ExplainSummaryPayload(
+                    verdict = when {
+                        result.threatsFound > 0 -> "warning"
+                        else -> "clean"
+                    },
+                    riskScore = when {
+                        result.threatsFound > 6 -> 88
+                        result.threatsFound > 0 -> 61
+                        else -> 14
+                    },
+                    mode = if (isGuest) "guest-result" else "scan-result",
+                    isGuest = isGuest,
+                    protectionActive = !isGuest,
+                    totalScans = 1,
+                    totalThreats = result.threatsFound,
+                    lastScanTime = result.completedAt
+                ),
+                result = ExplainResultPayload(
+                    findings = result.threats,
+                    scanType = result.scanType,
+                    totalScanned = result.totalScanned,
+                    threatsFound = result.threatsFound,
+                    latestCompletedAt = result.completedAt,
+                    notes = buildDetailedNotes(
+                        title = if (isGuest) "Гостевая проверка завершена" else "Проверка завершена",
+                        result = result
                     )
                 )
-            }
+            )
+            val response = requestExplainWithRetry(token = token, request = request)
             if (!response.isSuccessful) {
-                return@runCatching buildClientFallback(result)
+                throw mapExplainHttpException(response.code())
             }
             val explanation = resolveServerExplanation(response.body())
             if (!explanation.isNullOrBlank()) {
                 explanation
             } else {
-                buildClientFallback(result)
+                throw IllegalStateException("Сервер ИИ не вернул объяснение")
             }
-        }.recoverCatching { buildClientFallback(result) }
+        }
     }
 
     suspend fun explainOverview(
@@ -90,50 +87,83 @@ class InsightRepository(context: Context) {
             return@withContext Result.failure(IllegalStateException("Функция доступна только после входа в аккаунт"))
         }
         runCatching {
-            val response = ApiClient.executeShieldCall { api ->
-                api.explainScan(
-                    token = "Bearer $token",
-                    request = ExplainScanRequest(
-                        summary = ExplainSummaryPayload(
-                            verdict = verdict,
-                            riskScore = riskScore,
-                            mode = mode,
-                            isGuest = isGuest,
-                            protectionActive = protectionActive,
-                            totalScans = totalScans,
-                            totalThreats = totalThreats,
-                            lastScanTime = lastScanTime
-                        ),
-                        result = ExplainResultPayload(
-                            findings = latest?.threats.orEmpty(),
-                            scanType = latest?.scanType,
-                            totalScanned = latest?.totalScanned,
-                            threatsFound = latest?.threatsFound,
-                            latestCompletedAt = latest?.completedAt,
-                            notes = if (latest == null) {
-                                notes
-                            } else {
-                                buildDetailedNotes(title = notes, result = latest)
-                            }
-                        )
-                    )
+            val request = ExplainScanRequest(
+                summary = ExplainSummaryPayload(
+                    verdict = verdict,
+                    riskScore = riskScore,
+                    mode = mode,
+                    isGuest = isGuest,
+                    protectionActive = protectionActive,
+                    totalScans = totalScans,
+                    totalThreats = totalThreats,
+                    lastScanTime = lastScanTime
+                ),
+                result = ExplainResultPayload(
+                    findings = latest?.threats.orEmpty(),
+                    scanType = latest?.scanType,
+                    totalScanned = latest?.totalScanned,
+                    threatsFound = latest?.threatsFound,
+                    latestCompletedAt = latest?.completedAt,
+                    notes = if (latest == null) {
+                        notes
+                    } else {
+                        buildDetailedNotes(title = notes, result = latest)
+                    }
                 )
-            }
+            )
+            val response = requestExplainWithRetry(token = token, request = request)
             if (!response.isSuccessful) {
-                return@runCatching latest?.let { buildClientFallback(it) }
-                    ?: "## Итог\nНедостаточно данных для объяснения.\n\n## Что делать сейчас\n- Запустите проверку ещё раз."
+                throw mapExplainHttpException(response.code())
             }
             val explanation = resolveServerExplanation(response.body())
             if (!explanation.isNullOrBlank()) {
                 explanation
             } else {
-                latest?.let { buildClientFallback(it) }
-                    ?: "## Итог\nНедостаточно данных для объяснения.\n\n## Что делать сейчас\n- Запустите проверку ещё раз."
+                throw IllegalStateException("Сервер ИИ не вернул объяснение")
             }
-        }.recoverCatching {
-            latest?.let { buildClientFallback(it) }
-                ?: "## Итог\nНедостаточно данных для объяснения.\n\n## Что делать сейчас\n- Запустите проверку ещё раз."
         }
+    }
+
+    private suspend fun requestExplainWithRetry(
+        token: String,
+        request: ExplainScanRequest
+    ): retrofit2.Response<com.shield.antivirus.data.model.ExplainScanResponse> {
+        val maxAttempts = 3
+        for (attempt in 1..maxAttempts) {
+            try {
+                val response = ApiClient.executeShieldCall { api ->
+                    api.explainScan(
+                        token = "Bearer $token",
+                        request = request
+                    )
+                }
+                if (!shouldRetryExplain(response.code()) || attempt == maxAttempts) {
+                    return response
+                }
+                delay(explainRetryDelayMs(attempt))
+            } catch (error: Exception) {
+                if (attempt == maxAttempts) throw error
+                delay(explainRetryDelayMs(attempt))
+            }
+        }
+        throw IllegalStateException("Не удалось получить ответ ИИ")
+    }
+
+    private fun shouldRetryExplain(statusCode: Int): Boolean {
+        return statusCode == 429 || statusCode == 408 || statusCode == 425 || statusCode in 500..504
+    }
+
+    private fun explainRetryDelayMs(attempt: Int): Long = when (attempt) {
+        1 -> 700L
+        2 -> 1500L
+        else -> 2600L
+    }
+
+    private fun mapExplainHttpException(statusCode: Int): IllegalStateException = when (statusCode) {
+        429 -> IllegalStateException("ИИ временно перегружен. Подождите 1-2 минуты и попробуйте снова.")
+        401, 403 -> IllegalStateException("Сессия истекла. Войдите в аккаунт заново.")
+        502, 503, 504 -> IllegalStateException("Сервер ИИ временно недоступен. Попробуйте позже.")
+        else -> IllegalStateException("Сервер ИИ вернул ошибку ($statusCode)")
     }
 
     private fun resolveServerExplanation(body: com.shield.antivirus.data.model.ExplainScanResponse?): String? {
