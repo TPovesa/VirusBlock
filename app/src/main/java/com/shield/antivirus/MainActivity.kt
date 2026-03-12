@@ -21,6 +21,7 @@ import com.shield.antivirus.data.datastore.ThemeMode
 import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.navigation.NavGraph
 import com.shield.antivirus.ui.theme.ShieldAntivirusTheme
+import com.shield.antivirus.util.AppLogger
 import com.shield.antivirus.util.ProtectionServiceController
 import kotlinx.coroutines.launch
 
@@ -31,6 +32,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        AppLogger.log(tag = "main_activity", message = "MainActivity created")
 
         lifecycleScope.launch {
             ProtectionServiceController.sync(this@MainActivity)
@@ -64,6 +66,7 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.POST_NOTIFICATIONS
         ) == PackageManager.PERMISSION_GRANTED
         if (!granted) {
+            AppLogger.log(tag = "permissions", message = "Requesting POST_NOTIFICATIONS")
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }

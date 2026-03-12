@@ -13,6 +13,7 @@ import androidx.work.workDataOf
 import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.data.repository.ScanProgress
 import com.shield.antivirus.data.repository.ScanRepository
+import com.shield.antivirus.util.AppLogger
 import com.shield.antivirus.util.NotificationHelper
 
 class DeepScanWorker(
@@ -33,6 +34,15 @@ class DeepScanWorker(
         val prefs = UserPreferences(applicationContext)
         var lastProgress = ScanProgress(totalCount = 1)
         return try {
+            AppLogger.log(
+                tag = "deep_scan_worker",
+                message = "Deep worker started",
+                metadata = mapOf(
+                    "scan_type" to scanType,
+                    "selected_count" to selectedPackages.size.toString(),
+                    "has_apk_uri" to (!apkUri.isNullOrBlank()).toString()
+                )
+            )
             NotificationHelper.createChannels(applicationContext)
             setForeground(createForegroundInfo(scanType, lastProgress))
 
@@ -49,9 +59,23 @@ class DeepScanWorker(
 
             prefs.clearActiveDeepScan()
             NotificationHelper.cancelScanNotification(applicationContext)
+            AppLogger.log(
+                tag = "deep_scan_worker",
+                message = "Deep worker completed",
+                metadata = mapOf(
+                    "scan_type" to scanType,
+                    "saved_id" to lastProgress.savedId.toString()
+                )
+            )
             Result.success(lastProgress.toWorkData(scanType))
         } catch (error: Exception) {
             Log.e("DeepScanWorker", "Deep scan failed", error)
+            AppLogger.logError(
+                tag = "deep_scan_worker",
+                message = "Deep worker failed",
+                error = error,
+                metadata = mapOf("scan_type" to scanType)
+            )
             prefs.clearActiveDeepScan()
             NotificationHelper.cancelScanNotification(applicationContext)
             Result.failure(

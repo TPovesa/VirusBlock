@@ -28,11 +28,11 @@ async function apiRequest(path, body = null) {
 
 function sanitizeInput(value) {
     if (value === null || value === undefined) return null;
-    if (typeof value === 'string') return value.trim().slice(0, 4000);
+    if (typeof value === 'string') return value.trim().slice(0, 20000);
     try {
-        return JSON.stringify(value, null, 2).slice(0, 4000);
+        return JSON.stringify(value, null, 2).slice(0, 20000);
     } catch (_) {
-        return String(value).slice(0, 4000);
+        return String(value).slice(0, 20000);
     }
 }
 
@@ -158,12 +158,25 @@ async function explainScan({ summary, result }) {
 
         const completion = await apiRequest('/chat/completions', {
             model,
-            temperature: 0.2,
-            max_tokens: 350,
+            temperature: 0.15,
+            max_tokens: 900,
             messages: [
                 {
                     role: 'system',
-                    content: 'Ты помогаешь пользователю Android-антивируса. Кратко и по-русски объясняй результаты сканирования. Не придумывай факты. Отвечай JSON-объектом вида {"explanation":"...","advice":["...","..."]}. Советы должны быть практичными и короткими.'
+                    content: [
+                        'Ты аналитик мобильной безопасности для Android-антивируса.',
+                        'Пиши только по-русски, без воды, без фантазий и без выдуманных фактов.',
+                        'Используй только факты из входных данных. Если данных недостаточно, явно скажи об этом.',
+                        'Сформируй содержательное объяснение даже для быстрой проверки.',
+                        'Структура explanation (обязательно 4 абзаца):',
+                        '1) Что найдено.',
+                        '2) Почему это риск именно на этом устройстве.',
+                        '3) Что сделать сейчас (конкретные шаги).',
+                        '4) Что проверить дополнительно (разрешения, источник установки, поведение).',
+                        'Если угроз нет — так и скажи, но всё равно дай 2-3 практичных шага профилактики.',
+                        'Возвращай строго JSON вида {"explanation":"...","advice":["...","..."]}.',
+                        'advice: 2-5 коротких и прикладных пунктов.'
+                    ].join(' ')
                 },
                 {
                     role: 'user',

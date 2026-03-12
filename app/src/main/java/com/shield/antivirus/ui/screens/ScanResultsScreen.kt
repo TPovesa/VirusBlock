@@ -32,6 +32,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.shield.antivirus.data.model.ThreatInfo
@@ -229,19 +230,26 @@ private fun ThreatCard(
         ThreatSeverity.LOW -> MaterialTheme.colorScheme.signalTone
     }
     ShieldPanel(accent = accent) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
                 text = threat.appName,
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onExplain) {
                     Text("Объяснить")
                 }
                 ShieldStatusChip(
-                    label = severityLabel(threat.severity),
+                    label = null,
                     icon = severityIcon(threat.severity),
                     color = accent
                 )
@@ -281,13 +289,6 @@ private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()
     "SELECTIVE" -> "Выборочная проверка"
     "APK" -> "Проверка APK"
     else -> scanType
-}
-
-private fun severityLabel(severity: ThreatSeverity): String = when (severity) {
-    ThreatSeverity.CRITICAL -> "Критический"
-    ThreatSeverity.HIGH -> "Высокий"
-    ThreatSeverity.MEDIUM -> "Средний"
-    ThreatSeverity.LOW -> "Низкий"
 }
 
 private fun severityIcon(severity: ThreatSeverity) = when (severity) {

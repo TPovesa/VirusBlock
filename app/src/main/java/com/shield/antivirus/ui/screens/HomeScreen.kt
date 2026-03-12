@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.align
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,6 +28,8 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TrackChanges
@@ -54,16 +57,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.shield.antivirus.ui.components.ShieldBackdrop
 import com.shield.antivirus.ui.components.ShieldLoadingState
-import com.shield.antivirus.ui.components.ShieldMetricTile
 import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
 import com.shield.antivirus.ui.components.ShieldScreenScaffold
-import com.shield.antivirus.ui.components.ShieldSectionHeader
 import com.shield.antivirus.ui.components.ShieldStatusChip
-import com.shield.antivirus.ui.theme.criticalTone
 import com.shield.antivirus.ui.theme.safeTone
 import com.shield.antivirus.ui.theme.signalTone
 import com.shield.antivirus.ui.theme.warningTone
@@ -83,6 +84,7 @@ fun HomeScreen(
     onStartScan: (scanType: String, selectedPackage: String?, apkUri: String?) -> Unit,
     onOpenActiveScan: (String) -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenLatestReport: (Long) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenLogin: () -> Unit,
     onOpenRegister: () -> Unit
@@ -114,6 +116,7 @@ fun HomeScreen(
             onStartScan = onStartScan,
             onOpenActiveScan = onOpenActiveScan,
             onOpenHistory = onOpenHistory,
+            onOpenLatestReport = onOpenLatestReport,
             onOpenSettings = onOpenSettings,
             onOpenLogin = onOpenLogin,
             onOpenRegister = onOpenRegister,
@@ -128,6 +131,7 @@ private fun HomeContent(
     onStartScan: (scanType: String, selectedPackage: String?, apkUri: String?) -> Unit,
     onOpenActiveScan: (String) -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenLatestReport: (Long) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenLogin: () -> Unit,
     onOpenRegister: () -> Unit,
@@ -135,10 +139,7 @@ private fun HomeContent(
 ) {
     val context = LocalContext.current
     val scanLocked = state.isScanActive
-    val protectionScore = calculateProtectionScore(state)
     val statusColor = when {
-        state.isGuest -> MaterialTheme.colorScheme.signalTone
-        !state.isProtectionActive -> MaterialTheme.colorScheme.criticalTone
         state.lastScanThreatCount > 0 -> MaterialTheme.colorScheme.warningTone
         else -> MaterialTheme.colorScheme.safeTone
     }
@@ -181,15 +182,13 @@ private fun HomeContent(
 
     ShieldScreenScaffold(
         title = "ShieldSecurity",
-        subtitle = when {
-            state.isGuest -> "Гостевой режим"
-            state.userName.isBlank() -> null
-            else -> state.userName
-        },
-        actions = {
+        subtitle = if (state.isGuest) "Гость" else state.userName.takeIf { it.isNotBlank() },
+        leadingContent = {
             IconButton(onClick = if (state.isGuest) onOpenLogin else onOpenHistory) {
                 Icon(Icons.Filled.History, contentDescription = "История")
             }
+        },
+        actions = {
             IconButton(onClick = if (state.isGuest) onOpenLogin else onOpenSettings) {
                 Icon(Icons.Filled.Settings, contentDescription = "Настройки")
             }
@@ -226,54 +225,52 @@ private fun HomeContent(
         ) {
             item {
                 ShieldPanel(accent = statusColor) {
-                    ShieldSectionHeader(
-                        eyebrow = if (state.isGuest) "Гость" else "Статус",
-                        title = when {
-                            state.isGuest -> "Только просмотр"
-                            !state.isProtectionActive -> "Защита выключена"
-                            state.lastScanThreatCount > 0 -> "Нужна проверка"
-                            else -> "Устройство защищено"
-                        },
-                        subtitle = when {
-                            state.isGuest -> "Все проверки заблокированы до входа"
-                            else -> "Последняя проверка ${formatTime(state.lastScanTime)}"
-                        }
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ShieldStatusChip(
-                            label = when {
-                                state.isGuest -> "Запуск заблокирован"
-                                state.isProtectionActive -> "24/7 включена"
-                                else -> "24/7 выключена"
-                            },
-                            icon = if (state.isGuest) Icons.Filled.FlashOn else Icons.Filled.Security,
-                            color = statusColor
-                        )
-                        ShieldStatusChip(
-                            label = if (state.isGuest) "Без истории" else "Индекс $protectionScore",
-                            icon = if (state.isGuest) Icons.Filled.Security else Icons.Filled.BugReport,
-                            color = if (state.isGuest) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.signalTone
-                        )
-                    }
                     Text(
-                        text = if (state.isGuest) "—" else protectionScore.toString(),
-                        style = MaterialTheme.typography.displayLarge,
+                        text = if (state.lastScanThreatCount > 0) "Обнаружена угроза" else "Угроз не обнаружено",
+                        style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold
                     )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ShieldStatusChip(
+                            label = if (state.isGuest) "Гость" else "Последняя: ${formatTime(state.lastScanTime)}",
+                            icon = Icons.Filled.Security,
+                            color = statusColor
+                        )
+                    }
+                    if (state.lastScanThreatCount > 0) {
+                        val latestId = state.recentResults.firstOrNull()?.id
+                        Button(
+                            onClick = {
+                                if (latestId != null) {
+                                    onOpenLatestReport(latestId)
+                                }
+                            },
+                            enabled = latestId != null,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ShieldPrimaryButtonColors(MaterialTheme.colorScheme.warningTone),
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Icon(Icons.Filled.Report, contentDescription = null)
+                            Text("  Открыть отчёт")
+                        }
+                    }
                 }
             }
 
             item {
-                ShieldSectionHeader(
-                    eyebrow = "Режимы",
-                    title = "Сканирование",
-                    subtitle = when {
-                        scanLocked -> "Идёт проверка. Новая недоступна"
-                        state.isGuest -> "Запуск проверок доступен после входа"
-                        else -> "Глубокая, быстрая, выборочная и APK"
-                    }
-                )
+                ShieldPanel(accent = MaterialTheme.colorScheme.signalTone) {
+                    Text(
+                        text = "Режимы",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
 
             modeMessage?.let { message ->
@@ -294,10 +291,16 @@ private fun HomeContent(
                         state.activeScanType.equals("SELECTIVE", ignoreCase = true) ||
                         state.activeScanType.equals("APK", ignoreCase = true)
                     ShieldPanel(accent = MaterialTheme.colorScheme.signalTone) {
-                        ShieldSectionHeader(
-                            eyebrow = "Текущая проверка",
-                            title = if (activeIsDeep) "Идёт глубокая проверка" else "Идёт фоновая проверка",
-                            subtitle = state.activeScanCurrentApp.ifBlank { "Анализ пакетов" }
+                        Text(
+                            text = if (activeIsDeep) "Идёт глубокая проверка" else "Идёт проверка",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = state.activeScanCurrentApp.ifBlank { "Анализ пакетов" },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         ShieldStatusChip(
                             label = "${state.activeScanProgress.coerceIn(0, 100)}%",
@@ -322,12 +325,11 @@ private fun HomeContent(
                     subtitle = when {
                         state.isGuest -> "Недоступно в гостевом режиме"
                         fullLimitReached -> "Лимит сегодня исчерпан (1/1)"
-                        else -> "Сервер + локально • осталось ${1 - state.fullScansToday}"
+                        else -> "Серверная проверка"
                     },
                     icon = Icons.Filled.Security,
                     accent = MaterialTheme.colorScheme.tertiary,
                     enabled = !state.isGuest && !fullLimitReached && !scanLocked,
-                    actionLabel = if (state.isGuest) "Войти" else if (fullLimitReached) "Лимит" else "Старт",
                     onAction = {
                         modeMessage = null
                         when {
@@ -348,16 +350,14 @@ private fun HomeContent(
                     ModeGridCard(
                         modifier = Modifier.weight(1f),
                         title = "Быстрая",
-                        subtitle = if (state.isGuest) "Нужен вход" else "Локальная проверка",
+                        subtitle = if (state.isGuest) "Локальная" else "Локальная",
                         icon = Icons.Filled.FlashOn,
                         accent = MaterialTheme.colorScheme.primary,
-                        enabled = !state.isGuest && !scanLocked,
-                        actionLabel = if (state.isGuest) "Войти" else "Старт",
+                        enabled = !scanLocked,
                         onAction = {
                             modeMessage = null
                             when {
                                 scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "QUICK" })
-                                state.isGuest -> onOpenLogin()
                                 else -> onStartScan("QUICK", null, null)
                             }
                         }
@@ -368,12 +368,11 @@ private fun HomeContent(
                         subtitle = when {
                             state.isGuest -> "Нужен вход"
                             selectiveLimitReached -> "Лимит 3/3"
-                            else -> "Осталось ${3 - state.selectiveScansToday}"
+                            else -> "Выбрать"
                         },
                         icon = Icons.Filled.TrackChanges,
                         accent = MaterialTheme.colorScheme.signalTone,
                         enabled = !state.isGuest && !selectiveLimitReached && !scanLocked,
-                        actionLabel = if (state.isGuest) "Войти" else "Выбрать",
                         onAction = {
                             modeMessage = null
                             when {
@@ -396,14 +395,11 @@ private fun HomeContent(
 
             item {
                 ShieldPanel(accent = MaterialTheme.colorScheme.signalTone) {
-                    ShieldSectionHeader(
-                        eyebrow = "Файл",
-                        title = "Проверить APK",
-                        subtitle = when {
-                            state.isGuest -> "Только для авторизованных пользователей"
-                            apkLimitReached -> "Лимит сегодня исчерпан (3/3)"
-                            else -> "Осталось ${3 - state.apkScansToday} запуска"
-                        }
+                    Text(
+                        text = "Проверить APK",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -411,7 +407,7 @@ private fun HomeContent(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         ShieldStatusChip(
-                            label = "Серверный анализ",
+                            label = if (apkLimitReached) "Лимит 3/3" else "Серверный анализ",
                             icon = Icons.Filled.UploadFile,
                             color = MaterialTheme.colorScheme.signalTone
                         )
@@ -443,30 +439,28 @@ private fun HomeContent(
             }
 
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    ShieldMetricTile(
-                        modifier = Modifier.weight(1f),
-                        title = "Приложений",
-                        value = state.installedAppsCount.toString(),
-                        support = "В пуле сканирования",
-                        icon = Icons.Filled.Security,
-                        accent = MaterialTheme.colorScheme.primary
-                    )
-                    ShieldMetricTile(
-                        modifier = Modifier.weight(1f),
-                        title = "Угроз",
-                        value = state.lastScanThreatCount.toString(),
-                        support = if (state.lastScanThreatCount == 0) "По последнему скану: чисто" else "По последнему скану есть риски",
-                        icon = Icons.Filled.BugReport,
+                if (!state.isGuest) {
+                    ShieldPanel(
                         accent = if (state.lastScanThreatCount == 0) {
                             MaterialTheme.colorScheme.safeTone
                         } else {
                             MaterialTheme.colorScheme.warningTone
                         }
-                    )
+                    ) {
+                        ShieldStatusChip(
+                            label = if (state.lastScanThreatCount == 0) {
+                                "Угроз не обнаружено"
+                            } else {
+                                "Угроз в последнем скане: ${state.lastScanThreatCount}"
+                            },
+                            icon = if (state.lastScanThreatCount == 0) Icons.Filled.Security else Icons.Filled.BugReport,
+                            color = if (state.lastScanThreatCount == 0) {
+                                MaterialTheme.colorScheme.safeTone
+                            } else {
+                                MaterialTheme.colorScheme.warningTone
+                            }
+                        )
+                    }
                 }
             }
 
@@ -518,7 +512,6 @@ private fun ModeWideCard(
     icon: ImageVector,
     accent: Color,
     enabled: Boolean,
-    actionLabel: String,
     onAction: () -> Unit
 ) {
     val contentColor = if (enabled) accent else MaterialTheme.colorScheme.outline
@@ -562,12 +555,22 @@ private fun ModeWideCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Button(
+            IconButton(
                 onClick = onAction,
-                colors = ShieldPrimaryButtonColors(if (enabled) accent else MaterialTheme.colorScheme.outline),
-                shape = MaterialTheme.shapes.medium
+                enabled = enabled,
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (enabled) accent.copy(alpha = 0.18f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
+                    )
             ) {
-                Text(actionLabel)
+                Icon(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = "Запуск",
+                    tint = if (enabled) accent else MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(34.dp)
+                )
             }
         }
     }
@@ -580,7 +583,6 @@ private fun ModeGridCard(
     icon: ImageVector,
     accent: Color,
     enabled: Boolean,
-    actionLabel: String,
     onAction: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -623,13 +625,23 @@ private fun ModeGridCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.weight(1f))
-            Button(
+            IconButton(
                 onClick = onAction,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ShieldPrimaryButtonColors(if (enabled) accent else MaterialTheme.colorScheme.outline),
-                shape = MaterialTheme.shapes.medium
+                enabled = enabled,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .size(62.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (enabled) accent.copy(alpha = 0.20f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
+                    )
             ) {
-                Text(actionLabel)
+                Icon(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = "Запуск",
+                    tint = if (enabled) accent else MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(38.dp)
+                )
             }
         }
     }
@@ -690,15 +702,6 @@ private fun SelectInstalledAppDialog(
         },
         icon = { Icon(Icons.Filled.Description, contentDescription = null) }
     )
-}
-
-private fun calculateProtectionScore(state: HomeUiState): Int {
-    var score = 44
-    if (state.isProtectionActive) score += 28 else score -= 18
-    if (state.lastScanTime > System.currentTimeMillis() - 86_400_000L) score += 18
-    if (state.lastScanThreatCount == 0) score += 10 else score -= (state.lastScanThreatCount * 4).coerceAtMost(28)
-    if (state.totalScans > 2) score += 6
-    return score.coerceIn(7, 99)
 }
 
 private fun formatTime(timestamp: Long): String {

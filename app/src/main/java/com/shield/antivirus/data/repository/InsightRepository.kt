@@ -6,6 +6,7 @@ import com.shield.antivirus.data.model.ExplainResultPayload
 import com.shield.antivirus.data.model.ExplainScanRequest
 import com.shield.antivirus.data.model.ExplainSummaryPayload
 import com.shield.antivirus.data.model.ScanResult
+import com.shield.antivirus.data.model.ThreatSeverity
 import com.shield.antivirus.data.security.ShieldSessionManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -46,11 +47,10 @@ class InsightRepository(context: Context) {
                             totalScanned = result.totalScanned,
                             threatsFound = result.threatsFound,
                             latestCompletedAt = result.completedAt,
-                            notes = if (isGuest) {
-                                "Гостевая проверка завершена."
-                            } else {
-                                "Проверка завершена."
-                            }
+                            notes = buildDetailedNotes(
+                                title = if (isGuest) "Гостевая проверка завершена" else "Проверка завершена",
+                                result = result
+                            )
                         )
                     )
                 )
@@ -103,7 +103,11 @@ class InsightRepository(context: Context) {
                             totalScanned = latest?.totalScanned,
                             threatsFound = latest?.threatsFound,
                             latestCompletedAt = latest?.completedAt,
-                            notes = notes
+                            notes = if (latest == null) {
+                                notes
+                            } else {
+                                buildDetailedNotes(title = notes, result = latest)
+                            }
                         )
                     )
                 )
@@ -119,5 +123,67 @@ class InsightRepository(context: Context) {
                 throw IllegalStateException(body?.error ?: "Пустой ответ сервера")
             }
         }
+    }
+
+    private fun buildDetailedNotes(title: String, result: ScanResult): String {
+        val findings = result.threats
+        val severityStats = findings.groupingBy { it.severity }.eachCount()
+        val sourceStats = findings.groupingBy { it.detectionEngine.ifBlank { "unknown" } }.eachCount()
+            .toList()
+            .sortedByDescending { it.second }
+            .take(12)
+
+        val topFindings = findings
+            .sortedWith(
+                compareByDescending<com.shield.antivirus.data.model.ThreatInfo> { severityRank(it.severity) }
+                    .thenByDescending { it.detectionCount }
+            )
+            .take(20)
+
+        val topFindingsBlock = if (topFindings.isEmpty()) {
+            "Топ сигналов: отсутствуют."
+        } else {
+            topFindings.joinToString(
+                separator = "\n",
+                prefix = "Топ сигналов:\n"
+            ) { threat ->
+                "- ${threat.appName} (${threat.packageName}) | ${threat.threatName} | " +
+                    "severity=${threat.severity} | detect=${threat.detectionCount}/${threat.totalEngines} | " +
+                    "engine=${threat.detectionEngine}" +
+                    (if (threat.summary.isNullOrBlank()) "" else " | summary=${threat.summary}")
+            }
+        }
+
+        val sourcesBlock = if (sourceStats.isEmpty()) {
+            "Источники: нет."
+        } else {
+            sourceStats.joinToString(
+                separator = "\n",
+                prefix = "Источники:\n"
+            ) { (source, count) -> "- $source: $count" }
+        }
+
+        return buildString {
+            appendLine(title)
+            appendLine("scan_type=${result.scanType}")
+            appendLine("total_scanned=${result.totalScanned}")
+            appendLine("threats_found=${result.threatsFound}")
+            appendLine(
+                "severity_distribution=" +
+                    "low=${severityStats[ThreatSeverity.LOW] ?: 0}," +
+                    "medium=${severityStats[ThreatSeverity.MEDIUM] ?: 0}," +
+                    "high=${severityStats[ThreatSeverity.HIGH] ?: 0}," +
+                    "critical=${severityStats[ThreatSeverity.CRITICAL] ?: 0}"
+            )
+            appendLine(sourcesBlock)
+            append(topFindingsBlock)
+        }.trim()
+    }
+
+    private fun severityRank(severity: ThreatSeverity): Int = when (severity) {
+        ThreatSeverity.CRITICAL -> 4
+        ThreatSeverity.HIGH -> 3
+        ThreatSeverity.MEDIUM -> 2
+        ThreatSeverity.LOW -> 1
     }
 }

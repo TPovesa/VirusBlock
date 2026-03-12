@@ -226,5 +226,31 @@ data class PurchasesResponse(
     val purchases: List<Any>?
 )
 
+data class ClientLogEvent(
+    val id: String,
+    val level: String,
+    val tag: String,
+    val message: String,
+    val timestamp: Long,
+    val metadata: Map<String, String> = emptyMap()
+)
+
+data class ClientCrashEntry(
+    val id: String,
+    val timestamp: Long,
+    val thread: String,
+    val type: String,
+    val message: String,
+    val stackTrace: String
+)
+
+data class ClientLogsUploadRequest(
+    @SerializedName("sessionId") val sessionId: String,
+    @SerializedName("appVersion") val appVersion: String,
+    val device: Map<String, String>,
+    val events: List<ClientLogEvent>,
+    val crashes: List<ClientCrashEntry>
+)
+
 // ---- Generic ----
 data class ApiError(val error: String)

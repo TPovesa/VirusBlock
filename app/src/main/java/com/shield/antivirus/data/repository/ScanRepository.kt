@@ -20,6 +20,7 @@ import com.shield.antivirus.data.security.ShieldSessionManager
 import com.shield.antivirus.util.HashUtils
 import com.shield.antivirus.util.NotificationHelper
 import com.shield.antivirus.util.PackageUtils
+import com.shield.antivirus.util.AppLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -88,10 +89,25 @@ class ScanRepository(private val context: Context) {
         val normalizedType = scanType.uppercase()
         var lockAcquired = false
         try {
+            AppLogger.log(
+                tag = "scan_repository",
+                message = "Scan start requested",
+                metadata = mapOf(
+                    "scan_type" to normalizedType,
+                    "selected_count" to selectedPackages.size.toString(),
+                    "apk_uri_provided" to (!apkUriString.isNullOrBlank()).toString()
+                )
+            )
             lockAcquired = withContext(Dispatchers.IO) {
                 prefs.tryAcquireActiveScan(normalizedType, "Подготовка проверки")
             }
             if (!lockAcquired) {
+                AppLogger.log(
+                    tag = "scan_repository",
+                    message = "Scan lock denied",
+                    level = "WARN",
+                    metadata = mapOf("scan_type" to normalizedType)
+                )
                 throw ScanAlreadyRunningException("Уже идёт проверка. Нажмите «Посмотреть текущую проверку» на главном экране.")
             }
 
@@ -130,6 +146,11 @@ class ScanRepository(private val context: Context) {
 
                 val preparedApk = withContext(Dispatchers.IO) { prepareApkForScan(apkUri) }
                 if (preparedApk == null) {
+                    AppLogger.log(
+                        tag = "scan_repository",
+                        message = "APK preparation failed",
+                        level = "WARN"
+                    )
                     emit(
                         ScanProgress(
                             currentApp = "Не удалось открыть выбранный APK-файл.",
@@ -142,6 +163,12 @@ class ScanRepository(private val context: Context) {
                 val (apkFile, displayName) = preparedApk
                 try {
                     if (!isValidApk(apkFile)) {
+                        AppLogger.log(
+                            tag = "scan_repository",
+                            message = "Invalid APK selected",
+                            level = "WARN",
+                            metadata = mapOf("display_name" to displayName)
+                        )
                         emit(
                             ScanProgress(
                                 currentApp = "Выбранный файл не является корректным APK.",
@@ -251,6 +278,15 @@ class ScanRepository(private val context: Context) {
             var serverChecksUsed = 0
 
             val total = allApps.size
+            AppLogger.log(
+                tag = "scan_repository",
+                message = "Scan app pool resolved",
+                metadata = mapOf(
+                    "scan_type" to normalizedType,
+                    "apps_total" to total.toString(),
+                    "server_enabled" to useServerDeepScan.toString()
+                )
+            )
             val threats = mutableListOf<ThreatInfo>()
             val startTime = System.currentTimeMillis()
             var notifId = 0
@@ -278,6 +314,13 @@ class ScanRepository(private val context: Context) {
 
                 val localThreat = runCatching {
                     withContext(Dispatchers.IO) { localThreatDetector.scan(app) }
+                }.onFailure { error ->
+                    AppLogger.logError(
+                        tag = "scan_repository",
+                        message = "Local detector failed",
+                        error = error,
+                        metadata = mapOf("package" to app.packageName)
+                    )
                 }.getOrNull()
 
                 val shouldUseServerForApp = useServerDeepScan &&
@@ -290,6 +333,16 @@ class ScanRepository(private val context: Context) {
                         withContext(Dispatchers.IO) {
                             checkWithServerDeepScan(app, accessToken.orEmpty(), normalizedType)
                         }
+                    }.onFailure { error ->
+                        AppLogger.logError(
+                            tag = "scan_repository",
+                            message = "Server deep scan failed for app",
+                            error = error,
+                            metadata = mapOf(
+                                "scan_type" to normalizedType,
+                                "package" to app.packageName
+                            )
+                        )
                     }.getOrElse { emptyList() }
                     mergeThreats(localThreat, serverThreats)
                 } else {
@@ -342,6 +395,15 @@ class ScanRepository(private val context: Context) {
                     savedId = savedId
                 )
             )
+            AppLogger.log(
+                tag = "scan_repository",
+                message = "Scan completed",
+                metadata = mapOf(
+                    "scan_type" to normalizedType,
+                    "total_scanned" to total.toString(),
+                    "threats_found" to threats.size.toString()
+                )
+            )
         } finally {
             if (manageNotifications) {
                 NotificationHelper.cancelScanNotification(context)
@@ -386,7 +448,18 @@ class ScanRepository(private val context: Context) {
 
             val job = startResponse.body()?.scan
             val scanId = job?.id
-            if (!startResponse.isSuccessful || scanId.isNullOrBlank()) return emptyList()
+            if (!startResponse.isSuccessful || scanId.isNullOrBlank()) {
+                AppLogger.log(
+                    tag = "scan_repository",
+                    message = "Deep scan start rejected",
+                    level = "WARN",
+                    metadata = mapOf(
+                        "package" to app.packageName,
+                        "status_code" to startResponse.code().toString()
+                    )
+                )
+                return emptyList()
+            }
 
             if (job?.nextAction.equals("upload_apk", ignoreCase = true) && apkFile.exists()) {
                 val uploadResponse = ApiClient.executeShieldCall { api ->
@@ -398,6 +471,16 @@ class ScanRepository(private val context: Context) {
                     )
                 }
                 if (!uploadResponse.isSuccessful) {
+                    AppLogger.log(
+                        tag = "scan_repository",
+                        message = "APK upload rejected",
+                        level = "WARN",
+                        metadata = mapOf(
+                            "scan_id" to scanId,
+                            "package" to app.packageName,
+                            "status_code" to uploadResponse.code().toString()
+                        )
+                    )
                     return emptyList()
                 }
             }
@@ -407,7 +490,18 @@ class ScanRepository(private val context: Context) {
                 val pollResponse = ApiClient.executeShieldCall { api ->
                     api.getDeepScan("Bearer $accessToken", scanId)
                 }
-                if (!pollResponse.isSuccessful) return emptyList()
+                if (!pollResponse.isSuccessful) {
+                    AppLogger.log(
+                        tag = "scan_repository",
+                        message = "Deep scan polling rejected",
+                        level = "WARN",
+                        metadata = mapOf(
+                            "scan_id" to scanId,
+                            "status_code" to pollResponse.code().toString()
+                        )
+                    )
+                    return emptyList()
+                }
 
                 val currentJob = pollResponse.body()?.scan ?: return emptyList()
                 when (currentJob.status.uppercase()) {
@@ -418,7 +512,16 @@ class ScanRepository(private val context: Context) {
                 }
             }
             emptyList()
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            AppLogger.logError(
+                tag = "scan_repository",
+                message = "Deep scan exception",
+                error = error,
+                metadata = mapOf(
+                    "package" to app.packageName,
+                    "scan_type" to scanType
+                )
+            )
             emptyList()
         }
     }

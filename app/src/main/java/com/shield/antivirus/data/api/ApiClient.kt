@@ -1,6 +1,7 @@
 package com.shield.antivirus.data.api
 
 import com.shield.antivirus.BuildConfig
+import com.shield.antivirus.util.AppLogger
 import okhttp3.CertificatePinner
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -88,8 +89,23 @@ object ApiClient {
                 if (response.isSuccessful || !shouldFailover(response) || !hasMoreEndpoints) {
                     return response
                 }
+                AppLogger.log(
+                    tag = "api_client",
+                    message = "Shield endpoint failed, trying next",
+                    level = "WARN",
+                    metadata = mapOf(
+                        "endpoint_index" to index.toString(),
+                        "status_code" to response.code().toString()
+                    )
+                )
                 lastResponse = response
             } catch (error: Exception) {
+                AppLogger.logError(
+                    tag = "api_client",
+                    message = "Shield call exception",
+                    error = error,
+                    metadata = mapOf("endpoint_index" to index.toString())
+                )
                 if (index == shieldApis.lastIndex) {
                     throw error
                 }

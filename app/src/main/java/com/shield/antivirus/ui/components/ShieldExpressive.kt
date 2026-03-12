@@ -409,11 +409,12 @@ fun ShieldSectionHeader(
 
 @Composable
 fun ShieldStatusChip(
-    label: String,
+    label: String? = null,
     icon: ImageVector,
     color: Color,
     modifier: Modifier = Modifier
 ) {
+    val hasLabel = !label.isNullOrBlank()
     Surface(
         modifier = modifier,
         shape = CircleShape,
@@ -422,12 +423,18 @@ fun ShieldStatusChip(
         border = BorderStroke(1.dp, color.copy(alpha = 0.18f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = if (hasLabel) {
+                Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            } else {
+                Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+            },
+            horizontalArrangement = Arrangement.spacedBy(if (hasLabel) 8.dp else 0.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
-            Text(label, style = MaterialTheme.typography.labelMedium, color = color)
+            if (hasLabel) {
+                Text(label.orEmpty(), style = MaterialTheme.typography.labelMedium, color = color)
+            }
         }
     }
 }

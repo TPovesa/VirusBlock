@@ -13,6 +13,7 @@ import com.shield.antivirus.data.model.RegisterRequest
 import com.shield.antivirus.data.model.User
 import com.shield.antivirus.data.model.VerifyCodeRequest
 import com.shield.antivirus.data.security.ShieldSessionManager
+import com.shield.antivirus.util.AppLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.ConnectException
@@ -74,6 +75,11 @@ class AuthRepository(context: Context) {
                 val challengeId = body?.challengeId
                 val targetEmail = body?.email ?: normalizedEmail
                 if (body?.success == true && !challengeId.isNullOrBlank()) {
+                    AppLogger.log(
+                        tag = "auth_repository",
+                        message = "Register challenge sent",
+                        metadata = mapOf("email_domain" to normalizedEmail.substringAfter('@', missingDelimiterValue = "unknown"))
+                    )
                     AuthResult.CodeSent(
                         email = targetEmail,
                         challengeId = challengeId,
@@ -122,6 +128,11 @@ class AuthRepository(context: Context) {
                 val challengeId = body?.challengeId
                 val targetEmail = body?.email ?: normalizedEmail
                 if (body?.success == true && !challengeId.isNullOrBlank()) {
+                    AppLogger.log(
+                        tag = "auth_repository",
+                        message = "Login challenge sent",
+                        metadata = mapOf("email_domain" to normalizedEmail.substringAfter('@', missingDelimiterValue = "unknown"))
+                    )
                     AuthResult.CodeSent(
                         email = targetEmail,
                         challengeId = challengeId,
@@ -241,6 +252,7 @@ class AuthRepository(context: Context) {
         }
 
     suspend fun logout() {
+        AppLogger.log(tag = "auth_repository", message = "Logout requested")
         sessionManager.logoutRemoteIfPossible()
         sessionManager.clearLocalSession()
     }
@@ -286,6 +298,11 @@ class AuthRepository(context: Context) {
 
             val body = response.body()
             if (body?.success == true && body.user != null && sessionManager.persistAuth(body)) {
+                AppLogger.log(
+                    tag = "auth_repository",
+                    message = "Auth code verified",
+                    metadata = mapOf("user_id" to body.user.id)
+                )
                 AuthResult.Success(User(body.user.id, body.user.name, body.user.email))
             } else {
                 AuthResult.Error(body?.error ?: "Код не подтверждён")
@@ -315,6 +332,11 @@ class AuthRepository(context: Context) {
 
         val body = response.body()
         return if (body?.success == true && body.user != null && sessionManager.persistAuth(body)) {
+            AppLogger.log(
+                tag = "auth_repository",
+                message = "Direct register success",
+                metadata = mapOf("user_id" to body.user.id)
+            )
             AuthResult.Success(User(body.user.id, body.user.name, body.user.email))
         } else {
             AuthResult.Error(body?.error ?: "Не удалось зарегистрироваться")
@@ -340,6 +362,11 @@ class AuthRepository(context: Context) {
 
         val body = response.body()
         return if (body?.success == true && body.user != null && sessionManager.persistAuth(body)) {
+            AppLogger.log(
+                tag = "auth_repository",
+                message = "Direct login success",
+                metadata = mapOf("user_id" to body.user.id)
+            )
             AuthResult.Success(User(body.user.id, body.user.name, body.user.email))
         } else {
             AuthResult.Error(body?.error ?: "Не удалось войти")

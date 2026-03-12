@@ -13,6 +13,7 @@ import com.shield.antivirus.data.repository.InsightRepository
 import com.shield.antivirus.data.repository.ScanAlreadyRunningException
 import com.shield.antivirus.data.repository.ScanProgress
 import com.shield.antivirus.data.repository.ScanRepository
+import com.shield.antivirus.util.AppLogger
 import com.shield.antivirus.worker.DeepScanWorker
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -67,6 +68,15 @@ class ScanViewModel(private val context: Context) : ViewModel() {
         scanJob?.cancel()
         workObserverJob?.cancel()
         scanJob = viewModelScope.launch {
+            AppLogger.log(
+                tag = "scan_view_model",
+                message = "startScan called",
+                metadata = mapOf(
+                    "scan_type" to scanType.uppercase(),
+                    "selected_count" to selectedPackages.size.toString(),
+                    "has_apk_uri" to (!apkUri.isNullOrBlank()).toString()
+                )
+            )
             var activeType = prefs.activeScanType.first()
             val activeStartedAt = prefs.activeScanStartedAt.first()
             val activeTooOld = activeType.isNotBlank() &&
@@ -81,6 +91,12 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                 activeDeepWorkId.isNotBlank() &&
                 scanType != "QUICK"
             if (activeType.isNotBlank() && !attachToRunningDeep) {
+                AppLogger.log(
+                    tag = "scan_view_model",
+                    message = "startScan rejected: another active scan",
+                    level = "WARN",
+                    metadata = mapOf("active_type" to activeType)
+                )
                 _progress.value = ScanProgress(
                     currentApp = "Уже идёт ${scanTypeLabel(activeType)}. Нажмите «Посмотреть текущую проверку» на главном экране.",
                     scannedCount = 0,
@@ -90,14 +106,24 @@ class ScanViewModel(private val context: Context) : ViewModel() {
             }
 
             val guest = prefs.isGuest.first()
-            if (guest) {
+            val normalizedType = scanType.uppercase()
+            if (guest && normalizedType != "QUICK") {
+                AppLogger.log(
+                    tag = "scan_view_model",
+                    message = "Guest denied non-quick scan",
+                    level = "WARN",
+                    metadata = mapOf("scan_type" to normalizedType)
+                )
                 _guestLimitReached.value = true
                 _progress.value = ScanProgress(
-                    currentApp = "В гостевом режиме запуск проверок заблокирован. Войдите в аккаунт.",
+                    currentApp = "В гостевом режиме доступна только быстрая проверка. Войдите в аккаунт для остальных режимов.",
                     scannedCount = 0,
                     totalCount = 1
                 )
                 return@launch
+            }
+            if (guest) {
+                _guestLimitReached.value = false
             }
 
             val selectedCountToday = repo.getDailyLaunchCount(scanType)
@@ -121,6 +147,12 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                 else -> null
             }
             if (!isDeveloperMode && !dailyLimitMessage.isNullOrBlank()) {
+                AppLogger.log(
+                    tag = "scan_view_model",
+                    message = "Scan limited by daily quota",
+                    level = "WARN",
+                    metadata = mapOf("scan_type" to normalizedType)
+                )
                 _progress.value = ScanProgress(
                     currentApp = dailyLimitMessage,
                     scannedCount = 0,
@@ -132,13 +164,13 @@ class ScanViewModel(private val context: Context) : ViewModel() {
             _guestLimitReached.value = false
             _progress.value = ScanProgress(totalCount = 1)
 
-            if (!guest && scanType != "QUICK") {
+            if (!guest && normalizedType != "QUICK") {
                 val existingWorkId = prefs.activeDeepScanWorkId.first()
                     .takeIf { it.isNotBlank() }
                     ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
                 val existingType = prefs.activeDeepScanType.first()
                 val reusableWorkId = existingWorkId
-                    ?.takeIf { existingType == scanType && isWorkReusable(it) }
+                    ?.takeIf { existingType == normalizedType && isWorkReusable(it) }
 
                 val workId = if (reusableWorkId != null) {
                     reusableWorkId
@@ -148,11 +180,11 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                     }
                     val newId = DeepScanWorker.enqueue(
                         context = context.applicationContext,
-                        scanType = scanType,
+                        scanType = normalizedType,
                         selectedPackages = selectedPackages,
                         apkUri = apkUri
                     )
-                    prefs.setActiveDeepScan(newId.toString(), scanType)
+                    prefs.setActiveDeepScan(newId.toString(), normalizedType)
                     newId
                 }
                 observeDeepScan(workId)
@@ -168,12 +200,22 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                     _progress.value = progress
                 }
             } catch (error: ScanAlreadyRunningException) {
+                AppLogger.logError(
+                    tag = "scan_view_model",
+                    message = "ScanAlreadyRunningException",
+                    error = error
+                )
                 _progress.value = ScanProgress(
                     currentApp = error.message ?: "Уже выполняется другая проверка",
                     scannedCount = 0,
                     totalCount = 1
                 )
             } catch (error: Exception) {
+                AppLogger.logError(
+                    tag = "scan_view_model",
+                    message = "Quick scan failed",
+                    error = error
+                )
                 _progress.value = ScanProgress(
                     currentApp = "Проверка завершилась с ошибкой: ${error.message ?: "неизвестно"}",
                     scannedCount = 0,
@@ -189,6 +231,11 @@ class ScanViewModel(private val context: Context) : ViewModel() {
             while (true) {
                 val info = runCatching { workManager.getWorkInfoById(workId).get() }.getOrNull()
                 if (info == null) {
+                    AppLogger.log(
+                        tag = "scan_view_model",
+                        message = "Deep scan work info lost",
+                        level = "WARN"
+                    )
                     prefs.clearActiveDeepScan()
                     _progress.value = _progress.value?.copy(
                         currentApp = "Глубокая проверка была прервана. Запустите её заново."
@@ -213,6 +260,11 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                     if (savedId > 0L) {
                         _currentResult.value = repo.getResultById(savedId)
                     }
+                    AppLogger.log(
+                        tag = "scan_view_model",
+                        message = "Deep scan finished",
+                        metadata = mapOf("saved_id" to savedId.toString())
+                    )
                     break
                 }
                 delay(400)
@@ -229,6 +281,7 @@ class ScanViewModel(private val context: Context) : ViewModel() {
             prefs.clearActiveScan()
         }
         _progress.value = null
+        AppLogger.log(tag = "scan_view_model", message = "Scan cancelled by user")
     }
 
     fun loadResult(id: Long) {

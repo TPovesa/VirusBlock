@@ -42,7 +42,11 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 @Composable
-fun WelcomeEdgeDecorations(modifier: Modifier = Modifier) {
+fun WelcomeEdgeDecorations(
+    modifier: Modifier = Modifier,
+    parallaxX: Float = 0f,
+    parallaxY: Float = 0f
+) {
     val seed = remember { (System.nanoTime() and 0x7FFFFFFF).toInt() }
     val initialState = remember(seed) {
         val random = Random(seed)
@@ -59,6 +63,8 @@ fun WelcomeEdgeDecorations(modifier: Modifier = Modifier) {
             EdgeDecorativeShape(
                 spec = spec,
                 initial = initialState[index],
+                parallaxX = parallaxX,
+                parallaxY = parallaxY,
                 modifier = Modifier
                     .align(spec.alignment)
                     .offset(x = spec.offsetX, y = spec.offsetY)
@@ -71,6 +77,8 @@ fun WelcomeEdgeDecorations(modifier: Modifier = Modifier) {
 private fun EdgeDecorativeShape(
     spec: EdgeDecorSpec,
     initial: ShapeInitialState,
+    parallaxX: Float,
+    parallaxY: Float,
     modifier: Modifier = Modifier
 ) {
     val colors = MaterialTheme.colorScheme
@@ -102,6 +110,8 @@ private fun EdgeDecorativeShape(
             .size(spec.size)
             .graphicsLayer {
                 rotationZ = autoRotation + manualRotation.value
+                translationX = parallaxX.coerceIn(-1f, 1f) * (spec.parallaxFactor * 24f)
+                translationY = parallaxY.coerceIn(-1f, 1f) * (spec.parallaxFactor * 18f)
             }
             .clip(currentType.toShape())
             .background(
@@ -162,7 +172,8 @@ private data class EdgeDecorSpec(
     val offsetY: Dp = 0.dp,
     val spinDurationMillis: Int,
     val spinDirection: Float,
-    val colorSlot: Int
+    val colorSlot: Int,
+    val parallaxFactor: Float
 )
 
 private data class ShapeInitialState(
@@ -220,16 +231,16 @@ private val StarShape = androidx.compose.foundation.shape.GenericShape { size, _
 }
 
 private val EdgeDecorSpecs = listOf(
-    EdgeDecorSpec(Alignment.TopStart, size = 68.dp, offsetX = (-26).dp, offsetY = 30.dp, spinDurationMillis = 26000, spinDirection = 1f, colorSlot = 0),
-    EdgeDecorSpec(Alignment.TopStart, size = 44.dp, offsetX = 42.dp, offsetY = 8.dp, spinDurationMillis = 32000, spinDirection = -1f, colorSlot = 3),
-    EdgeDecorSpec(Alignment.TopEnd, size = 82.dp, offsetX = 26.dp, offsetY = 16.dp, spinDurationMillis = 29000, spinDirection = -1f, colorSlot = 1),
-    EdgeDecorSpec(Alignment.TopEnd, size = 52.dp, offsetX = (-42).dp, offsetY = 64.dp, spinDurationMillis = 34000, spinDirection = 1f, colorSlot = 2),
-    EdgeDecorSpec(Alignment.CenterStart, size = 56.dp, offsetX = (-24).dp, offsetY = (-22).dp, spinDurationMillis = 28000, spinDirection = 1f, colorSlot = 2),
-    EdgeDecorSpec(Alignment.CenterStart, size = 40.dp, offsetX = 18.dp, offsetY = 82.dp, spinDurationMillis = 36000, spinDirection = -1f, colorSlot = 0),
-    EdgeDecorSpec(Alignment.CenterEnd, size = 72.dp, offsetX = 24.dp, offsetY = (-16).dp, spinDurationMillis = 27000, spinDirection = -1f, colorSlot = 1),
-    EdgeDecorSpec(Alignment.CenterEnd, size = 48.dp, offsetX = (-18).dp, offsetY = 110.dp, spinDurationMillis = 35000, spinDirection = 1f, colorSlot = 3),
-    EdgeDecorSpec(Alignment.BottomStart, size = 80.dp, offsetX = (-22).dp, offsetY = (-46).dp, spinDurationMillis = 25000, spinDirection = 1f, colorSlot = 1),
-    EdgeDecorSpec(Alignment.BottomStart, size = 46.dp, offsetX = 54.dp, offsetY = (-14).dp, spinDurationMillis = 33000, spinDirection = -1f, colorSlot = 2),
-    EdgeDecorSpec(Alignment.BottomEnd, size = 64.dp, offsetX = 22.dp, offsetY = (-64).dp, spinDurationMillis = 30000, spinDirection = -1f, colorSlot = 0),
-    EdgeDecorSpec(Alignment.BottomEnd, size = 42.dp, offsetX = (-48).dp, offsetY = (-18).dp, spinDurationMillis = 37000, spinDirection = 1f, colorSlot = 3)
+    EdgeDecorSpec(Alignment.TopStart, size = 68.dp, offsetX = (-26).dp, offsetY = 30.dp, spinDurationMillis = 26000, spinDirection = 1f, colorSlot = 0, parallaxFactor = 1.0f),
+    EdgeDecorSpec(Alignment.TopStart, size = 44.dp, offsetX = 42.dp, offsetY = 8.dp, spinDurationMillis = 32000, spinDirection = -1f, colorSlot = 3, parallaxFactor = 0.85f),
+    EdgeDecorSpec(Alignment.TopEnd, size = 82.dp, offsetX = 26.dp, offsetY = 16.dp, spinDurationMillis = 29000, spinDirection = -1f, colorSlot = 1, parallaxFactor = 1.1f),
+    EdgeDecorSpec(Alignment.TopEnd, size = 52.dp, offsetX = (-42).dp, offsetY = 64.dp, spinDurationMillis = 34000, spinDirection = 1f, colorSlot = 2, parallaxFactor = 0.9f),
+    EdgeDecorSpec(Alignment.CenterStart, size = 56.dp, offsetX = (-24).dp, offsetY = (-22).dp, spinDurationMillis = 28000, spinDirection = 1f, colorSlot = 2, parallaxFactor = 0.8f),
+    EdgeDecorSpec(Alignment.CenterStart, size = 40.dp, offsetX = 18.dp, offsetY = 82.dp, spinDurationMillis = 36000, spinDirection = -1f, colorSlot = 0, parallaxFactor = 0.6f),
+    EdgeDecorSpec(Alignment.CenterEnd, size = 72.dp, offsetX = 24.dp, offsetY = (-16).dp, spinDurationMillis = 27000, spinDirection = -1f, colorSlot = 1, parallaxFactor = 1.0f),
+    EdgeDecorSpec(Alignment.CenterEnd, size = 48.dp, offsetX = (-18).dp, offsetY = 110.dp, spinDurationMillis = 35000, spinDirection = 1f, colorSlot = 3, parallaxFactor = 0.65f),
+    EdgeDecorSpec(Alignment.BottomStart, size = 80.dp, offsetX = (-22).dp, offsetY = (-46).dp, spinDurationMillis = 25000, spinDirection = 1f, colorSlot = 1, parallaxFactor = 1.15f),
+    EdgeDecorSpec(Alignment.BottomStart, size = 46.dp, offsetX = 54.dp, offsetY = (-14).dp, spinDurationMillis = 33000, spinDirection = -1f, colorSlot = 2, parallaxFactor = 0.75f),
+    EdgeDecorSpec(Alignment.BottomEnd, size = 64.dp, offsetX = 22.dp, offsetY = (-64).dp, spinDurationMillis = 30000, spinDirection = -1f, colorSlot = 0, parallaxFactor = 0.95f),
+    EdgeDecorSpec(Alignment.BottomEnd, size = 42.dp, offsetX = (-48).dp, offsetY = (-18).dp, spinDurationMillis = 37000, spinDirection = 1f, colorSlot = 3, parallaxFactor = 0.7f)
 )

@@ -95,6 +95,12 @@ interface ShieldApi {
         @Body request: ExplainScanRequest
     ): Response<ExplainScanResponse>
 
+    @POST("api/logs/client")
+    suspend fun uploadClientLogs(
+        @Header("Authorization") token: String,
+        @Body request: ClientLogsUploadRequest
+    ): Response<BasicResponse>
+
     // --- Purchases ---
     @POST("api/purchases")
     suspend fun savePurchase(

@@ -184,6 +184,7 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                     navController.navigate(Screen.Scan.createRoute(type))
                 },
                 onOpenHistory = { navController.navigate(Screen.History.route) },
+                onOpenLatestReport = { id -> navController.navigate(Screen.Results.createRoute(id)) },
                 onOpenSettings = { navController.navigate(Screen.Settings.route) },
                 onOpenLogin = { navController.navigate(Screen.Login.route) },
                 onOpenRegister = { navController.navigate(Screen.Register.route) }

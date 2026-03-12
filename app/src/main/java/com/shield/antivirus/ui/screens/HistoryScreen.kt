@@ -171,11 +171,7 @@ private fun HistoryCard(result: ScanResult, onClick: () -> Unit) {
                 fontWeight = FontWeight.Bold
             )
             ShieldStatusChip(
-                label = if (result.threatsFound > 0) {
-                    "${severityLabel(maxSeverity)} • ${result.threatsFound}"
-                } else {
-                    "Чисто"
-                },
+                label = null,
                 icon = severityIcon(maxSeverity),
                 color = historyAccent(maxSeverity)
             )
@@ -219,14 +215,6 @@ private fun severityIcon(severity: com.shield.antivirus.data.model.ThreatSeverit
     com.shield.antivirus.data.model.ThreatSeverity.MEDIUM -> Icons.Filled.BugReport
     com.shield.antivirus.data.model.ThreatSeverity.LOW -> Icons.Filled.Info
     null -> Icons.Filled.Security
-}
-
-private fun severityLabel(severity: com.shield.antivirus.data.model.ThreatSeverity?): String = when (severity) {
-    com.shield.antivirus.data.model.ThreatSeverity.CRITICAL -> "Критический"
-    com.shield.antivirus.data.model.ThreatSeverity.HIGH -> "Высокий"
-    com.shield.antivirus.data.model.ThreatSeverity.MEDIUM -> "Средний"
-    com.shield.antivirus.data.model.ThreatSeverity.LOW -> "Низкий"
-    null -> "Чисто"
 }
 
 private fun severityRank(severity: com.shield.antivirus.data.model.ThreatSeverity): Int = when (severity) {
