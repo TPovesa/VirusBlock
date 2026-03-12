@@ -67,21 +67,25 @@ class HomeViewModel(private val context: Context) : ViewModel() {
             }
 
             val primarySnapshotFlow = combine(
-                prefs.isLoggedIn,
-                prefs.userName,
-                prefs.lastScanTime,
-                prefs.realtimeProtection,
-                prefs.isGuest,
+                combine(
+                    prefs.isLoggedIn,
+                    prefs.userName,
+                    prefs.lastScanTime,
+                    prefs.realtimeProtection,
+                    prefs.isGuest
+                ) { isLoggedIn, name, lastScan, protection, isGuest ->
+                    PrimarySnapshot(
+                        isLoggedIn = isLoggedIn,
+                        name = name,
+                        lastScan = lastScan,
+                        protection = protection,
+                        isGuest = isGuest,
+                        isDeveloperMode = false
+                    )
+                },
                 prefs.isDeveloperMode
-            ) { isLoggedIn, name, lastScan, protection, isGuest, isDeveloperMode ->
-                PrimarySnapshot(
-                    isLoggedIn = isLoggedIn,
-                    name = name,
-                    lastScan = lastScan,
-                    protection = protection,
-                    isGuest = isGuest,
-                    isDeveloperMode = isDeveloperMode
-                )
+            ) { snapshot, isDeveloperMode ->
+                snapshot.copy(isDeveloperMode = isDeveloperMode)
             }
 
             val activeScanSnapshotFlow = combine(
