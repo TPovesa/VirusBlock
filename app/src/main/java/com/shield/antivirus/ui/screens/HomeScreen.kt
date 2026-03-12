@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -95,7 +95,7 @@ fun HomeScreen(
 
     ShieldBackdrop {
         val current = state
-        if (sessionGateIsGuest && (current == null || !current.isGuest)) {
+        if (sessionGateIsGuest && current == null) {
             ShieldLoadingState(
                 title = "Готовим режим гостя",
                 subtitle = "Применяем ограничения доступа",
@@ -140,6 +140,7 @@ private fun HomeContent(
     onExitGuestMode: () -> Unit
 ) {
     val context = LocalContext.current
+    val isGuestMode = state.isGuest && !state.isLoggedIn
     val scanLocked = state.isScanActive
     val statusColor = when {
         state.lastScanThreatCount > 0 -> MaterialTheme.colorScheme.warningTone
@@ -150,7 +151,7 @@ private fun HomeContent(
     val selectiveLimitReached = state.selectiveScansToday >= 3
     val apkLimitReached = state.apkScansToday >= 3
 
-    var guestIntroLoading by rememberSaveable(state.isGuest) { mutableStateOf(state.isGuest) }
+    var guestIntroLoading by rememberSaveable(isGuestMode) { mutableStateOf(isGuestMode) }
     var showAppPicker by rememberSaveable { mutableStateOf(false) }
     var modeMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var actionOverlay by rememberSaveable { mutableStateOf(false) }
@@ -173,8 +174,8 @@ private fun HomeContent(
         }
     }
 
-    LaunchedEffect(state.isGuest) {
-        if (state.isGuest) {
+    LaunchedEffect(isGuestMode) {
+        if (isGuestMode) {
             guestIntroLoading = true
             delay(1100)
             guestIntroLoading = false
@@ -187,17 +188,17 @@ private fun HomeContent(
         title = "ShieldSecurity",
         subtitle = null,
         leadingContent = {
-            IconButton(onClick = if (state.isGuest) onOpenLogin else onOpenHistory) {
+            IconButton(onClick = if (isGuestMode) onOpenLogin else onOpenHistory) {
                 Icon(Icons.Filled.History, contentDescription = "История")
             }
         },
         actions = {
-            IconButton(onClick = if (state.isGuest) onOpenLogin else onOpenSettings) {
+            IconButton(onClick = if (isGuestMode) onOpenLogin else onOpenSettings) {
                 Icon(Icons.Filled.Settings, contentDescription = "Настройки")
             }
         }
     ) { padding ->
-        if (state.isGuest && guestIntroLoading) {
+        if (isGuestMode && guestIntroLoading) {
             ShieldLoadingState(
                 title = "Готовим режим гостя",
                 subtitle = "Применяем ограничения доступа",
@@ -240,7 +241,7 @@ private fun HomeContent(
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ShieldStatusChip(
-                            label = if (state.isGuest) "Гость" else "Последняя: ${formatTime(state.lastScanTime)}",
+                            label = if (isGuestMode) "Гость" else "Последняя: ${formatTime(state.lastScanTime)}",
                             icon = Icons.Filled.Security,
                             color = statusColor
                         )
@@ -332,14 +333,14 @@ private fun HomeContent(
                     icon = Icons.Filled.Security,
                     accent = MaterialTheme.colorScheme.tertiary,
                     enabled = !fullLimitReached && !scanLocked,
-                    onAction = {
-                        modeMessage = null
-                        actionOverlay = true
-                        when {
-                            state.isGuest -> onOpenLogin()
-                            scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "FULL" })
-                            fullLimitReached -> modeMessage = "Дневной лимит: глубокая проверка доступна 1 раз в сутки"
-                            else -> onStartScan("FULL", null, null)
+                        onAction = {
+                            modeMessage = null
+                            actionOverlay = true
+                            when {
+                                isGuestMode -> onOpenLogin()
+                                scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "FULL" })
+                                fullLimitReached -> modeMessage = "Дневной лимит: глубокая проверка доступна 1 раз в сутки"
+                                else -> onStartScan("FULL", null, null)
                         }
                     }
                 )
@@ -375,7 +376,7 @@ private fun HomeContent(
                             modeMessage = null
                             actionOverlay = true
                             when {
-                                state.isGuest -> onOpenLogin()
+                                isGuestMode -> onOpenLogin()
                                 scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "SELECTIVE" })
                                 selectiveLimitReached -> {
                                     modeMessage = "Дневной лимит: выборочная проверка доступна 3 раза в сутки"
@@ -427,7 +428,7 @@ private fun HomeContent(
                                 modeMessage = null
                                 actionOverlay = true
                                 when {
-                                    state.isGuest -> onOpenLogin()
+                                    isGuestMode -> onOpenLogin()
                                     scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "APK" })
                                     apkLimitReached -> {
                                         modeMessage = "Дневной лимит: проверка APK доступна 3 раза в сутки"
@@ -436,7 +437,7 @@ private fun HomeContent(
                                 }
                             },
                             colors = ShieldPrimaryButtonColors(
-                                if (!state.isGuest && !apkLimitReached && !scanLocked) {
+                                if (!isGuestMode && !apkLimitReached && !scanLocked) {
                                     MaterialTheme.colorScheme.signalTone
                                 } else {
                                     MaterialTheme.colorScheme.outline
@@ -444,13 +445,13 @@ private fun HomeContent(
                             ),
                             shape = MaterialTheme.shapes.medium
                         ) {
-                            Text(if (state.isGuest) "Войти" else "Выбрать")
+                            Text(if (isGuestMode) "Войти" else "Выбрать")
                         }
                     }
                 }
             }
 
-            if (state.isGuest) {
+            if (isGuestMode) {
                 item {
                     ShieldPanel(accent = MaterialTheme.colorScheme.secondary) {
                         Row(
@@ -518,17 +519,23 @@ private fun ModeWideCard(
     enabled: Boolean,
     onAction: () -> Unit
 ) {
-    val contentColor = if (enabled) accent else MaterialTheme.colorScheme.outline
+    val contentColor = if (enabled) accent else MaterialTheme.colorScheme.onSurfaceVariant
     val containerColor = if (enabled) {
         accent.copy(alpha = 0.12f)
     } else {
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.86f)
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f)
+    }
+    val borderColor = if (enabled) {
+        accent.copy(alpha = 0.34f)
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.9f)
     }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        shape = MaterialTheme.shapes.large
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, borderColor)
     ) {
         Row(
             modifier = Modifier
@@ -550,7 +557,7 @@ private fun ModeWideCard(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -561,7 +568,7 @@ private fun ModeWideCard(
                     .size(56.dp)
                     .clip(CircleShape)
                     .background(
-                        if (enabled) accent.copy(alpha = 0.18f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
+                        if (enabled) accent.copy(alpha = 0.18f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
                     )
             ) {
                 Icon(
@@ -584,23 +591,30 @@ private fun ModeGridCard(
     onAction: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val contentColor = if (enabled) accent else MaterialTheme.colorScheme.outline
+    val contentColor = if (enabled) accent else MaterialTheme.colorScheme.onSurfaceVariant
     val containerColor = if (enabled) {
         accent.copy(alpha = 0.10f)
     } else {
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f)
+    }
+    val borderColor = if (enabled) {
+        accent.copy(alpha = 0.34f)
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.9f)
     }
 
     Card(
         modifier = modifier.heightIn(min = 166.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        shape = MaterialTheme.shapes.large
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, borderColor)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(
                 modifier = Modifier
@@ -614,16 +628,16 @@ private fun ModeGridCard(
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
                 fontWeight = FontWeight.Bold
             )
-            Spacer(Modifier.weight(1f))
             Box(
                 modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
+                    .padding(top = 10.dp)
                     .size(66.dp)
                     .clip(CircleShape)
-                    .background(if (enabled) accent.copy(alpha = 0.16f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.10f)),
+                    .background(if (enabled) accent.copy(alpha = 0.16f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
                 contentAlignment = Alignment.Center
             ) {
                 IconButton(

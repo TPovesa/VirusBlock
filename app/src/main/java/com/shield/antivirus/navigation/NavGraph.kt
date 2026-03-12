@@ -203,10 +203,10 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
             val vm: HomeViewModel = viewModel(factory = HomeViewModel.Factory(context))
             HomeScreen(
                 viewModel = vm,
-                sessionGateIsGuest = gate.isGuest || guestEntryPending,
+                sessionGateIsGuest = (gate.isGuest && !gate.isLoggedIn) || guestEntryPending,
                 onStartScan = { type, selectedPackage, apkUri ->
                     throttledNavigate {
-                        if (gate.isGuest && !type.equals("QUICK", ignoreCase = true)) {
+                        if (gate.isGuest && !gate.isLoggedIn && !type.equals("QUICK", ignoreCase = true)) {
                             navController.safeNavigate(Screen.Login.route)
                         } else {
                             navController.navigate(Screen.Scan.createRoute(type, selectedPackage, apkUri)) {

@@ -147,6 +147,11 @@ Deep scan combines:
 - `APKiD` fingerprints for packers, obfuscators, and anti-analysis markers when `apkid` is installed
 - `Androguard` manifest/DEX analysis for hardcoded endpoints, public IPs, dynamic loaders, shell execution, and accessibility automation markers when installed
 - `Quark-Engine` behavior rules when `quark` and its rule set are installed
+- archive and native-string heuristics (resource config markers, nested payloads, native endpoint/IP markers)
+
+Deep scan execution is now two-stage:
+- Stage 1: metadata + hash reputation for `FULL/SELECTIVE`
+- Stage 2: automatic APK enrichment when risk remains suspicious (client upload), plus optional server-side APK fetch by hash if configured
 
 If VirusTotal is not configured, deep scan still runs heuristics and returns a result.
 
@@ -162,6 +167,10 @@ Then add to `.env`:
 - `APK_ANALYZER_PYTHON=/home/fatalerror/shield-backend/.venv-analyzers/bin/python`
 - `QUARK_RULES_DIR=/root/.quark-engine/quark-rules`
 - `APK_ANALYZER_TIMEOUT_MS=120000`
+- optional server-side APK fetch:
+  - `DEEP_SCAN_APK_FETCH_URL_TEMPLATE=https://your-apk-source.local/files/{sha256}.apk`
+  - `DEEP_SCAN_APK_FETCH_TIMEOUT_MS=12000`
+  - `DEEP_SCAN_APK_FETCH_MAX_BYTES=268435456`
 
 ## AI scan explain API
 

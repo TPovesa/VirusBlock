@@ -10,11 +10,15 @@ const {
     classifyVerdict
 } = require('../utils/deepScanHeuristics');
 const { runAnalyzer } = require('./apkStaticAnalysis');
+const { isAiConfigured, triageDeepScanFindings } = require('./aiExplainService');
 
 const VT_API_BASE = (process.env.VT_API_BASE || 'https://www.virustotal.com/api/v3').replace(/\/$/, '');
 const VT_TIMEOUT_MS = parseInt(process.env.VT_TIMEOUT_MS || '8000', 10);
 const UPLOAD_ROOT = process.env.DEEP_SCAN_UPLOAD_DIR || path.join(process.cwd(), 'storage', 'deep-scans');
 const MAX_UPLOAD_BYTES = parseInt(process.env.DEEP_SCAN_MAX_UPLOAD_BYTES || String(256 * 1024 * 1024), 10);
+const APK_FETCH_URL_TEMPLATE = String(process.env.DEEP_SCAN_APK_FETCH_URL_TEMPLATE || '').trim();
+const APK_FETCH_TIMEOUT_MS = parseInt(process.env.DEEP_SCAN_APK_FETCH_TIMEOUT_MS || '12000', 10);
+const APK_FETCH_MAX_BYTES = parseInt(process.env.DEEP_SCAN_APK_FETCH_MAX_BYTES || String(MAX_UPLOAD_BYTES), 10);
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const SCAN_MODE_LIMITS = Object.freeze({
     FULL: 1,
@@ -25,6 +29,42 @@ const PROCESSING_QUEUE = [];
 const ENQUEUED_IDS = new Set();
 let queueActive = false;
 let pendingResume = false;
+
+const LOW_SIGNAL_FINDING_TYPES = new Set([
+    'install_source',
+    'recent_sideload',
+    'metadata_gap',
+    'signature_gap',
+    'certificate_gap',
+    'virustotal_lookup',
+    'platform_age',
+    'update_staleness'
+]);
+
+const HIGH_SIGNAL_FINDING_TYPES = new Set([
+    'virustotal',
+    'hash_mismatch',
+    'apkid',
+    'yara',
+    'dynamic_loader',
+    'shell_exec',
+    'accessibility_automation',
+    'telegram_c2',
+    'discord_webhook',
+    'anti_analysis',
+    'hardcoded_ip',
+    'cleartext_endpoint',
+    'permission_combo'
+]);
+
+const AGGRESSIVE_FINDING_TYPES_FOR_BENIGN = new Set([
+    'install_source',
+    'recent_sideload',
+    'metadata_gap',
+    'signature_gap',
+    'certificate_gap',
+    'virustotal_lookup'
+]);
 
 function parseJson(value, fallback) {
     if (!value) return fallback;
@@ -59,6 +99,254 @@ function verdictRank(verdict) {
         case 'low_risk': return 2;
         default: return 1;
     }
+}
+
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function findingScore(finding) {
+    const explicit = Number(finding?.score);
+    if (Number.isFinite(explicit) && explicit > 0) {
+        return explicit;
+    }
+    const severity = severityRank(finding?.severity);
+    if (severity >= 4) return 20;
+    if (severity >= 3) return 14;
+    if (severity >= 2) return 8;
+    return 3;
+}
+
+function hasStrongThreatSignals({ findings, vt, riskScore }) {
+    const malicious = Number(vt?.malicious || 0);
+    const suspicious = Number(vt?.suspicious || 0);
+    if (malicious >= 1) {
+        return true;
+    }
+    if (riskScore >= 75) {
+        return true;
+    }
+    if (suspicious >= 6 && riskScore >= 40) {
+        return true;
+    }
+
+    const hasCritical = findings.some((finding) => severityRank(finding.severity) >= 4);
+    if (hasCritical) {
+        return true;
+    }
+
+    const hasHighSignalFinding = findings.some((finding) => {
+        if (HIGH_SIGNAL_FINDING_TYPES.has(finding.type)) {
+            if (finding.type !== 'permission_combo') {
+                return true;
+            }
+            return severityRank(finding.severity) >= 3;
+        }
+        return false;
+    });
+    return hasHighSignalFinding;
+}
+
+function downgradeFindingForBenign(finding) {
+    if (!finding || typeof finding !== 'object') {
+        return finding;
+    }
+
+    if (finding.type === 'install_source') {
+        return {
+            ...finding,
+            severity: 'low',
+            score: Math.min(2, findingScore(finding)),
+            title: 'Unknown install source (weak signal)',
+            detail: 'Unknown installer alone is not sufficient evidence of malware without stronger indicators.'
+        };
+    }
+
+    if (finding.type === 'recent_sideload') {
+        return {
+            ...finding,
+            severity: 'low',
+            score: Math.min(2, findingScore(finding))
+        };
+    }
+
+    if (finding.type === 'permission_volume') {
+        return {
+            ...finding,
+            severity: 'low',
+            score: Math.min(6, findingScore(finding))
+        };
+    }
+
+    return finding;
+}
+
+function buildCalmRecommendations(recommendations, fallbackLine) {
+    const safe = (Array.isArray(recommendations) ? recommendations : [])
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .filter((item) => !/удалите apk|удалите приложение|троян|malware/i.test(item));
+    return Array.from(new Set([fallbackLine, ...safe])).slice(0, 4);
+}
+
+function applyDeterministicTriage({ verdict, riskScore, findings, recommendations, vt }) {
+    const originalFindings = Array.isArray(findings) ? findings : [];
+    const strongSignals = hasStrongThreatSignals({
+        findings: originalFindings,
+        vt,
+        riskScore
+    });
+
+    if (strongSignals) {
+        return {
+            verdict,
+            riskScore,
+            findings: originalFindings,
+            recommendations,
+            triage: {
+                applied: false,
+                source: 'deterministic',
+                reason: 'strong_signals_present',
+                benign_probability: 0
+            },
+            strongSignals
+        };
+    }
+
+    const downgraded = dedupeFindings(originalFindings.map(downgradeFindingForBenign));
+    const noisyOnly = downgraded.every((finding) => LOW_SIGNAL_FINDING_TYPES.has(finding.type));
+    if (noisyOnly) {
+        return {
+            verdict: 'clean',
+            riskScore: Math.min(10, riskScore),
+            findings: [],
+            recommendations: buildCalmRecommendations(
+                recommendations,
+                'Сильных серверных индикаторов угрозы не найдено.'
+            ),
+            triage: {
+                applied: true,
+                source: 'deterministic',
+                reason: 'noisy_only_signals',
+                benign_probability: 0.92
+            },
+            strongSignals
+        };
+    }
+
+    const filteredForBenign = downgraded.filter((finding) => !AGGRESSIVE_FINDING_TYPES_FOR_BENIGN.has(finding.type));
+    const highSeverityLeft = filteredForBenign.filter((finding) => severityRank(finding.severity) >= 3).length;
+
+    if (verdictRank(verdict) >= verdictRank('suspicious') && riskScore <= 60 && highSeverityLeft === 0) {
+        return {
+            verdict: 'low_risk',
+            riskScore: clamp(Math.min(riskScore, 34), 20, 34),
+            findings: filteredForBenign.slice(0, 8),
+            recommendations: buildCalmRecommendations(
+                recommendations,
+                'Найдены слабые/контекстные риски, но явных признаков вредоносной активности нет.'
+            ),
+            triage: {
+                applied: true,
+                source: 'deterministic',
+                reason: 'downgraded_without_strong_signals',
+                benign_probability: 0.76
+            },
+            strongSignals
+        };
+    }
+
+    return {
+        verdict,
+        riskScore,
+        findings: downgraded,
+        recommendations,
+        triage: {
+            applied: false,
+            source: 'deterministic',
+            reason: 'no_override_needed',
+            benign_probability: 0.4
+        },
+        strongSignals
+    };
+}
+
+function applyAiTriageDecision(base, aiTriage) {
+    if (!aiTriage) {
+        return base;
+    }
+
+    if (base.strongSignals || aiTriage.benignProbability < 0.72) {
+        return {
+            ...base,
+            triage: {
+                ...base.triage,
+                ai: {
+                    applied: false,
+                    model: aiTriage.model || null,
+                    reason: aiTriage.reason || 'ai_threshold_not_met',
+                    benign_probability: aiTriage.benignProbability
+                }
+            }
+        };
+    }
+
+    const allowedVerdict = ['clean', 'low_risk'].includes(aiTriage.suggestedVerdict)
+        ? aiTriage.suggestedVerdict
+        : null;
+    if (!allowedVerdict || verdictRank(allowedVerdict) > verdictRank(base.verdict)) {
+        return {
+            ...base,
+            triage: {
+                ...base.triage,
+                ai: {
+                    applied: false,
+                    model: aiTriage.model || null,
+                    reason: aiTriage.reason || 'ai_verdict_rejected',
+                    benign_probability: aiTriage.benignProbability
+                }
+            }
+        };
+    }
+
+    const suppressTypes = new Set(Array.isArray(aiTriage.suppressTypes) ? aiTriage.suppressTypes : []);
+    const aiFilteredFindings = dedupeFindings(
+        (Array.isArray(base.findings) ? base.findings : [])
+            .map(downgradeFindingForBenign)
+            .filter((finding) => !suppressTypes.has(finding.type))
+            .filter((finding) => allowedVerdict !== 'clean' || !AGGRESSIVE_FINDING_TYPES_FOR_BENIGN.has(finding.type))
+    ).slice(0, 8);
+
+    const adjustedRisk = allowedVerdict === 'clean'
+        ? Math.min(base.riskScore, 12)
+        : clamp(Math.min(base.riskScore, 34), 20, 34);
+
+    const calmRecommendations = buildCalmRecommendations(
+        base.recommendations,
+        allowedVerdict === 'clean'
+            ? 'По серверным признакам приложение похоже на benign/чистое.'
+            : 'Риск низкий: сильных технических индикаторов вредоносного поведения не найдено.'
+    );
+
+    return {
+        ...base,
+        verdict: allowedVerdict,
+        riskScore: adjustedRisk,
+        findings: aiFilteredFindings,
+        recommendations: calmRecommendations,
+        triage: {
+            ...base.triage,
+            applied: true,
+            source: 'deterministic+ai',
+            reason: aiTriage.reason || 'ai_benign_override',
+            benign_probability: aiTriage.benignProbability,
+            ai: {
+                applied: true,
+                model: aiTriage.model || null,
+                benign_probability: aiTriage.benignProbability
+            }
+        }
+    };
 }
 
 function normalizeScanMode(value) {
@@ -216,14 +504,6 @@ async function getUserDeepScanLimits(userId) {
 function chooseNextAction(normalized) {
     const mode = normalizeScanMode(normalized.scanMode);
     const wantsFullServerAnalysis = mode === 'FULL' || mode === 'SELECTIVE';
-    const sensitivePermissions = normalized.permissions.filter((permission) => [
-        'android.permission.BIND_ACCESSIBILITY_SERVICE',
-        'android.permission.SYSTEM_ALERT_WINDOW',
-        'android.permission.REQUEST_INSTALL_PACKAGES',
-        'android.permission.QUERY_ALL_PACKAGES',
-        'android.permission.READ_SMS',
-        'android.permission.SEND_SMS'
-    ].includes(permission));
 
     if (mode === 'APK') {
         if (normalized.uploadedApkPath) {
@@ -245,21 +525,9 @@ function chooseNextAction(normalized) {
         };
     }
     if (wantsFullServerAnalysis) {
-        if (normalized.isDebuggable || normalized.usesCleartextTraffic || !normalized.installerPackage || sensitivePermissions.length > 0) {
-            return {
-                nextAction: 'upload_apk',
-                reason: 'Для этого пакета нужна расширенная статическая проверка APK.'
-            };
-        }
         return {
             nextAction: 'poll',
-            reason: 'Сначала выполняем hash+metadata этап без загрузки APK.'
-        };
-    }
-    if ((normalized.isDebuggable || normalized.usesCleartextTraffic) && sensitivePermissions.length > 0) {
-        return {
-            nextAction: 'upload_apk',
-            reason: 'Флаги сборки и разрешения требуют разбор APK на сервере.'
+            reason: 'Сначала выполняем hash+metadata этап; APK подтягивается сервером опционально при наличии источника.'
         };
     }
     return {
@@ -376,6 +644,116 @@ async function lookupVirusTotalByHash(sha256) {
         reputation: Number(payload?.data?.attributes?.reputation || 0),
         names
     };
+}
+
+function buildApkFetchUrl(sha256) {
+    if (!sha256 || !APK_FETCH_URL_TEMPLATE || !APK_FETCH_URL_TEMPLATE.includes('{sha256}')) {
+        return null;
+    }
+    return APK_FETCH_URL_TEMPLATE.replace(/\{sha256\}/g, encodeURIComponent(sha256));
+}
+
+async function readResponseBufferWithLimit(response, maxBytes) {
+    const contentLength = Number(response.headers.get('content-length') || 0);
+    if (Number.isFinite(contentLength) && contentLength > 0 && contentLength > maxBytes) {
+        throw new Error(`APK fetch exceeded max size (${contentLength} > ${maxBytes})`);
+    }
+
+    if (response.body && typeof response.body.getReader === 'function') {
+        const reader = response.body.getReader();
+        const chunks = [];
+        let total = 0;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                break;
+            }
+            const chunk = Buffer.from(value);
+            total += chunk.length;
+            if (total > maxBytes) {
+                throw new Error(`APK fetch exceeded max size (${total} > ${maxBytes})`);
+            }
+            chunks.push(chunk);
+        }
+        return Buffer.concat(chunks, total);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > maxBytes) {
+        throw new Error(`APK fetch exceeded max size (${buffer.length} > ${maxBytes})`);
+    }
+    return buffer;
+}
+
+async function tryFetchApkForJob(jobId, request, normalized) {
+    if (normalized.uploadedApkPath) {
+        return { request, normalized };
+    }
+
+    const sha256 = String(normalized.sha256 || '').toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(sha256)) {
+        return { request, normalized };
+    }
+
+    const fetchUrl = buildApkFetchUrl(sha256);
+    if (!fetchUrl) {
+        return { request, normalized };
+    }
+
+    try {
+        const response = await fetch(fetchUrl, {
+            method: 'GET',
+            signal: AbortSignal.timeout(APK_FETCH_TIMEOUT_MS)
+        });
+        if (!response.ok) {
+            throw new Error(`status ${response.status}`);
+        }
+
+        const maxBytes = Number.isFinite(APK_FETCH_MAX_BYTES) && APK_FETCH_MAX_BYTES > 0
+            ? APK_FETCH_MAX_BYTES
+            : MAX_UPLOAD_BYTES;
+        const buffer = await readResponseBufferWithLimit(response, maxBytes);
+        if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+            throw new Error('empty payload');
+        }
+
+        const fetchedSha256 = computeSha256(buffer);
+        if (fetchedSha256 !== sha256) {
+            throw new Error(`hash mismatch (${fetchedSha256} != ${sha256})`);
+        }
+
+        const dir = path.join(UPLOAD_ROOT, jobId);
+        await fs.mkdir(dir, { recursive: true });
+        const fileName = `fetched-${sha256.slice(0, 12)}.apk`;
+        const filePath = path.join(dir, fileName);
+        await fs.writeFile(filePath, buffer);
+
+        const updatedRequest = {
+            ...request,
+            uploaded_apk_path: filePath,
+            uploaded_apk_name: fileName,
+            uploaded_apk_sha256: fetchedSha256,
+            uploaded_apk_size_bytes: buffer.length,
+            sha256,
+            next_action: 'poll',
+            upload_reason: null
+        };
+        const now = nowMs();
+        await pool.query(
+            `UPDATE deep_scan_jobs
+             SET sha256 = ?, request_json = ?, updated_at = ?
+             WHERE id = ?`,
+            [sha256, JSON.stringify(updatedRequest), now, jobId]
+        );
+
+        return {
+            request: updatedRequest,
+            normalized: normalizeDeepScanPayload(updatedRequest)
+        };
+    } catch (error) {
+        console.error(`Deep scan APK fetch skipped for ${jobId}:`, String(error?.message || error));
+        return { request, normalized };
+    }
 }
 
 async function createDeepScanJob(userId, payload) {
@@ -639,10 +1017,14 @@ async function runDeepScanJob(jobId) {
         [startedAt, startedAt, jobId]
     );
 
-    const request = parseJson(row.request_json, {});
-    const normalized = normalizeDeepScanPayload(request);
+    let request = parseJson(row.request_json, {});
+    let normalized = normalizeDeepScanPayload(request);
 
     try {
+        const fetchResult = await tryFetchApkForJob(jobId, request, normalized);
+        request = fetchResult.request;
+        normalized = fetchResult.normalized;
+
         let vt = { status: normalized.sha256 ? 'pending' : 'skipped' };
         try {
             vt = await lookupVirusTotalByHash(normalized.sha256 || normalized.uploadedApkSha256);
@@ -659,33 +1041,70 @@ async function runDeepScanJob(jobId) {
             ...heuristics.findings,
             ...(Array.isArray(apkAnalysis.findings) ? apkAnalysis.findings : [])
         ]);
-        const combinedScore = Math.max(
+        const baseCombinedScore = Math.max(
             heuristics.riskScore,
             Math.min(100, heuristics.riskScore + Number(apkAnalysis.risk_bonus || 0))
         );
-        const verdict = mergeVerdicts(heuristics.verdict, combinedScore, vt, mergedFindings);
-        const sourceSummaries = buildSourceSummaries(mergedFindings, vt);
-        const recommendations = Array.from(new Set([
+        const baseVerdict = mergeVerdicts(heuristics.verdict, baseCombinedScore, vt, mergedFindings);
+        const baseRecommendations = Array.from(new Set([
             ...heuristics.recommendations,
             ...(apkAnalysis.ok ? ['Сверьте совпадения по источникам и удалите APK, если приложение установлено в обход магазина.'] : [])
         ])).slice(0, 6);
+        let triaged = applyDeterministicTriage({
+            verdict: baseVerdict,
+            riskScore: baseCombinedScore,
+            findings: mergedFindings,
+            recommendations: baseRecommendations,
+            vt
+        });
+
+        if (isAiConfigured() && !triaged.strongSignals) {
+            try {
+                const aiTriage = await triageDeepScanFindings({
+                    normalized,
+                    vt,
+                    verdict: triaged.verdict,
+                    riskScore: triaged.riskScore,
+                    findings: triaged.findings
+                });
+                triaged = applyAiTriageDecision(triaged, aiTriage);
+            } catch (error) {
+                triaged = {
+                    ...triaged,
+                    triage: {
+                        ...triaged.triage,
+                        ai: {
+                            applied: false,
+                            model: null,
+                            reason: 'ai_unavailable_fallback',
+                            benign_probability: 0
+                        }
+                    }
+                };
+                console.error('Deep scan AI triage fallback:', error?.message || error);
+            }
+        }
+
+        const sourceSummaries = buildSourceSummaries(triaged.findings, vt);
         const completedAt = nowMs();
         const summary = {
             scanned_at: completedAt,
-            verdict,
-            risk_score: combinedScore,
-            recommendations,
+            verdict: triaged.verdict,
+            risk_score: triaged.riskScore,
+            recommendations: triaged.recommendations,
             metadata: {
                 ...heuristics.metadata,
                 static_analysis: apkAnalysis.metadata || {},
-                next_action: 'poll'
+                next_action: 'poll',
+                triage: triaged.triage
             },
             sources: sourceSummaries,
             virus_total: vt,
             analyzer: {
                 ok: Boolean(apkAnalysis.ok),
                 error: apkAnalysis.error || null
-            }
+            },
+            triage: triaged.triage
         };
 
         await pool.query(
@@ -703,14 +1122,14 @@ async function runDeepScanJob(jobId) {
                  updated_at = ?
              WHERE id = ?`,
             [
-                verdict,
-                combinedScore,
+                triaged.verdict,
+                triaged.riskScore,
                 vt.status || null,
                 vt.malicious ?? null,
                 vt.suspicious ?? null,
                 vt.harmless ?? null,
                 JSON.stringify(summary),
-                JSON.stringify(mergedFindings),
+                JSON.stringify(triaged.findings),
                 completedAt,
                 completedAt,
                 jobId

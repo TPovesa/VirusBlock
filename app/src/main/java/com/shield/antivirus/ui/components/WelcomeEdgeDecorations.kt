@@ -1,38 +1,31 @@
 package com.shield.antivirus.ui.components
 
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.material3.ContainedLoadingIndicator
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LoadingIndicator
-import androidx.compose.material3.LoadingIndicatorDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.shield.antivirus.R
+import kotlin.random.Random
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun WelcomeEdgeDecorations(
     modifier: Modifier = Modifier,
@@ -41,8 +34,16 @@ fun WelcomeEdgeDecorations(
 ) {
     val transition = rememberInfiniteTransition(label = "welcome_shapes")
 
-    Box(modifier = modifier.fillMaxSize()) {
-        WelcomeShapeSpecs.forEachIndexed { index, spec ->
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val specs = remember(maxWidth, maxHeight) {
+            generateShapeSpecs(
+                maxWidth = maxWidth,
+                maxHeight = maxHeight,
+                count = 16
+            )
+        }
+
+        specs.forEachIndexed { index, spec ->
             val driftX by transition.animateFloat(
                 initialValue = -spec.oscillationX,
                 targetValue = spec.oscillationX,
@@ -60,7 +61,7 @@ fun WelcomeEdgeDecorations(
                 targetValue = spec.oscillationY,
                 animationSpec = infiniteRepeatable(
                     animation = tween(
-                        durationMillis = spec.durationMs + 1300,
+                        durationMillis = spec.durationMs + 1000,
                         easing = FastOutSlowInEasing
                     ),
                     repeatMode = RepeatMode.Reverse
@@ -68,93 +69,101 @@ fun WelcomeEdgeDecorations(
                 label = "shape_drift_y_$index"
             )
             val rotation by transition.animateFloat(
-                initialValue = 0f,
-                targetValue = 360f * spec.spinDirection,
+                initialValue = -spec.rotationRange,
+                targetValue = spec.rotationRange,
                 animationSpec = infiniteRepeatable(
                     animation = tween(
-                        durationMillis = spec.durationMs * 2,
-                        easing = LinearEasing
+                        durationMillis = spec.durationMs + 2600,
+                        easing = FastOutSlowInEasing
                     ),
-                    repeatMode = RepeatMode.Restart
+                    repeatMode = RepeatMode.Reverse
                 ),
                 label = "shape_rotation_$index"
             )
 
-            var dragX by remember(index) { mutableFloatStateOf(0f) }
-            var dragY by remember(index) { mutableFloatStateOf(0f) }
-            var manualRotation by remember(index) { mutableFloatStateOf(0f) }
-            var useContainedStyle by rememberSaveable(index) { mutableStateOf(spec.useContainedPolygons) }
+            val color = tintForSlot(spec.colorSlot)
 
-            val color = when (spec.colorSlot % 4) {
-                0 -> MaterialTheme.colorScheme.primary.copy(alpha = 0.62f)
-                1 -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.58f)
-                2 -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f)
-                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-            }
-
-            Box(
+            Image(
+                painter = painterResource(id = spec.drawableRes),
+                contentDescription = null,
                 modifier = Modifier
-                    .align(spec.alignment)
-                    .offset(x = spec.offsetX, y = spec.offsetY)
+                    .offset(x = spec.baseX, y = spec.baseY)
                     .size(spec.size)
-                    .clickable {
-                        useContainedStyle = !useContainedStyle
-                        manualRotation += 24f
-                    }
-                    .pointerInput(index) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            dragX += dragAmount.x
-                            dragY += dragAmount.y
-                            manualRotation += dragAmount.x * 0.08f
-                        }
-                    }
                     .graphicsLayer {
-                        translationX = dragX + driftX + parallaxX.coerceIn(-1f, 1f) * (spec.parallaxFactor * 26f)
-                        translationY = dragY + driftY + parallaxY.coerceIn(-1f, 1f) * (spec.parallaxFactor * 20f)
-                        rotationZ = rotation + manualRotation
-                    }
-            ) {
-                if (useContainedStyle) {
-                    ContainedLoadingIndicator(
-                        modifier = Modifier.fillMaxSize(),
-                        containerColor = color.copy(alpha = 0.20f),
-                        indicatorColor = color,
-                        polygons = LoadingIndicatorDefaults.IndeterminateIndicatorPolygons
-                    )
-                } else {
-                    LoadingIndicator(
-                        modifier = Modifier.fillMaxSize(),
-                        color = color,
-                        polygons = LoadingIndicatorDefaults.IndeterminateIndicatorPolygons
-                    )
-                }
-            }
+                        translationX = driftX + parallaxX.coerceIn(-1f, 1f) * (spec.parallaxFactor * 14f)
+                        translationY = driftY + parallaxY.coerceIn(-1f, 1f) * (spec.parallaxFactor * 12f)
+                        rotationZ = rotation
+                        alpha = spec.alpha
+                    },
+                colorFilter = ColorFilter.tint(color)
+            )
         }
     }
 }
 
+@Composable
+private fun tintForSlot(colorSlot: Int): Color = when (colorSlot % 4) {
+    0 -> MaterialTheme.colorScheme.primary.copy(alpha = shapeTintAlpha())
+    1 -> MaterialTheme.colorScheme.secondary.copy(alpha = shapeTintAlpha() - 0.03f)
+    2 -> MaterialTheme.colorScheme.tertiary.copy(alpha = shapeTintAlpha() - 0.02f)
+    else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = shapeTintAlpha() - 0.05f)
+}
+
+@Composable
+private fun shapeTintAlpha(): Float {
+    val backgroundLuminance = MaterialTheme.colorScheme.background.luminance()
+    return if (backgroundLuminance < 0.35f) 0.58f else 0.46f
+}
+
+private fun generateShapeSpecs(
+    maxWidth: Dp,
+    maxHeight: Dp,
+    count: Int
+): List<WelcomeShapeSpec> {
+    val random = Random(0x5A17C0DE)
+    val drawables = welcomeShapeDrawables
+    val width = maxWidth.value
+    val height = maxHeight.value
+    if (width <= 0f || height <= 0f || count <= 0) return emptyList()
+
+    return List(count) { index ->
+        val size = random.nextInt(30, 70).dp
+        val availableX = (width - size.value).coerceAtLeast(0f)
+        val availableY = (height - size.value).coerceAtLeast(0f)
+        WelcomeShapeSpec(
+            drawableRes = drawables[index % drawables.size],
+            size = size,
+            baseX = (random.nextFloat() * availableX).dp,
+            baseY = (random.nextFloat() * availableY).dp,
+            durationMs = random.nextInt(12400, 21400),
+            colorSlot = random.nextInt(0, 4),
+            parallaxFactor = random.nextFloat() * 0.55f + 0.35f,
+            oscillationX = random.nextFloat() * 7f + 3f,
+            oscillationY = random.nextFloat() * 6f + 2f,
+            rotationRange = random.nextFloat() * 10f + 5f,
+            alpha = random.nextFloat() * 0.24f + 0.64f
+        )
+    }
+}
+
 private data class WelcomeShapeSpec(
-    val alignment: Alignment,
+    val drawableRes: Int,
     val size: Dp,
-    val offsetX: Dp = 0.dp,
-    val offsetY: Dp = 0.dp,
+    val baseX: Dp,
+    val baseY: Dp,
     val durationMs: Int,
-    val spinDirection: Float,
     val colorSlot: Int,
     val parallaxFactor: Float,
     val oscillationX: Float,
     val oscillationY: Float,
-    val useContainedPolygons: Boolean
+    val rotationRange: Float,
+    val alpha: Float
 )
 
-private val WelcomeShapeSpecs = listOf(
-    WelcomeShapeSpec(Alignment.TopStart, 58.dp, (-20).dp, 20.dp, 12000, 1f, 0, 1.0f, 20f, 16f, false),
-    WelcomeShapeSpec(Alignment.TopEnd, 64.dp, 18.dp, 40.dp, 13800, -1f, 1, 0.9f, 18f, 14f, true),
-    WelcomeShapeSpec(Alignment.CenterStart, 54.dp, (-18).dp, (-26).dp, 13200, 1f, 2, 0.8f, 16f, 20f, true),
-    WelcomeShapeSpec(Alignment.CenterEnd, 70.dp, 16.dp, 12.dp, 14500, -1f, 3, 1.05f, 20f, 18f, false),
-    WelcomeShapeSpec(Alignment.Center, 48.dp, 0.dp, (-148).dp, 15800, 1f, 0, 0.55f, 12f, 10f, false),
-    WelcomeShapeSpec(Alignment.BottomStart, 68.dp, (-14).dp, (-38).dp, 14100, -1f, 1, 0.95f, 22f, 14f, true),
-    WelcomeShapeSpec(Alignment.BottomEnd, 62.dp, 24.dp, (-64).dp, 12600, 1f, 2, 1.1f, 18f, 20f, false),
-    WelcomeShapeSpec(Alignment.BottomCenter, 52.dp, 0.dp, (-20).dp, 13400, -1f, 3, 0.7f, 16f, 12f, true)
+private val welcomeShapeDrawables = listOf(
+    R.drawable.ic_welcome_shape_triangle,
+    R.drawable.ic_welcome_shape_square,
+    R.drawable.ic_welcome_shape_hexagon,
+    R.drawable.ic_welcome_shape_pentagon,
+    R.drawable.ic_welcome_shape_diamond
 )

@@ -8,6 +8,7 @@ import com.shield.antivirus.data.api.ApiClient
 import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.data.local.AppDatabase
 import com.shield.antivirus.data.model.AppInfo
+import com.shield.antivirus.data.model.DeepScanFinding
 import com.shield.antivirus.data.model.DeepScanJob
 import com.shield.antivirus.data.model.DeepScanStartRequest
 import com.shield.antivirus.data.model.SaveScanRequest
@@ -53,6 +54,19 @@ class ScanRepository(private val context: Context) {
     private val gson = Gson()
     private val localThreatDetector = LocalThreatDetector(context)
     private val sessionManager = ShieldSessionManager(context)
+    private val trustedInstallers = setOf(
+        "com.android.vending",
+        "com.google.android.packageinstaller",
+        "com.android.packageinstaller",
+        "com.sec.android.app.samsungapps",
+        "com.huawei.appmarket",
+        "com.xiaomi.market",
+        "com.amazon.venezia",
+        "com.oppo.market",
+        "com.heytap.market"
+    )
+    private val unknownSourceFindingTypes = setOf("install_source", "recent_sideload")
+    private val weakContextFindingTypes = setOf("metadata_gap", "signature_gap", "certificate_gap")
 
     fun getAllResults() = dao.getAllResults().map { list ->
         list.map { it.toDomain() }
@@ -280,23 +294,39 @@ class ScanRepository(private val context: Context) {
                 )
                 return@flow
             }
+            val total = allApps.size
             val maxServerChecks = when (normalizedType) {
-                "FULL" -> 6
-                "SELECTIVE" -> 12
+                "FULL" -> {
+                    val target = (total * 0.55f).toInt().coerceAtLeast(18)
+                    target.coerceAtMost(64).coerceAtMost(total)
+                }
+                "SELECTIVE" -> {
+                    val target = if (selectedPackages.isNotEmpty()) total else (total * 0.85f).toInt().coerceAtLeast(24)
+                    target.coerceAtMost(96).coerceAtMost(total)
+                }
                 else -> 0
             }
+            val localThreatOverflowCap = when (normalizedType) {
+                "FULL" -> 12
+                "SELECTIVE" -> 24
+                else -> 0
+            }
+            val hardServerChecksCap = maxServerChecks + localThreatOverflowCap
             var serverChecksUsed = 0
             var serverChecksFailed = 0
             var serverChecksSucceeded = 0
+            var forcedLocalThreatChecks = 0
 
-            val total = allApps.size
             AppLogger.log(
                 tag = "scan_repository",
                 message = "Scan app pool resolved",
                 metadata = mapOf(
                     "scan_type" to normalizedType,
                     "apps_total" to total.toString(),
-                    "server_enabled" to useServerDeepScan.toString()
+                    "server_enabled" to useServerDeepScan.toString(),
+                    "server_max_checks" to maxServerChecks.toString(),
+                    "server_hard_cap" to hardServerChecksCap.toString(),
+                    "server_local_overflow_cap" to localThreatOverflowCap.toString()
                 )
             )
             val threats = mutableListOf<ThreatInfo>()
@@ -335,11 +365,19 @@ class ScanRepository(private val context: Context) {
                     )
                 }.getOrNull()
 
+                val shouldEscalateNormally = shouldEscalateForServer(app, localThreat, normalizedType, index)
+                val shouldForceBecauseLocalThreat = useServerDeepScan &&
+                    localThreat != null &&
+                    serverChecksUsed >= maxServerChecks &&
+                    serverChecksUsed < hardServerChecksCap
                 val shouldUseServerForApp = useServerDeepScan &&
-                    serverChecksUsed < maxServerChecks &&
-                    shouldEscalateForServer(app, localThreat, normalizedType, index)
+                    serverChecksUsed < hardServerChecksCap &&
+                    (shouldEscalateNormally || shouldForceBecauseLocalThreat)
 
                 val threatBatch = if (shouldUseServerForApp) {
+                    if (shouldForceBecauseLocalThreat) {
+                        forcedLocalThreatChecks++
+                    }
                     serverChecksUsed++
                     var requestFailed = false
                     val serverThreats = runCatching {
@@ -433,7 +471,8 @@ class ScanRepository(private val context: Context) {
                     "threats_found" to threats.size.toString(),
                     "server_checks_used" to serverChecksUsed.toString(),
                     "server_checks_failed" to serverChecksFailed.toString(),
-                    "server_checks_succeeded" to serverChecksSucceeded.toString()
+                    "server_checks_succeeded" to serverChecksSucceeded.toString(),
+                    "server_forced_local_threat_checks" to forcedLocalThreatChecks.toString()
                 )
             )
         } finally {
@@ -452,6 +491,10 @@ class ScanRepository(private val context: Context) {
         return try {
             val apkFile = File(app.apkPath)
             val sha256 = if (apkFile.exists()) HashUtils.sha256(apkFile) else null
+            val canUploadApk = apkFile.exists() && apkFile.canRead()
+            val canAutoUploadApkSecondStage = (scanType == "FULL" || scanType == "SELECTIVE") &&
+                canUploadApk
+            var apkUploaded = false
 
             val startResponse = ApiClient.executeShieldCall { api ->
                 api.startDeepScan(
@@ -478,8 +521,8 @@ class ScanRepository(private val context: Context) {
                 )
             }
 
-            val job = startResponse.body()?.scan
-            val scanId = job?.id
+            val initialJob = startResponse.body()?.scan
+            val scanId = initialJob?.id
             if (!startResponse.isSuccessful || scanId.isNullOrBlank()) {
                 AppLogger.log(
                     tag = "scan_repository",
@@ -493,11 +536,11 @@ class ScanRepository(private val context: Context) {
                 return emptyList()
             }
 
-            if (job?.nextAction.equals("upload_apk", ignoreCase = true) && apkFile.exists()) {
-                if (!apkFile.canRead()) {
+            if (initialJob?.nextAction.equals("upload_apk", ignoreCase = true)) {
+                if (!canUploadApk) {
                     AppLogger.log(
                         tag = "scan_repository",
-                        message = "APK cannot be read for deep upload",
+                        message = "APK upload required but file is not readable",
                         level = "WARN",
                         metadata = mapOf(
                             "scan_id" to scanId,
@@ -506,56 +549,60 @@ class ScanRepository(private val context: Context) {
                     )
                     return emptyList()
                 }
-                val uploadResponse = ApiClient.executeShieldCall { api ->
-                    api.uploadDeepScanApk(
-                        token = "Bearer $accessToken",
-                        id = scanId,
-                        fileName = "${app.packageName}.apk",
-                        apkBody = apkFile.asRequestBody("application/vnd.android.package-archive".toMediaType())
-                    )
+                val uploaded = uploadDeepScanApk(
+                    scanId = scanId,
+                    app = app,
+                    apkFile = apkFile,
+                    accessToken = accessToken,
+                    reason = "required_by_server"
+                )
+                if (!uploaded) {
+                    return emptyList()
                 }
-                if (!uploadResponse.isSuccessful) {
+                apkUploaded = true
+            }
+
+            val firstCompleted = pollDeepScanUntilCompleted(scanId, accessToken) ?: return emptyList()
+
+            var finalJob = firstCompleted
+            if (!apkUploaded && canAutoUploadApkSecondStage && shouldAutoUploadAfterFirstCompletion(firstCompleted)) {
+                val secondStageUploaded = uploadDeepScanApk(
+                    scanId = scanId,
+                    app = app,
+                    apkFile = apkFile,
+                    accessToken = accessToken,
+                    reason = "client_second_stage"
+                )
+                if (secondStageUploaded) {
+                    apkUploaded = true
+                    val enrichedJob = pollDeepScanUntilCompleted(scanId, accessToken)
+                    if (enrichedJob != null) {
+                        finalJob = enrichedJob
+                    } else {
+                        AppLogger.log(
+                            tag = "scan_repository",
+                            message = "Second-stage deep scan polling failed, using first completed result",
+                            level = "WARN",
+                            metadata = mapOf(
+                                "scan_id" to scanId,
+                                "package" to app.packageName
+                            )
+                        )
+                    }
+                } else {
                     AppLogger.log(
                         tag = "scan_repository",
-                        message = "APK upload rejected",
+                        message = "Second-stage APK upload failed, using first completed result",
                         level = "WARN",
                         metadata = mapOf(
                             "scan_id" to scanId,
-                            "package" to app.packageName,
-                            "status_code" to uploadResponse.code().toString()
+                            "package" to app.packageName
                         )
                     )
-                    return emptyList()
                 }
             }
 
-            repeat(16) { attempt ->
-                delay(if (attempt < 3) 450L else 900L)
-                val pollResponse = ApiClient.executeShieldCall { api ->
-                    api.getDeepScan("Bearer $accessToken", scanId)
-                }
-                if (!pollResponse.isSuccessful) {
-                    AppLogger.log(
-                        tag = "scan_repository",
-                        message = "Deep scan polling rejected",
-                        level = "WARN",
-                        metadata = mapOf(
-                            "scan_id" to scanId,
-                            "status_code" to pollResponse.code().toString()
-                        )
-                    )
-                    return emptyList()
-                }
-
-                val currentJob = pollResponse.body()?.scan ?: return emptyList()
-                when (currentJob.status.uppercase()) {
-                    "AWAITING_UPLOAD", "QUEUED", "RUNNING" -> Unit
-                    "FAILED" -> return emptyList()
-                    "COMPLETED" -> return mapDeepScanToThreats(app, currentJob)
-                    else -> return emptyList()
-                }
-            }
-            emptyList()
+            mapDeepScanToThreats(app, finalJob)
         } catch (error: Exception) {
             AppLogger.logError(
                 tag = "scan_repository",
@@ -568,6 +615,88 @@ class ScanRepository(private val context: Context) {
             )
             emptyList()
         }
+    }
+
+    private suspend fun uploadDeepScanApk(
+        scanId: String,
+        app: AppInfo,
+        apkFile: File,
+        accessToken: String,
+        reason: String
+    ): Boolean {
+        if (!apkFile.exists() || !apkFile.canRead()) {
+            return false
+        }
+        val uploadResponse = ApiClient.executeShieldCall { api ->
+            api.uploadDeepScanApk(
+                token = "Bearer $accessToken",
+                id = scanId,
+                fileName = "${app.packageName}.apk",
+                apkBody = apkFile.asRequestBody("application/vnd.android.package-archive".toMediaType())
+            )
+        }
+        if (!uploadResponse.isSuccessful) {
+            AppLogger.log(
+                tag = "scan_repository",
+                message = "APK upload rejected",
+                level = "WARN",
+                metadata = mapOf(
+                    "scan_id" to scanId,
+                    "package" to app.packageName,
+                    "status_code" to uploadResponse.code().toString(),
+                    "reason" to reason
+                )
+            )
+            return false
+        }
+        return true
+    }
+
+    private suspend fun pollDeepScanUntilCompleted(scanId: String, accessToken: String): DeepScanJob? {
+        repeat(16) { attempt ->
+            delay(if (attempt < 3) 450L else 900L)
+            val pollResponse = ApiClient.executeShieldCall { api ->
+                api.getDeepScan("Bearer $accessToken", scanId)
+            }
+            if (!pollResponse.isSuccessful) {
+                AppLogger.log(
+                    tag = "scan_repository",
+                    message = "Deep scan polling rejected",
+                    level = "WARN",
+                    metadata = mapOf(
+                        "scan_id" to scanId,
+                        "status_code" to pollResponse.code().toString()
+                    )
+                )
+                return null
+            }
+
+            val currentJob = pollResponse.body()?.scan ?: return null
+            when (currentJob.status.uppercase()) {
+                "AWAITING_UPLOAD", "QUEUED", "RUNNING" -> Unit
+                "FAILED" -> return null
+                "COMPLETED" -> return currentJob
+                else -> return null
+            }
+        }
+        return null
+    }
+
+    private fun shouldAutoUploadAfterFirstCompletion(job: DeepScanJob): Boolean {
+        val verdict = job.verdict?.lowercase().orEmpty()
+        val score = job.riskScore ?: 0
+        if (verdict == "malicious" || verdict == "suspicious") return true
+        if (score >= 40) return true
+
+        val findings = job.findings.orEmpty()
+        val hasMediumOrHigherFinding = findings.any { severityRank(it.severity) >= 2 }
+        val hasStrongSignalType = findings.any { finding ->
+            when (finding.type.lowercase()) {
+                "permission", "permission_combo", "virustotal", "network_flag", "build_flag", "size_profile" -> true
+                else -> false
+            }
+        }
+        return hasMediumOrHigherFinding && hasStrongSignalType
     }
 
     private fun prepareApkForScan(uriString: String): Pair<File, String>? {
@@ -645,7 +774,8 @@ class ScanRepository(private val context: Context) {
     ): Boolean {
         if (scanType == "SELECTIVE") return true
         if (localThreat != null) return true
-        if (index < 3) return true
+        if (index < 5) return true
+        if (!app.isSystemApp) return true
 
         val permissions = app.requestedPermissions.toSet()
         val hasAccessibility = permissions.contains("android.permission.BIND_ACCESSIBILITY_SERVICE")
@@ -659,8 +789,13 @@ class ScanRepository(private val context: Context) {
         if (hasAccessibility && hasOverlay) return true
         if (hasInstaller && hasQueryAll) return true
         if (hasSms) return true
+        if (permissions.size >= 15) return true
+        if ((app.targetSdk ?: Int.MAX_VALUE) <= 28) return true
+        if ((app.sizeBytes in 1L until (180L * 1024L)) && (hasAccessibility || hasOverlay || hasSms)) return true
         if (app.isDebuggable || app.usesCleartextTraffic) return true
         if (app.installerPackage.isNullOrBlank()) return true
+        val installer = app.installerPackage.lowercase()
+        if (installer !in trustedInstallers) return true
         return false
     }
 
@@ -668,9 +803,13 @@ class ScanRepository(private val context: Context) {
         val verdict = job.verdict?.lowercase().orEmpty()
         val findings = job.findings.orEmpty()
         val score = job.riskScore ?: 0
-        if (verdict == "clean" && findings.isEmpty() && score < 20) return emptyList()
+        val filteredFindings = filterDeepFindingsForDisplay(findings, score)
+        if (shouldSuppressUnknownSourceOnlyThreat(findings, filteredFindings, score)) return emptyList()
+        if (filteredFindings.isEmpty() && score < 20 && (verdict.isBlank() || verdict == "clean" || verdict == "low_risk")) {
+            return emptyList()
+        }
 
-        val sourceThreats = findings
+        val sourceThreats = filteredFindings
             .groupBy { it.source?.ifBlank { null } ?: "Shield Deep" }
             .map { (source, items) ->
                 val severity = items.maxByOrNull { severityRank(it.severity) }?.severity?.toThreatSeverity()
@@ -682,7 +821,7 @@ class ScanRepository(private val context: Context) {
                     severity = severity,
                     detectionEngine = source,
                     detectionCount = items.size,
-                    totalEngines = findings.size.coerceAtLeast(items.size),
+                    totalEngines = filteredFindings.size.coerceAtLeast(items.size),
                     summary = items.joinToString(separator = "\n") { it.detail }
                 )
             }
@@ -705,6 +844,50 @@ class ScanRepository(private val context: Context) {
                 summary = job.summary?.recommendations.orEmpty().joinToString(separator = "\n")
             )
         )
+    }
+
+    private fun filterDeepFindingsForDisplay(findings: List<DeepScanFinding>, score: Int): List<DeepScanFinding> {
+        if (findings.isEmpty()) return findings
+        val hasUnknownSourceSignals = findings.any(::isUnknownSourceFinding)
+        if (!hasUnknownSourceSignals) return findings
+        val hasSeriousIndicators = findings.any(::isSeriousFinding)
+        if (hasSeriousIndicators || score >= 45) return findings
+        return findings.filterNot { finding ->
+            val type = finding.type.lowercase()
+            type in unknownSourceFindingTypes || type in weakContextFindingTypes || isUnknownSourceFinding(finding)
+        }
+    }
+
+    private fun shouldSuppressUnknownSourceOnlyThreat(
+        originalFindings: List<DeepScanFinding>,
+        filteredFindings: List<DeepScanFinding>,
+        score: Int
+    ): Boolean {
+        if (originalFindings.isEmpty()) return false
+        if (filteredFindings.isNotEmpty()) return false
+        if (score >= 45) return false
+        return originalFindings.any(::isUnknownSourceFinding) && originalFindings.none(::isSeriousFinding)
+    }
+
+    private fun isSeriousFinding(finding: DeepScanFinding): Boolean {
+        val type = finding.type.lowercase()
+        if (type in unknownSourceFindingTypes || type in weakContextFindingTypes) {
+            return false
+        }
+        return severityRank(finding.severity) >= 2
+    }
+
+    private fun isUnknownSourceFinding(finding: DeepScanFinding): Boolean {
+        val type = finding.type.lowercase()
+        if (type in unknownSourceFindingTypes) {
+            return true
+        }
+        val title = finding.title.lowercase()
+        val detail = finding.detail.lowercase()
+        return title.contains("unknown install source") ||
+            title.contains("install source") ||
+            detail.contains("installer package is missing") ||
+            detail.contains("unknown source")
     }
 
     private fun mergeThreats(localThreat: ThreatInfo?, serverThreats: List<ThreatInfo>): List<ThreatInfo> {

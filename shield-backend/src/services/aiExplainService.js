@@ -69,6 +69,40 @@ function coerceAiResponse(content) {
     };
 }
 
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function normalizeVerdict(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (['clean', 'low_risk', 'suspicious', 'malicious'].includes(normalized)) {
+        return normalized;
+    }
+    return null;
+}
+
+function coerceDeepScanTriage(content) {
+    const jsonBlock = extractJsonBlock(content);
+    if (!jsonBlock) {
+        throw new Error('AI triage returned no JSON block');
+    }
+
+    const parsed = JSON.parse(jsonBlock);
+    const suggestedVerdict = normalizeVerdict(parsed?.suggested_verdict || parsed?.verdict || parsed?.decision);
+    const probability = Number(parsed?.benign_probability ?? parsed?.probability ?? 0);
+    const suppressTypes = Array.isArray(parsed?.suppress_types)
+        ? parsed.suppress_types.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 16)
+        : [];
+    const reason = String(parsed?.reason || parsed?.rationale || '').trim().slice(0, 400);
+
+    return {
+        suggestedVerdict,
+        benignProbability: Number.isFinite(probability) ? clamp(probability, 0, 1) : 0,
+        suppressTypes,
+        reason
+    };
+}
+
 function severityLabel(severity) {
     switch (String(severity || '').toUpperCase()) {
         case 'CRITICAL':
@@ -188,21 +222,23 @@ async function explainScan({ summary, result }) {
                     role: 'system',
                     content: [
                         'Ты аналитик мобильной безопасности для Android-антивируса.',
-                        'Пиши только по-русски, без воды, без фантазий и без выдуманных фактов.',
-                        'Пиши максимально простым языком, как для неподготовленного пользователя.',
-                        'Используй только факты из входных данных. Если данных недостаточно, явно скажи об этом.',
-                        'Сформируй содержательное объяснение даже для быстрой проверки.',
-                        'Поле explanation верни в Markdown с секциями:',
-                        '## Коротко',
-                        '## Что найдено',
-                        '## Почему это риск',
-                        '## Что сделать сейчас',
-                        '## Что проверить дополнительно',
-                        'Секция "Коротко" должна содержать 1-2 предложения с итогом без терминов.',
-                        'Внутри секций используй короткие абзацы и маркированные списки.',
-                        'Если угроз нет — так и скажи, но всё равно дай 2-3 практичных шага профилактики в Markdown.',
+                        'Пиши только по-русски, максимально прикладно и коротко.',
+                        'Никакой воды, общих фраз и предположений без данных.',
+                        'Используй только факты из входных данных; ничего не выдумывай.',
+                        'Если данных мало: напиши это явно и кратко в формате "Недостаточно данных: ...".',
+                        'Поле explanation верни в Markdown строго с секциями:',
+                        '## Итог',
+                        '## Подтверждено данными',
+                        '## Что делать сейчас',
+                        '## Что ещё проверить',
+                        'Ограничения по объёму: каждая секция 1-3 короткие строки или 2-4 буллета.',
+                        'В "Итог" дай 1-2 простых предложения без терминов.',
+                        'Для CRITICAL/HIGH: тон прямой и жёсткий, 3-5 конкретных шагов в приоритетном порядке (сначала срочные).',
+                        'Для LOW/CLEAN/угроз не найдено: спокойный тон, не пугай, дай 1-3 шага профилактики.',
+                        'Если проверка быстрая и неполная — явно укажи ограничение покрытия.',
+                        'Секция "Что ещё проверить" должна быть пустой или очень короткой, если добавить нечего.',
                         'Возвращай строго JSON вида {"explanation":"...markdown...","advice":["...","..."]}.',
-                        'advice: 2-5 коротких и прикладных пунктов.'
+                        'advice: 2-5 пунктов, только действия, без повторов и абстракций.'
                     ].join(' ')
                 },
                 {
@@ -229,7 +265,85 @@ async function explainScan({ summary, result }) {
     }
 }
 
+async function triageDeepScanFindings({
+    normalized,
+    vt,
+    verdict,
+    riskScore,
+    findings
+}) {
+    if (!isAiConfigured()) {
+        const error = new Error('AI service is not configured');
+        error.statusCode = 503;
+        throw error;
+    }
+
+    const model = await resolveModel();
+    const compactFindings = (Array.isArray(findings) ? findings : [])
+        .slice(0, 14)
+        .map((finding) => ({
+            type: finding.type,
+            severity: finding.severity,
+            source: finding.source,
+            title: finding.title,
+            permission: finding?.evidence?.permission || null
+        }));
+
+    const payloadForModel = {
+        package_name: normalized?.packageName || null,
+        installer_package: normalized?.installerPackage || null,
+        permission_count: Array.isArray(normalized?.permissions) ? normalized.permissions.length : 0,
+        permissions: Array.isArray(normalized?.permissions) ? normalized.permissions.slice(0, 40) : [],
+        risk_score: Number(riskScore || 0),
+        current_verdict: String(verdict || 'clean'),
+        virus_total: {
+            status: vt?.status || null,
+            malicious: Number(vt?.malicious || 0),
+            suspicious: Number(vt?.suspicious || 0),
+            harmless: Number(vt?.harmless || 0)
+        },
+        findings: compactFindings
+    };
+
+    const completion = await apiRequest('/chat/completions', {
+        model,
+        temperature: 0.05,
+        max_tokens: 320,
+        messages: [
+            {
+                role: 'system',
+                content: [
+                    'Ты серверный модуль AI-триажа Android deep scan.',
+                    'Твоя задача: снижать ложные срабатывания, но не пропускать опасные сочетания.',
+                    'Если есть сильные признаки (VirusTotal malicious>0, accessibility+overlay+sms, внешние malware-маркеры), не давай benign.',
+                    'Unknown installer сам по себе не является угрозой.',
+                    'Верни только JSON без пояснений.',
+                    'Формат JSON:',
+                    '{"suggested_verdict":"clean|low_risk|suspicious|malicious","benign_probability":0..1,"suppress_types":["install_source"],"reason":"<=200 chars"}',
+                    'suppress_types содержит только типы findings, которые можно скрыть для снижения ложных срабатываний.'
+                ].join(' ')
+            },
+            {
+                role: 'user',
+                content: sanitizeInput(payloadForModel) || '{}'
+            }
+        ]
+    });
+
+    const content = completion?.choices?.[0]?.message?.content;
+    if (!content) {
+        throw new Error('AI triage completion is empty');
+    }
+
+    const parsed = coerceDeepScanTriage(content);
+    return {
+        model,
+        ...parsed
+    };
+}
+
 module.exports = {
     isAiConfigured,
-    explainScan
+    explainScan,
+    triageDeepScanFindings
 };

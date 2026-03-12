@@ -13,24 +13,46 @@ const ALLOWED_INSTALLERS = new Set([
     'com.heytap.market'
 ]);
 
+const SUSPICIOUS_CERT_SUBJECT_PATTERNS = [
+    /android debug/i,
+    /\btest\b/i,
+    /\bdebug\b/i,
+    /\bunknown\b/i
+];
+
+const SENSITIVE_PERMISSIONS = new Set([
+    'android.permission.BIND_ACCESSIBILITY_SERVICE',
+    'android.permission.SYSTEM_ALERT_WINDOW',
+    'android.permission.REQUEST_INSTALL_PACKAGES',
+    'android.permission.QUERY_ALL_PACKAGES',
+    'android.permission.MANAGE_EXTERNAL_STORAGE',
+    'android.permission.READ_SMS',
+    'android.permission.RECEIVE_SMS',
+    'android.permission.SEND_SMS',
+    'android.permission.BIND_DEVICE_ADMIN',
+    'android.permission.RECORD_AUDIO',
+    'android.permission.READ_CALL_LOG',
+    'android.permission.WRITE_CALL_LOG'
+]);
+
 const PERMISSION_RULES = {
-    'android.permission.BIND_ACCESSIBILITY_SERVICE': { score: 30, severity: 'high', title: 'Accessibility service access', detail: 'Apps can abuse accessibility privileges to read screen content and automate taps.' },
-    'android.permission.SYSTEM_ALERT_WINDOW': { score: 18, severity: 'medium', title: 'Overlay permission', detail: 'Screen overlays are often used for phishing and clickjacking.' },
-    'android.permission.REQUEST_INSTALL_PACKAGES': { score: 20, severity: 'high', title: 'Can install other packages', detail: 'The app can trigger installation flows for other APKs.' },
-    'android.permission.QUERY_ALL_PACKAGES': { score: 14, severity: 'medium', title: 'Queries all installed packages', detail: 'Broad package visibility can be used for profiling and targeting other apps.' },
+    'android.permission.BIND_ACCESSIBILITY_SERVICE': { score: 24, severity: 'high', title: 'Accessibility service access', detail: 'Apps can abuse accessibility privileges to read screen content and automate taps.' },
+    'android.permission.SYSTEM_ALERT_WINDOW': { score: 14, severity: 'medium', title: 'Overlay permission', detail: 'Screen overlays are often used for phishing and clickjacking.' },
+    'android.permission.REQUEST_INSTALL_PACKAGES': { score: 14, severity: 'medium', title: 'Can install other packages', detail: 'The app can trigger installation flows for other APKs.' },
+    'android.permission.QUERY_ALL_PACKAGES': { score: 10, severity: 'medium', title: 'Queries all installed packages', detail: 'Broad package visibility can be used for profiling and targeting other apps.' },
     'android.permission.MANAGE_EXTERNAL_STORAGE': { score: 14, severity: 'medium', title: 'Full storage access', detail: 'This grants broad access to files on the device.' },
-    'android.permission.READ_SMS': { score: 18, severity: 'high', title: 'Reads SMS messages', detail: 'SMS access can expose one-time codes and private messages.' },
-    'android.permission.RECEIVE_SMS': { score: 15, severity: 'medium', title: 'Receives SMS messages', detail: 'Receiving SMS is sensitive when combined with other message or overlay privileges.' },
-    'android.permission.SEND_SMS': { score: 18, severity: 'high', title: 'Sends SMS messages', detail: 'This can be abused for premium SMS fraud.' },
+    'android.permission.READ_SMS': { score: 14, severity: 'high', title: 'Reads SMS messages', detail: 'SMS access can expose one-time codes and private messages.' },
+    'android.permission.RECEIVE_SMS': { score: 12, severity: 'medium', title: 'Receives SMS messages', detail: 'Receiving SMS is sensitive when combined with other message or overlay privileges.' },
+    'android.permission.SEND_SMS': { score: 14, severity: 'high', title: 'Sends SMS messages', detail: 'This can be abused for premium SMS fraud.' },
     'android.permission.READ_CALL_LOG': { score: 14, severity: 'medium', title: 'Reads call log', detail: 'Call history is sensitive personal data.' },
     'android.permission.WRITE_CALL_LOG': { score: 16, severity: 'high', title: 'Writes call log', detail: 'Changing call history is unusual for most apps.' },
     'android.permission.READ_CONTACTS': { score: 10, severity: 'medium', title: 'Reads contacts', detail: 'Contacts data is often harvested for spam or social engineering.' },
-    'android.permission.READ_PHONE_STATE': { score: 8, severity: 'low', title: 'Reads phone state', detail: 'Phone state can be used for device fingerprinting.' },
+    'android.permission.READ_PHONE_STATE': { score: 4, severity: 'low', title: 'Reads phone state', detail: 'Phone state can be used for device fingerprinting.' },
     'android.permission.RECORD_AUDIO': { score: 10, severity: 'medium', title: 'Microphone access', detail: 'Microphone access is sensitive when not clearly needed by the app.' },
-    'android.permission.CAMERA': { score: 8, severity: 'low', title: 'Camera access', detail: 'Camera access should match the app purpose.' },
+    'android.permission.CAMERA': { score: 4, severity: 'low', title: 'Camera access', detail: 'Camera access should match the app purpose.' },
     'android.permission.PACKAGE_USAGE_STATS': { score: 12, severity: 'medium', title: 'Usage stats access', detail: 'Usage stats can reveal what other apps the user runs.' },
-    'android.permission.REQUEST_DELETE_PACKAGES': { score: 10, severity: 'medium', title: 'Can request deleting packages', detail: 'This can be used to interfere with other installed apps.' },
-    'android.permission.KILL_BACKGROUND_PROCESSES': { score: 8, severity: 'low', title: 'Kills background processes', detail: 'Stopping other apps is uncommon for normal consumer apps.' },
+    'android.permission.REQUEST_DELETE_PACKAGES': { score: 8, severity: 'medium', title: 'Can request deleting packages', detail: 'This can be used to interfere with other installed apps.' },
+    'android.permission.KILL_BACKGROUND_PROCESSES': { score: 4, severity: 'low', title: 'Kills background processes', detail: 'Stopping other apps is uncommon for normal consumer apps.' },
     'android.permission.BIND_DEVICE_ADMIN': { score: 22, severity: 'high', title: 'Device admin binding', detail: 'Device admin capabilities can make removal harder.' }
 };
 
@@ -103,8 +125,9 @@ function makeFinding(type, severity, title, detail, evidence = {}, source = 'Shi
 
 function classifyVerdict(score, vtStats = null) {
     const malicious = vtStats?.malicious || 0;
+    const suspicious = vtStats?.suspicious || 0;
     if (malicious >= 5 || score >= 85) return 'malicious';
-    if (malicious >= 1 || score >= 45) return 'suspicious';
+    if (malicious >= 1 || suspicious >= 4 || score >= 45) return 'suspicious';
     if (score >= 20) return 'low_risk';
     return 'clean';
 }
@@ -170,6 +193,24 @@ function validateDeepScanPayload(normalized) {
     return null;
 }
 
+function hasPermission(normalized, permission) {
+    return normalized.permissions.includes(permission);
+}
+
+function countSensitivePermissions(normalized) {
+    return normalized.permissions.filter((permission) => SENSITIVE_PERMISSIONS.has(permission)).length;
+}
+
+function isSuspiciousPackageName(packageName) {
+    if (!packageName) {
+        return false;
+    }
+    const parts = packageName.split('.').filter(Boolean);
+    const last = parts[parts.length - 1] || '';
+    const digitCount = (last.match(/\d/g) || []).length;
+    return last.length >= 12 && digitCount >= 5;
+}
+
 function analyzeHeuristics(normalized, vtStats = null) {
     const findings = [];
     let riskScore = 0;
@@ -181,18 +222,19 @@ function analyzeHeuristics(normalized, vtStats = null) {
             'SHA-256 not provided',
             'The server could not run a VirusTotal hash lookup because the file hash is missing.'
         ));
-        riskScore += 5;
+        riskScore += 3;
     }
 
-    if (!normalized.installerPackage || !ALLOWED_INSTALLERS.has(normalized.installerPackage)) {
+    const hasTrustedInstaller = Boolean(normalized.installerPackage && ALLOWED_INSTALLERS.has(normalized.installerPackage));
+    if (!hasTrustedInstaller) {
         findings.push(makeFinding(
             'install_source',
-            'medium',
+            'low',
             'Untrusted or unknown install source',
-            'The installer package is missing or not in the allowlist of common trusted Android stores.',
+            'Unknown install source alone is not a malware verdict, but should be combined with other indicators.',
             { installer_package: normalized.installerPackage || 'unknown' }
         ));
-        riskScore += normalized.installerPackage ? 12 : 16;
+        riskScore += normalized.installerPackage ? 4 : 2;
     }
 
     if (normalized.targetSdk !== null && normalized.targetSdk <= 28) {
@@ -203,7 +245,7 @@ function analyzeHeuristics(normalized, vtStats = null) {
             'The app targets an older Android SDK level, which can indicate weaker platform restrictions and deserves extra review.',
             { target_sdk: normalized.targetSdk }
         ));
-        riskScore += normalized.targetSdk <= 26 ? 10 : 5;
+        riskScore += normalized.targetSdk <= 26 ? 8 : 4;
     }
 
     if (!normalized.signatureSha256) {
@@ -213,7 +255,7 @@ function analyzeHeuristics(normalized, vtStats = null) {
             'Signing fingerprint unavailable',
             'The device did not provide a signing certificate fingerprint for this package.'
         ));
-        riskScore += 4;
+        riskScore += 1;
     }
 
     if (!normalized.certificateSubject) {
@@ -223,7 +265,25 @@ function analyzeHeuristics(normalized, vtStats = null) {
             'Certificate subject unavailable',
             'The signing certificate subject could not be resolved from package metadata.'
         ));
-        riskScore += 3;
+        riskScore += 1;
+    }
+
+    if (
+        normalized.sha256 &&
+        normalized.uploadedApkSha256 &&
+        normalized.sha256 !== normalized.uploadedApkSha256
+    ) {
+        findings.push(makeFinding(
+            'hash_mismatch',
+            'high',
+            'Hash mismatch between package metadata and uploaded APK',
+            'The device-reported hash does not match the uploaded APK hash, which can indicate tampering or package confusion.',
+            {
+                reported_sha256: normalized.sha256,
+                uploaded_apk_sha256: normalized.uploadedApkSha256
+            }
+        ));
+        riskScore += 26;
     }
 
     for (const permission of normalized.permissions) {
@@ -239,12 +299,16 @@ function analyzeHeuristics(normalized, vtStats = null) {
         riskScore += rule.score;
     }
 
-    const hasAccessibility = normalized.permissions.includes('android.permission.BIND_ACCESSIBILITY_SERVICE');
-    const hasOverlay = normalized.permissions.includes('android.permission.SYSTEM_ALERT_WINDOW');
-    const hasInstaller = normalized.permissions.includes('android.permission.REQUEST_INSTALL_PACKAGES');
-    const hasQueryAll = normalized.permissions.includes('android.permission.QUERY_ALL_PACKAGES');
-    const hasSms = normalized.permissions.includes('android.permission.READ_SMS') || normalized.permissions.includes('android.permission.SEND_SMS') || normalized.permissions.includes('android.permission.RECEIVE_SMS');
-    const hasContacts = normalized.permissions.includes('android.permission.READ_CONTACTS');
+    const hasAccessibility = hasPermission(normalized, 'android.permission.BIND_ACCESSIBILITY_SERVICE');
+    const hasOverlay = hasPermission(normalized, 'android.permission.SYSTEM_ALERT_WINDOW');
+    const hasInstaller = hasPermission(normalized, 'android.permission.REQUEST_INSTALL_PACKAGES');
+    const hasQueryAll = hasPermission(normalized, 'android.permission.QUERY_ALL_PACKAGES');
+    const hasSms = hasPermission(normalized, 'android.permission.READ_SMS')
+        || hasPermission(normalized, 'android.permission.SEND_SMS')
+        || hasPermission(normalized, 'android.permission.RECEIVE_SMS');
+    const hasContacts = hasPermission(normalized, 'android.permission.READ_CONTACTS');
+    const hasDeviceAdmin = hasPermission(normalized, 'android.permission.BIND_DEVICE_ADMIN');
+    const sensitivePermissionCount = countSensitivePermissions(normalized);
 
     if (hasAccessibility && hasOverlay) {
         findings.push(makeFinding(
@@ -256,12 +320,52 @@ function analyzeHeuristics(normalized, vtStats = null) {
         riskScore += 35;
     }
 
-    if (hasInstaller && hasQueryAll) {
+    if (hasAccessibility && hasOverlay && hasSms) {
+        findings.push(makeFinding(
+            'permission_combo',
+            'critical',
+            'Accessibility + overlay + SMS combination',
+            'This triple combination is strongly associated with credential theft, OTP interception, and fraudulent transaction flows.'
+        ));
+        riskScore += 38;
+    }
+
+    if ((hasAccessibility && hasSms) || (hasOverlay && hasSms)) {
         findings.push(makeFinding(
             'permission_combo',
             'high',
+            'Sensitive UI control combined with SMS access',
+            'Combining UI-manipulation permissions with SMS access can enable OTP interception and transaction abuse.'
+        ));
+        riskScore += 24;
+    }
+
+    if (hasInstaller && hasQueryAll) {
+        findings.push(makeFinding(
+            'permission_combo',
+            'medium',
             'Package installation + full package visibility',
             'The app can inspect other apps and initiate installation flows, which increases abuse potential.'
+        ));
+        riskScore += 16;
+    }
+
+    if (hasDeviceAdmin && (hasOverlay || hasAccessibility)) {
+        findings.push(makeFinding(
+            'permission_combo',
+            'high',
+            'Device admin paired with overlay/accessibility',
+            'This combination can make uninstall harder while retaining strong UI control over the device.'
+        ));
+        riskScore += 22;
+    }
+
+    if (hasInstaller && (hasAccessibility || hasOverlay || hasSms)) {
+        findings.push(makeFinding(
+            'permission_combo',
+            'high',
+            'App installer capability paired with sensitive control permissions',
+            'Installing other APKs alongside accessibility/overlay/SMS capabilities significantly increases abuse potential.'
         ));
         riskScore += 20;
     }
@@ -274,6 +378,17 @@ function analyzeHeuristics(normalized, vtStats = null) {
             'This permission set is often used for spam, phishing propagation, or OTP interception.'
         ));
         riskScore += 18;
+    }
+
+    if (sensitivePermissionCount >= 5) {
+        findings.push(makeFinding(
+            'permission_burst',
+            'medium',
+            'Large cluster of sensitive permissions',
+            'The app requests many high-impact permissions together, which expands abuse surface.',
+            { sensitive_permission_count: sensitivePermissionCount }
+        ));
+        riskScore += sensitivePermissionCount >= 7 ? 18 : 12;
     }
 
     if (normalized.permissions.length >= 25) {
@@ -291,16 +406,16 @@ function analyzeHeuristics(normalized, vtStats = null) {
     if (
         normalized.firstInstallTime &&
         Date.now() - normalized.firstInstallTime <= recentInstallWindowMs &&
-        (!normalized.installerPackage || !ALLOWED_INSTALLERS.has(normalized.installerPackage))
+        !hasTrustedInstaller
     ) {
         findings.push(makeFinding(
             'recent_sideload',
-            'medium',
+            'low',
             'Recently installed from an unknown source',
-            'A recent sideload deserves closer scrutiny because the reputation window is still short.',
+            'Recent sideloading is a weak signal by itself and should only increase risk together with stronger indicators.',
             { first_install_time: normalized.firstInstallTime }
         ));
-        riskScore += 10;
+        riskScore += hasAccessibility || hasOverlay || hasSms ? 6 : 2;
     }
 
     if (
@@ -326,7 +441,7 @@ function analyzeHeuristics(normalized, vtStats = null) {
             'Debuggable build flag present',
             'Debuggable builds are weaker from a security perspective and should not normally ship to end users.'
         ));
-        riskScore += 8;
+        riskScore += 6;
     }
 
     if (normalized.usesCleartextTraffic === true) {
@@ -336,7 +451,59 @@ function analyzeHeuristics(normalized, vtStats = null) {
             'Cleartext traffic allowed',
             'Allowing cleartext traffic weakens transport security and can expose sensitive traffic.'
         ));
-        riskScore += 12;
+        riskScore += 8;
+    }
+
+    if (normalized.isDebuggable === true && normalized.usesCleartextTraffic === true && (hasAccessibility || hasOverlay || hasSms)) {
+        findings.push(makeFinding(
+            'build_combo',
+            'medium',
+            'Debuggable + cleartext + sensitive permissions',
+            'This combination increases exploitability and is uncommon for production-grade consumer apps.'
+        ));
+        riskScore += 14;
+    }
+
+    if (
+        normalized.certificateSubject &&
+        SUSPICIOUS_CERT_SUBJECT_PATTERNS.some((pattern) => pattern.test(normalized.certificateSubject)) &&
+        (hasAccessibility || hasOverlay || hasSms || hasInstaller)
+    ) {
+        findings.push(makeFinding(
+            'certificate_profile',
+            'medium',
+            'Suspicious signing certificate profile',
+            'The certificate subject looks non-production (debug/test/unknown) while the app requests sensitive capabilities.',
+            { certificate_subject: normalized.certificateSubject }
+        ));
+        riskScore += 14;
+    }
+
+    if (isSuspiciousPackageName(normalized.packageName) && (hasAccessibility || hasOverlay || hasSms || hasInstaller)) {
+        findings.push(makeFinding(
+            'package_profile',
+            'medium',
+            'Unusual package naming profile',
+            'The package name pattern is atypical for consumer apps and appears together with sensitive permissions.',
+            { package_name: normalized.packageName }
+        ));
+        riskScore += 10;
+    }
+
+    const staleUpdateWindowMs = 540 * 24 * 60 * 60 * 1000;
+    if (
+        normalized.lastUpdateTime &&
+        Date.now() - normalized.lastUpdateTime >= staleUpdateWindowMs &&
+        (hasAccessibility || hasOverlay || hasSms || hasInstaller)
+    ) {
+        findings.push(makeFinding(
+            'update_staleness',
+            'low',
+            'Sensitive app has not been updated for a long time',
+            'A long update gap on an app with sensitive capabilities can indicate abandoned or weakly maintained software.',
+            { last_update_time: normalized.lastUpdateTime }
+        ));
+        riskScore += 6;
     }
 
     if (vtStats?.status === 'found') {
@@ -381,6 +548,13 @@ function analyzeHeuristics(normalized, vtStats = null) {
             {},
             'VirusTotal'
         ));
+    }
+
+    if (riskScore < 20) {
+        const noisyOnly = findings.every((finding) => ['metadata_gap', 'install_source', 'platform_age', 'signature_gap', 'certificate_gap', 'recent_sideload', 'virustotal_lookup'].includes(finding.type));
+        if (noisyOnly) {
+            riskScore = Math.min(riskScore, 12);
+        }
     }
 
     riskScore = Math.max(0, Math.min(100, riskScore));

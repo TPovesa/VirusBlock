@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 
 PACKER_MARKERS = {
@@ -28,6 +29,41 @@ SUSPICIOUS_FILE_PATTERNS = [
 
 URL_RE = re.compile(r'https?://[A-Za-z0-9._~:/?#\[\]@!$&\'()*+,;=%-]{6,220}')
 IP_RE = re.compile(r'(?<!\d)((?:\d{1,3}\.){3}\d{1,3})(?!\d)')
+ASCII_STR_RE = re.compile(rb'[\x20-\x7e]{6,220}')
+
+MAX_FINDINGS_TOTAL = 90
+MAX_FINDINGS_PER_STAGE = 12
+ARCHIVE_SCAN_TIMEOUT_SEC = 6.0
+NATIVE_SCAN_TIMEOUT_SEC = 8.0
+ARCHIVE_SCAN_ENTRY_LIMIT = 1800
+ARCHIVE_TEXT_ENTRY_LIMIT = 24
+ARCHIVE_TEXT_FILE_MAX_BYTES = 96 * 1024
+NATIVE_LIB_SCAN_LIMIT = 28
+NATIVE_LIB_MAX_BYTES = 640 * 1024
+NATIVE_TOTAL_SCAN_BYTES = 6 * 1024 * 1024
+
+SUSPICIOUS_ENDPOINT_MARKERS = [
+    'api.telegram.org/bot',
+    'discord.com/api/webhooks',
+    'discordapp.com/api/webhooks',
+    'pastebin.com/raw',
+    'raw.githubusercontent.com',
+    'ngrok.io',
+    'ngrok-free.app',
+    'duckdns.org',
+    'no-ip.org',
+    '.onion',
+]
+
+SUSPICIOUS_PATH_MARKERS = [
+    '/gate.php',
+    '/panel',
+    '/control.php',
+    '/admin.php',
+    '/command',
+    '/upload.php',
+    '/api/v1/bot',
+]
 
 STRING_SIGNAL_RULES = [
     (
@@ -114,6 +150,13 @@ def finding(type_name, severity, title, detail, source, score, evidence=None):
     }
 
 
+def extend_findings_capped(target, additions, cap=MAX_FINDINGS_TOTAL):
+    if not additions or len(target) >= cap:
+        return
+    room = cap - len(target)
+    target.extend(additions[:room])
+
+
 def sha256_file(path):
     digest = hashlib.sha256()
     with open(path, 'rb') as handle:
@@ -151,6 +194,220 @@ def normalize_public_ips(values, limit=10):
         if len(ips) >= limit:
             break
     return ips
+
+
+def parse_archive_heuristics(path, tool_status):
+    findings = []
+    metadata = {}
+    deadline = time.monotonic() + ARCHIVE_SCAN_TIMEOUT_SEC
+
+    try:
+        with zipfile.ZipFile(path, 'r') as archive:
+            infos = archive.infolist()
+            if len(infos) > ARCHIVE_SCAN_ENTRY_LIMIT:
+                infos = infos[:ARCHIVE_SCAN_ENTRY_LIMIT]
+                metadata['entry_scan_truncated'] = True
+
+            traversal_entries = []
+            suspicious_payload_names = []
+            matched_urls = []
+            marker_hits = []
+            scanned_text_entries = 0
+
+            for info in infos:
+                if time.monotonic() > deadline:
+                    metadata['timed_out'] = True
+                    break
+
+                name = info.filename or ''
+                lower_name = name.lower()
+
+                if lower_name.startswith('/') or '../' in lower_name or '..\\' in lower_name:
+                    traversal_entries.append(name)
+
+                if lower_name.startswith('assets/') and lower_name.endswith(('.zip', '.7z', '.rar', '.tar', '.xz', '.apk')):
+                    suspicious_payload_names.append(name)
+
+                if (
+                    scanned_text_entries < ARCHIVE_TEXT_ENTRY_LIMIT
+                    and info.file_size > 0
+                    and info.file_size <= ARCHIVE_TEXT_FILE_MAX_BYTES
+                    and lower_name.startswith(('assets/', 'res/raw/', 'kotlin/', 'unknown/'))
+                    and lower_name.endswith(('.txt', '.json', '.xml', '.cfg', '.conf', '.ini', '.dat'))
+                ):
+                    scanned_text_entries += 1
+                    try:
+                        payload = archive.read(info, pwd=None)
+                    except Exception:
+                        continue
+                    text = payload.decode('latin-1', errors='ignore').lower()
+
+                    for marker in SUSPICIOUS_ENDPOINT_MARKERS + SUSPICIOUS_PATH_MARKERS:
+                        if marker in text and marker not in marker_hits:
+                            marker_hits.append(marker)
+                            if len(marker_hits) >= 12:
+                                break
+
+                    for url in URL_RE.findall(text):
+                        if url not in matched_urls:
+                            matched_urls.append(url)
+                        if len(matched_urls) >= 10:
+                            break
+
+            metadata['scanned_text_entries'] = scanned_text_entries
+
+            if traversal_entries:
+                findings.append(finding(
+                    'archive_path_anomaly',
+                    'high',
+                    'Archive path traversal markers',
+                    'Some archive entries use traversal-like paths that are not expected in normal APK packaging.',
+                    'Archive Heuristics',
+                    20,
+                    {'entries': traversal_entries[:6]}
+                ))
+
+            if suspicious_payload_names:
+                findings.append(finding(
+                    'nested_archive_payload',
+                    'medium',
+                    'Nested payload archives in assets',
+                    'The APK embeds archive payloads inside assets, which can be used to hide staged content.',
+                    'Archive Heuristics',
+                    14,
+                    {'entries': suspicious_payload_names[:6]}
+                ))
+
+            marker_based_urls = [url for url in matched_urls if any(marker in url.lower() for marker in SUSPICIOUS_ENDPOINT_MARKERS)]
+            if marker_hits or marker_based_urls:
+                findings.append(finding(
+                    'archive_endpoint_marker',
+                    'high' if marker_based_urls else 'medium',
+                    'Suspicious endpoint markers in packaged resources',
+                    'Packaged resource files include endpoint/path markers often seen in C2, webhook, or dropper configs.',
+                    'Archive Heuristics',
+                    18 if marker_based_urls else 12,
+                    {
+                        'markers': marker_hits[:8],
+                        'urls': marker_based_urls[:6]
+                    }
+                ))
+    except Exception as exc:
+        tool_status['archive_scan'] = 'error'
+        return [], {'error': str(exc)[:180]}
+
+    tool_status['archive_scan'] = 'timeout' if metadata.get('timed_out') else 'ok'
+    return findings[:MAX_FINDINGS_PER_STAGE], metadata
+
+
+def parse_native_strings(path, tool_status):
+    findings = []
+    metadata = {}
+    deadline = time.monotonic() + NATIVE_SCAN_TIMEOUT_SEC
+
+    try:
+        with zipfile.ZipFile(path, 'r') as archive:
+            infos = [
+                info for info in archive.infolist()
+                if (info.filename or '').lower().startswith('lib/') and (info.filename or '').lower().endswith('.so')
+            ]
+            if len(infos) > NATIVE_LIB_SCAN_LIMIT:
+                infos = infos[:NATIVE_LIB_SCAN_LIMIT]
+                metadata['lib_scan_truncated'] = True
+
+            scanned_libs = 0
+            scanned_bytes = 0
+            urls = []
+            public_ips = []
+            marker_hits = []
+
+            for info in infos:
+                if time.monotonic() > deadline or scanned_bytes >= NATIVE_TOTAL_SCAN_BYTES:
+                    metadata['timed_out'] = True
+                    break
+                scanned_libs += 1
+
+                to_read = min(max(0, info.file_size), NATIVE_LIB_MAX_BYTES)
+                if to_read <= 0:
+                    continue
+                try:
+                    with archive.open(info, 'r') as handle:
+                        blob = handle.read(to_read)
+                except Exception:
+                    continue
+
+                scanned_bytes += len(blob)
+                text_blob = b'\n'.join(match.group(0) for match in ASCII_STR_RE.finditer(blob))
+                lowered = text_blob.decode('latin-1', errors='ignore').lower()
+
+                for marker in SUSPICIOUS_ENDPOINT_MARKERS + SUSPICIOUS_PATH_MARKERS:
+                    if marker in lowered and marker not in marker_hits:
+                        marker_hits.append(marker)
+                        if len(marker_hits) >= 12:
+                            break
+
+                for url in URL_RE.findall(lowered):
+                    if url not in urls:
+                        urls.append(url)
+                    if len(urls) >= 12:
+                        break
+
+                for candidate in IP_RE.findall(lowered):
+                    if len(public_ips) >= 12:
+                        break
+                    try:
+                        parsed = ipaddress.ip_address(candidate)
+                        if parsed.is_private or parsed.is_loopback or parsed.is_multicast or parsed.is_reserved:
+                            continue
+                        if candidate not in public_ips:
+                            public_ips.append(candidate)
+                    except ValueError:
+                        continue
+
+            metadata['native_libs_scanned'] = scanned_libs
+            metadata['native_bytes_scanned'] = scanned_bytes
+
+            cleartext_urls = [url for url in urls if url.startswith('http://')]
+            suspicious_urls = [url for url in urls if any(marker in url for marker in SUSPICIOUS_ENDPOINT_MARKERS)]
+
+            if cleartext_urls:
+                findings.append(finding(
+                    'native_cleartext_endpoint',
+                    'medium',
+                    'Cleartext endpoints in native strings',
+                    'Native libraries contain HTTP endpoints, which is risky for integrity and can indicate low-trust infrastructure.',
+                    'Native String Scan',
+                    12,
+                    {'urls': cleartext_urls[:6]}
+                ))
+
+            if suspicious_urls or marker_hits:
+                findings.append(finding(
+                    'native_endpoint_marker',
+                    'high' if suspicious_urls else 'medium',
+                    'Suspicious endpoint markers in native strings',
+                    'Native library strings include endpoint/path markers associated with webhook, C2, or staged payload behavior.',
+                    'Native String Scan',
+                    18 if suspicious_urls else 12,
+                    {'urls': suspicious_urls[:6], 'markers': marker_hits[:8]}
+                ))
+
+            if public_ips:
+                findings.append(finding(
+                    'native_hardcoded_ip',
+                    'medium',
+                    'Hardcoded public IPs in native strings',
+                    'Native libraries contain hardcoded public IP addresses that should be reviewed.',
+                    'Native String Scan',
+                    12,
+                    {'ips': public_ips[:6]}
+                ))
+    except Exception as exc:
+        tool_status['native_strings'] = 'error'
+        return [], {'error': str(exc)[:180]}
+
+    tool_status['native_strings'] = 'timeout' if metadata.get('timed_out') else 'ok'
+    return findings[:MAX_FINDINGS_PER_STAGE], metadata
 
 
 def parse_apkid(path, tool_status):
@@ -559,6 +816,16 @@ def main():
                         {'matches': matched[:6]}
                     ))
 
+        archive_findings, archive_metadata = parse_archive_heuristics(apk_path, tool_status)
+        extend_findings_capped(result['findings'], archive_findings)
+        if archive_metadata:
+            result['metadata']['archive_heuristics'] = archive_metadata
+
+        native_findings, native_metadata = parse_native_strings(apk_path, tool_status)
+        extend_findings_capped(result['findings'], native_findings)
+        if native_metadata:
+            result['metadata']['native_string_scan'] = native_metadata
+
         permissions = parse_aapt_permissions(apk_path, tool_status)
         if permissions:
             result['metadata']['aapt_permissions'] = permissions[:64]
@@ -572,18 +839,21 @@ def main():
                     18
                 ))
 
-        result['findings'].extend(parse_apkid(apk_path, tool_status))
-        result['findings'].extend(parse_yara(apk_path, args.rules, tool_status))
+        extend_findings_capped(result['findings'], parse_apkid(apk_path, tool_status))
+        extend_findings_capped(result['findings'], parse_yara(apk_path, args.rules, tool_status))
 
         androguard_findings, androguard_metadata = parse_androguard(apk_path, tool_status)
-        result['findings'].extend(androguard_findings)
+        extend_findings_capped(result['findings'], androguard_findings)
         if androguard_metadata:
             result['metadata']['androguard'] = androguard_metadata
 
         quark_findings, quark_metadata = parse_quark(apk_path, tool_status)
-        result['findings'].extend(quark_findings)
+        extend_findings_capped(result['findings'], quark_findings)
         if quark_metadata:
             result['metadata']['quark'] = quark_metadata
+
+        if len(result['findings']) > MAX_FINDINGS_TOTAL:
+            result['findings'] = result['findings'][:MAX_FINDINGS_TOTAL]
 
         result['metadata']['tool_status'] = tool_status
         result['risk_bonus'] = min(100, sum(int(item.get('score', 0)) for item in result['findings']))
