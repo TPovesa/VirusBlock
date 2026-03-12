@@ -2,14 +2,15 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <inset
-            android:insetLeft="30dp"
-            android:insetTop="30dp"
-            android:insetRight="30dp"
-            android:insetBottom="30dp">
-            <bitmap
-                android:src="@drawable/shield_logo_transparent"
-                android:gravity="center"
-                android:antialias="true" />
+            android:insetLeft="22dp"
+            android:insetTop="22dp"
+            android:insetRight="22dp"
+            android:insetBottom="22dp">
+            <scale
+                android:drawable="@drawable/shield_logo_transparent"
+                android:scaleGravity="center"
+                android:scaleHeight="72%"
+                android:scaleWidth="72%" />
         </inset>
     </item>
 </layer-list>

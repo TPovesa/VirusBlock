@@ -23,7 +23,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.History
@@ -393,23 +392,35 @@ private fun HomeContent(
             }
 
             item {
-                ShieldPanel(accent = MaterialTheme.colorScheme.signalTone) {
-                    Text(
-                        text = "Проверить APK",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f)),
+                    shape = MaterialTheme.shapes.large
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 58.dp)
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        ShieldStatusChip(
-                            label = if (apkLimitReached) "Лимит 3/3" else "Серверный анализ",
-                            icon = Icons.Filled.UploadFile,
-                            color = MaterialTheme.colorScheme.signalTone
-                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.UploadFile,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.signalTone
+                            )
+                            Text(
+                                text = "Проверить APK",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                         Button(
                             onClick = {
                                 modeMessage = null
@@ -433,32 +444,6 @@ private fun HomeContent(
                         ) {
                             Text(if (state.isGuest) "Войти" else "Выбрать")
                         }
-                    }
-                }
-            }
-
-            item {
-                if (!state.isGuest) {
-                    ShieldPanel(
-                        accent = if (state.lastScanThreatCount == 0) {
-                            MaterialTheme.colorScheme.safeTone
-                        } else {
-                            MaterialTheme.colorScheme.warningTone
-                        }
-                    ) {
-                        ShieldStatusChip(
-                            label = if (state.lastScanThreatCount == 0) {
-                                "Угроз не обнаружено"
-                            } else {
-                                "Угроз в последнем скане: ${state.lastScanThreatCount}"
-                            },
-                            icon = if (state.lastScanThreatCount == 0) Icons.Filled.Security else Icons.Filled.BugReport,
-                            color = if (state.lastScanThreatCount == 0) {
-                                MaterialTheme.colorScheme.safeTone
-                            } else {
-                                MaterialTheme.colorScheme.warningTone
-                            }
-                        )
                     }
                 }
             }
@@ -593,7 +578,7 @@ private fun ModeGridCard(
     }
 
     Card(
-        modifier = modifier.aspectRatio(1f),
+        modifier = modifier.aspectRatio(1.02f),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         shape = MaterialTheme.shapes.large
     ) {
@@ -601,7 +586,7 @@ private fun ModeGridCard(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Box(
                 modifier = Modifier
@@ -624,23 +609,29 @@ private fun ModeGridCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.weight(1f))
-            IconButton(
-                onClick = onAction,
-                enabled = enabled,
+            Box(
                 modifier = Modifier
-                    .align(Alignment.End)
-                    .size(62.dp)
+                    .align(Alignment.CenterHorizontally)
+                    .size(66.dp)
                     .clip(CircleShape)
-                    .background(
-                        if (enabled) accent.copy(alpha = 0.20f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
-                    )
+                    .background(if (enabled) accent.copy(alpha = 0.16f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.10f)),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Filled.PlayArrow,
-                    contentDescription = "Запуск",
-                    tint = if (enabled) accent else MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.size(38.dp)
-                )
+                IconButton(
+                    onClick = onAction,
+                    enabled = enabled,
+                    modifier = Modifier
+                        .size(54.dp)
+                        .clip(CircleShape)
+                        .background(if (enabled) accent.copy(alpha = 0.22f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = "Запуск",
+                        tint = if (enabled) accent else MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
             }
         }
     }
