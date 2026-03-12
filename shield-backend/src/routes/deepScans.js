@@ -9,6 +9,41 @@ const {
     getDeepScanFullReports
 } = require('../services/deepScanService');
 
+function classifyFullReportError(error) {
+    const code = String(error?.code || '').toUpperCase();
+    const message = String(error?.message || '').toLowerCase();
+
+    if ([
+        'ECONNREFUSED',
+        'ECONNRESET',
+        'ETIMEDOUT',
+        'EAI_AGAIN',
+        'PROTOCOL_CONNECTION_LOST',
+        'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR'
+    ].includes(code)) {
+        return {
+            status: 503,
+            payload: { error: 'Deep scan report storage is temporarily unavailable', code: 'REPORTS_STORAGE_UNAVAILABLE' }
+        };
+    }
+
+    if (code.startsWith('ER_') && /table|column|sql|parse|unknown/i.test(String(error?.sqlMessage || error?.message || ''))) {
+        return {
+            status: 502,
+            payload: { error: 'Deep scan report backend returned an invalid response', code: 'REPORTS_BACKEND_ERROR' }
+        };
+    }
+
+    if (/database|mysql|connection|pool/.test(message)) {
+        return {
+            status: 503,
+            payload: { error: 'Deep scan report storage is temporarily unavailable', code: 'REPORTS_STORAGE_UNAVAILABLE' }
+        };
+    }
+
+    return null;
+}
+
 router.post('/start', auth, async (req, res) => {
     try {
         const job = await createDeepScanJob(req.userId, req.body || {});
@@ -87,6 +122,11 @@ router.post('/full-report', auth, async (req, res) => {
         const normalizedIds = ids
             .map((value) => String(value || '').trim())
             .filter(Boolean);
+        if (normalizedIds.length > 80) {
+            return res.status(400).json({
+                error: 'ids exceeds maximum of 80 scan identifiers'
+            });
+        }
         const allValid = normalizedIds.length > 0 && normalizedIds.every((value) => /^[a-zA-Z0-9-]{20,64}$/.test(value));
         if (!allValid) {
             return res.status(400).json({
@@ -97,18 +137,26 @@ router.post('/full-report', auth, async (req, res) => {
         const reports = await getDeepScanFullReports(normalizedIds, req.userId);
         if (!Array.isArray(reports) || reports.length === 0) {
             return res.status(404).json({
-                error: 'No deep scan reports found for current user'
+                error: 'No deep scan reports found for current user',
+                code: 'REPORTS_NOT_FOUND'
             });
         }
 
+        const foundIds = new Set(reports.map((item) => item.scan_id));
+        const missing_ids = normalizedIds.filter((id) => !foundIds.has(id));
         return res.json({
             success: true,
             generated_at: Date.now(),
-            reports
+            reports,
+            missing_ids
         });
     } catch (error) {
         console.error('Deep scan full-report error:', error);
-        return res.status(500).json({ error: 'Server error' });
+        const classified = classifyFullReportError(error);
+        if (classified) {
+            return res.status(classified.status).json(classified.payload);
+        }
+        return res.status(500).json({ error: 'Unexpected server error', code: 'REPORTS_UNEXPECTED_ERROR' });
     }
 });
 

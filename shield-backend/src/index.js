@@ -43,11 +43,16 @@ app.use(cors({
     credentials: false
 }));
 
+const skipGlobalLimiterForDeepFullReport = (req) => {
+    return req.method === 'POST' && /^\/api\/scans\/deep\/full-report\/?$/.test(String(req.path || ''));
+};
+
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: skipGlobalLimiterForDeepFullReport,
     message: { error: 'Too many requests, please try again later.' }
 });
 const authLimiter = rateLimit({

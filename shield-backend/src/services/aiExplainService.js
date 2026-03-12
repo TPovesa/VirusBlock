@@ -54,7 +54,10 @@ function coerceAiResponse(content) {
                 explanation: String(parsed.explanation || '').trim(),
                 advice: Array.isArray(parsed.advice)
                     ? parsed.advice.map((item) => String(item).trim()).filter(Boolean).slice(0, 5)
-                    : []
+                    : [],
+                structuredCandidate: parsed?.structured_v1 && typeof parsed.structured_v1 === 'object'
+                    ? parsed.structured_v1
+                    : (parsed && typeof parsed === 'object' ? parsed : null)
             };
         } catch (_) {
             // fall through to plain text fallback
@@ -64,7 +67,8 @@ function coerceAiResponse(content) {
     const text = String(content || '').trim();
     return {
         explanation: text.slice(0, 800),
-        advice: []
+        advice: [],
+        structuredCandidate: null
     };
 }
 
@@ -122,6 +126,157 @@ function severityLabel(severity) {
     }
 }
 
+function normalizeTone(value) {
+    const tone = String(value || '').trim().toLowerCase();
+    if (['positive', 'neutral', 'warning', 'critical', 'info'].includes(tone)) {
+        return tone;
+    }
+    if (['danger', 'high', 'severe'].includes(tone)) {
+        return 'critical';
+    }
+    if (['safe', 'good', 'ok'].includes(tone)) {
+        return 'positive';
+    }
+    return 'neutral';
+}
+
+function toUniqueStringList(value, limit = 6) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return Array.from(new Set(
+        value
+            .map((item) => String(item || '').trim())
+            .filter(Boolean)
+    )).slice(0, limit);
+}
+
+function stripMarkdown(value) {
+    return String(value || '')
+        .replace(/`+/g, '')
+        .replace(/\*\*/g, '')
+        .replace(/^#+\s*/gm, '')
+        .replace(/^\s*[-*]\s+/gm, '')
+        .replace(/\n+/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+}
+
+function inferExplainVerdict(summary, result, candidateVerdict = null) {
+    const fromCandidate = normalizeVerdict(candidateVerdict);
+    if (fromCandidate) {
+        return fromCandidate;
+    }
+
+    const fromResult = normalizeVerdict(
+        result?.verdict ||
+        result?.final_verdict ||
+        result?.scanVerdict
+    );
+    if (fromResult) {
+        return fromResult;
+    }
+
+    const fromSummary = normalizeVerdict(
+        summary?.verdict ||
+        summary?.final_verdict ||
+        summary?.scanVerdict
+    );
+    if (fromSummary) {
+        return fromSummary;
+    }
+
+    const threats = Number(result?.threatsFound || summary?.totalThreats || 0);
+    if (threats > 0) {
+        return 'suspicious';
+    }
+    return 'clean';
+}
+
+function inferExplainConfidence(summary, result, verdict, candidateConfidence = null) {
+    const raw = Number(candidateConfidence ?? result?.confidence ?? summary?.confidence);
+    if (Number.isFinite(raw)) {
+        const normalized = raw > 1 ? raw / 100 : raw;
+        return clamp(normalized, 0, 1);
+    }
+    switch (verdict) {
+        case 'malicious':
+            return 0.9;
+        case 'suspicious':
+            return 0.78;
+        case 'low_risk':
+            return 0.64;
+        case 'clean':
+            return 0.72;
+        default:
+            return 0.5;
+    }
+}
+
+function toneFromVerdict(verdict) {
+    switch (verdict) {
+        case 'malicious':
+            return 'critical';
+        case 'suspicious':
+            return 'warning';
+        case 'clean':
+            return 'positive';
+        default:
+            return 'neutral';
+    }
+}
+
+function buildStructuredExplainPayload({ summary, result, explanation, advice, candidate }) {
+    const verdict = inferExplainVerdict(summary, result, candidate?.verdict);
+    const confidence = inferExplainConfidence(summary, result, verdict, candidate?.confidence);
+    const baseSummary = String(candidate?.summary || '').trim() || stripMarkdown(explanation).slice(0, 320);
+    const actions = toUniqueStringList(candidate?.actions, 6);
+    const legacyAdvice = toUniqueStringList(advice, 6);
+    const checks = toUniqueStringList(candidate?.checks, 6);
+    const tone = normalizeTone(candidate?.tone || toneFromVerdict(verdict));
+
+    const normalizedCards = Array.isArray(candidate?.cards)
+        ? candidate.cards
+            .filter((card) => card && typeof card === 'object')
+            .slice(0, 4)
+            .map((card, index) => ({
+                title: String(card.title || `Карточка ${index + 1}`).trim().slice(0, 80),
+                tone: normalizeTone(card.tone || tone),
+                items: toUniqueStringList(card.items, 6)
+            }))
+            .filter((card) => card.items.length > 0)
+        : [];
+
+    const cards = normalizedCards.length > 0
+        ? normalizedCards
+        : [
+            {
+                title: 'Итог',
+                tone,
+                items: baseSummary ? [baseSummary] : ['Недостаточно данных для развёрнутого вывода.']
+            },
+            ...((actions.length > 0 || legacyAdvice.length > 0) ? [{
+                title: 'Что делать сейчас',
+                tone: verdict === 'clean' ? 'positive' : 'warning',
+                items: (actions.length > 0 ? actions : legacyAdvice).slice(0, 5)
+            }] : []),
+            ...(checks.length > 0 ? [{
+                title: 'Что проверить',
+                tone: 'info',
+                items: checks.slice(0, 5)
+            }] : [])
+        ];
+
+    return {
+        summary: baseSummary || 'Недостаточно данных для краткой сводки.',
+        verdict,
+        confidence,
+        cards,
+        actions: actions.length > 0 ? actions : legacyAdvice,
+        checks
+    };
+}
+
 function buildFallbackExplanation({ summary, result }) {
     const findings = Array.isArray(result?.findings) ? result.findings : [];
     const topFinding = findings[0];
@@ -131,7 +286,7 @@ function buildFallbackExplanation({ summary, result }) {
     const modeLabel = scanMode === 'full' ? 'глубокой проверке' : scanMode === 'quick' ? 'быстрой проверке' : 'проверке';
 
     if (!topFinding) {
-        return {
+        const payload = {
             model: 'local-fallback',
             explanation: [
                 '## Итог',
@@ -148,12 +303,22 @@ function buildFallbackExplanation({ summary, result }) {
             ].join('\n'),
             advice: ['Повторите глубокую проверку позже, если поведение устройства кажется подозрительным.']
         };
+        return {
+            ...payload,
+            structured_v1: buildStructuredExplainPayload({
+                summary,
+                result,
+                explanation: payload.explanation,
+                advice: payload.advice,
+                candidate: null
+            })
+        };
     }
 
     const engine = topFinding.detectionEngine ? ` Источник сигнала: ${topFinding.detectionEngine}.` : '';
     const summaryText = topFinding.summary ? ` ${topFinding.summary}` : '';
 
-    return {
+    const payload = {
         model: 'local-fallback',
         explanation: [
             '## Что найдено',
@@ -180,6 +345,16 @@ function buildFallbackExplanation({ summary, result }) {
             'Проверьте выданные разрешения и отключите лишние.',
             'Повторите глубокую проверку после обновления базы.'
         ]
+    };
+    return {
+        ...payload,
+        structured_v1: buildStructuredExplainPayload({
+            summary,
+            result,
+            explanation: payload.explanation,
+            advice: payload.advice,
+            candidate: null
+        })
     };
 }
 
@@ -221,7 +396,8 @@ async function explainScan({ summary, result }) {
                         'Для LOW/CLEAN/угроз не найдено: спокойный тон, не пугай, дай 1-3 шага профилактики.',
                         'Если проверка быстрая и неполная — явно укажи ограничение покрытия.',
                         'Секция "Что ещё проверить" должна быть пустой или очень короткой, если добавить нечего.',
-                        'Возвращай строго JSON вида {"explanation":"...markdown...","advice":["...","..."]}.',
+                        'Возвращай строго JSON вида {"explanation":"...markdown...","advice":["...","..."],"structured_v1":{"summary":"...","verdict":"clean|low_risk|suspicious|malicious|unknown","confidence":0..1,"cards":[{"title":"...","tone":"positive|neutral|warning|critical|info","items":["..."]}],"actions":["..."],"checks":["..."]}}.',
+                        'Поля explanation и advice обязательны для обратной совместимости.',
                         'advice: 2-5 пунктов, только действия, без повторов и абстракций.'
                     ].join(' ')
                 },
@@ -238,10 +414,22 @@ async function explainScan({ summary, result }) {
         }
 
         const parsed = coerceAiResponse(content);
+        const structured_v1 = buildStructuredExplainPayload({
+            summary,
+            result,
+            explanation: parsed.explanation,
+            advice: parsed.advice,
+            candidate: parsed.structuredCandidate
+        });
+        const explanation = String(parsed.explanation || '').trim() || `## Итог\n${structured_v1.summary}`;
+        const advice = parsed.advice.length > 0
+            ? parsed.advice
+            : toUniqueStringList(structured_v1.actions, 5);
         return {
             model,
-            explanation: parsed.explanation,
-            advice: parsed.advice
+            explanation,
+            advice,
+            structured_v1
         };
     } catch (error) {
         console.error('AI explain fallback:', error);

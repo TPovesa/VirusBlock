@@ -57,6 +57,12 @@ const HIGH_SIGNAL_FINDING_TYPES = new Set([
     'permission_combo'
 ]);
 
+const HARD_SIGNAL_SOURCES = new Set([
+    'VirusTotal',
+    'APKiD',
+    'YARA'
+]);
+
 const AGGRESSIVE_FINDING_TYPES_FOR_BENIGN = new Set([
     'install_source',
     'recent_sideload',
@@ -207,6 +213,7 @@ function buildDeepScanFullReportPayload(row) {
     const deterministicStage = stages.deterministic_triage || {};
     const aiStage = stages.ai_triage || {};
     const finalStage = stages.final || {};
+    const userFacingGate = stages.user_facing_gate || metadata?.user_facing_gate || finalStage?.user_facing_gate || {};
     const triage = summary?.triage || metadata?.triage || {};
 
     const groupedFinal = groupFindingsBySource(finalFindings);
@@ -276,6 +283,8 @@ function buildDeepScanFullReportPayload(row) {
     lines.push('## Stage: Final User-Facing Result');
     lines.push(`- Verdict: ${formatVerdict(finalStage.verdict || row.verdict || summary?.verdict)}`);
     lines.push(`- Risk score: ${Number(finalStage.risk_score ?? row.risk_score ?? summary?.risk_score ?? 0)}`);
+    lines.push(`- Gate allow_threats_to_user: ${userFacingGate.allow_threats_to_user ?? 'n/a'}`);
+    lines.push(`- Gate reason: ${userFacingGate.reason || finalStage.gate_reason || 'n/a'}`);
     lines.push(`- Findings shown to user: ${finalFindings.length}`);
     lines.push('');
     if (groupedFinal.length === 0) {
@@ -606,6 +615,96 @@ function applyAiTriageDecision(base, aiTriage) {
                 report_to_user: true,
                 user_summary: aiTriage.userSummary || null
             }
+        }
+    };
+}
+
+function isWeakSignalOnlyFinding(finding) {
+    if (!finding || typeof finding !== 'object') {
+        return false;
+    }
+    const type = String(finding.type || '');
+    return LOW_SIGNAL_FINDING_TYPES.has(type) && severityRank(finding.severity) <= 2;
+}
+
+function isCriticalHardSignalFinding(finding) {
+    if (!finding || typeof finding !== 'object') {
+        return false;
+    }
+    if (severityRank(finding.severity) < 4) {
+        return false;
+    }
+    if (HIGH_SIGNAL_FINDING_TYPES.has(String(finding.type || ''))) {
+        return true;
+    }
+    return HARD_SIGNAL_SOURCES.has(String(finding.source || ''));
+}
+
+function applyUserFacingThreatGate({ verdict, riskScore, findings, recommendations, vt }) {
+    const normalizedFindings = normalizeFindingsList(findings);
+    const verdictIsThreat = verdictRank(verdict) >= verdictRank('suspicious');
+    const vtMalicious = Number(vt?.malicious || 0);
+    const criticalHardSignals = normalizedFindings.filter(isCriticalHardSignalFinding);
+    const hasHardSignals = vtMalicious > 0 || criticalHardSignals.length > 0;
+    const weakSignalsOnly = normalizedFindings.length > 0 && normalizedFindings.every(isWeakSignalOnlyFinding);
+
+    let allowThreatsToUser = verdictIsThreat || hasHardSignals;
+    let gateReason = allowThreatsToUser ? 'allow_verdict_or_hard_signals' : 'blocked_without_verdict_or_hard_signals';
+    if (weakSignalsOnly && !hasHardSignals) {
+        allowThreatsToUser = false;
+        gateReason = 'blocked_weak_signals_only';
+    }
+
+    if (allowThreatsToUser) {
+        return {
+            verdict,
+            riskScore,
+            findings: normalizedFindings,
+            recommendations,
+            gate: {
+                applied: true,
+                allow_threats_to_user: true,
+                reason: gateReason,
+                verdict_is_suspicious_or_malicious: verdictIsThreat,
+                hard_signals_present: hasHardSignals,
+                vt_malicious: vtMalicious,
+                weak_signals_only: weakSignalsOnly,
+                critical_hard_signal_count: criticalHardSignals.length,
+                critical_hard_signal_types: Array.from(new Set(criticalHardSignals.map((item) => item.type).filter(Boolean))).slice(0, 8),
+                findings_before_gate: normalizedFindings.length,
+                findings_after_gate: normalizedFindings.length
+            }
+        };
+    }
+
+    const fallbackReason = weakSignalsOnly
+        ? 'Отмечены только слабые контекстные сигналы, без подтверждённой вредоносности.'
+        : 'Сигналы не достигли пользовательского порога угрозы после фильтрации.';
+    const normalizedVerdict = formatVerdict(verdict);
+    const nextVerdict = verdictRank(verdict) >= verdictRank('suspicious')
+        ? 'clean'
+        : (normalizedVerdict === 'low_risk' ? 'low_risk' : 'clean');
+    const nextRiskScore = verdictRank(verdict) >= verdictRank('suspicious')
+        ? Math.min(12, Number(riskScore || 0))
+        : Math.min(15, Number(riskScore || 0));
+
+    return {
+        verdict: nextVerdict,
+        riskScore: clamp(nextRiskScore, 0, 100),
+        findings: [],
+        recommendations: buildCalmRecommendations(recommendations, fallbackReason),
+        gate: {
+            applied: true,
+            allow_threats_to_user: false,
+            reason: gateReason,
+            verdict_is_suspicious_or_malicious: verdictIsThreat,
+            hard_signals_present: hasHardSignals,
+            vt_malicious: vtMalicious,
+            weak_signals_only: weakSignalsOnly,
+            critical_hard_signal_count: criticalHardSignals.length,
+            critical_hard_signal_types: Array.from(new Set(criticalHardSignals.map((item) => item.type).filter(Boolean))).slice(0, 8),
+            findings_before_gate: normalizedFindings.length,
+            findings_after_gate: 0
         }
     };
 }
@@ -1449,9 +1548,27 @@ async function runDeepScanJob(jobId) {
                 console.error('Deep scan AI triage fallback:', error?.message || error);
             }
         }
+        const userFacing = applyUserFacingThreatGate({
+            verdict: triaged.verdict,
+            riskScore: triaged.riskScore,
+            findings: triaged.findings,
+            recommendations: triaged.recommendations,
+            vt
+        });
+        triaged = {
+            ...triaged,
+            verdict: userFacing.verdict,
+            riskScore: userFacing.riskScore,
+            findings: userFacing.findings,
+            recommendations: userFacing.recommendations,
+            user_facing_gate: userFacing.gate
+        };
+        stageBreakdown.user_facing_gate = userFacing.gate;
         stageBreakdown.final = {
             verdict: triaged.verdict,
             risk_score: triaged.riskScore,
+            gate_reason: userFacing?.gate?.reason || null,
+            allow_threats_to_user: Boolean(userFacing?.gate?.allow_threats_to_user),
             findings_count: Array.isArray(triaged.findings) ? triaged.findings.length : 0,
             findings: normalizeFindingsList(triaged.findings || [])
         };
@@ -1468,6 +1585,7 @@ async function runDeepScanJob(jobId) {
                 static_analysis: apkAnalysis.metadata || {},
                 next_action: 'poll',
                 triage: triaged.triage,
+                user_facing_gate: userFacing.gate,
                 stages: stageBreakdown
             },
             sources: sourceSummaries,

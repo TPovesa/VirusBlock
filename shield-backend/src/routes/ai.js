@@ -15,6 +15,7 @@ router.post('/explain-scan', auth, async (req, res) => {
             success: true,
             explanation: response.explanation,
             advice: response.advice,
+            structured_v1: response.structured_v1 || null,
             model: response.model
         });
     } catch (error) {
