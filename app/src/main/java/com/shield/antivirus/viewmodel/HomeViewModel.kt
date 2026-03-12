@@ -54,29 +54,53 @@ class HomeViewModel(private val context: Context) : ViewModel() {
 
     private fun loadData() {
         viewModelScope.launch {
-            combine(
+            val primarySnapshotFlow = combine(
                 prefs.isLoggedIn,
                 prefs.userName,
                 prefs.lastScanTime,
                 prefs.realtimeProtection,
-                prefs.isGuest,
+                prefs.isGuest
+            ) { isLoggedIn, name, lastScan, protection, isGuest ->
+                PrimarySnapshot(
+                    isLoggedIn = isLoggedIn,
+                    name = name,
+                    lastScan = lastScan,
+                    protection = protection,
+                    isGuest = isGuest
+                )
+            }
+
+            val activeScanSnapshotFlow = combine(
                 prefs.guestScanUsed,
                 prefs.activeScanType,
                 prefs.activeScanCurrentApp,
                 prefs.activeScanProgress,
                 prefs.activeScanStartedAt
-            ) { isLoggedIn, name, lastScan, protection, isGuest, guestScanUsed, activeScanType, activeScanCurrentApp, activeScanProgress, activeScanStartedAt ->
-                HomeSnapshot(
-                    isLoggedIn = isLoggedIn,
-                    name = name,
-                    lastScan = lastScan,
-                    protection = protection,
-                    isGuest = isGuest,
+            ) { guestScanUsed, activeScanType, activeScanCurrentApp, activeScanProgress, activeScanStartedAt ->
+                ActiveScanSnapshot(
                     guestScanUsed = guestScanUsed,
                     activeScanType = activeScanType,
                     activeScanCurrentApp = activeScanCurrentApp,
                     activeScanProgress = activeScanProgress,
                     activeScanStartedAt = activeScanStartedAt
+                )
+            }
+
+            combine(
+                primarySnapshotFlow,
+                activeScanSnapshotFlow
+            ) { primary, active ->
+                HomeSnapshot(
+                    isLoggedIn = primary.isLoggedIn,
+                    name = primary.name,
+                    lastScan = primary.lastScan,
+                    protection = primary.protection,
+                    isGuest = primary.isGuest,
+                    guestScanUsed = active.guestScanUsed,
+                    activeScanType = active.activeScanType,
+                    activeScanCurrentApp = active.activeScanCurrentApp,
+                    activeScanProgress = active.activeScanProgress,
+                    activeScanStartedAt = active.activeScanStartedAt
                 )
             }.combine(scanRepo.getAllResults()) { snapshot, results ->
                 val scanTooOld = snapshot.activeScanType.isNotBlank() &&
@@ -126,6 +150,22 @@ class HomeViewModel(private val context: Context) : ViewModel() {
         val lastScan: Long,
         val protection: Boolean,
         val isGuest: Boolean,
+        val guestScanUsed: Boolean,
+        val activeScanType: String,
+        val activeScanCurrentApp: String,
+        val activeScanProgress: Int,
+        val activeScanStartedAt: Long
+    )
+
+    private data class PrimarySnapshot(
+        val isLoggedIn: Boolean,
+        val name: String,
+        val lastScan: Long,
+        val protection: Boolean,
+        val isGuest: Boolean
+    )
+
+    private data class ActiveScanSnapshot(
         val guestScanUsed: Boolean,
         val activeScanType: String,
         val activeScanCurrentApp: String,
