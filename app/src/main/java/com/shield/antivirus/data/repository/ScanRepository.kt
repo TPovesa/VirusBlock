@@ -12,6 +12,7 @@ import com.shield.antivirus.data.api.ApiClient
 import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.data.local.AppDatabase
 import com.shield.antivirus.data.model.AppInfo
+import com.shield.antivirus.data.model.ApiError
 import com.shield.antivirus.data.model.DeepScanFinding
 import com.shield.antivirus.data.model.DeepScanFullReportRequest
 import com.shield.antivirus.data.model.DeepScanFullReportResponse
@@ -606,16 +607,21 @@ class ScanRepository(private val context: Context) {
         val initialJob = startResponse.body()?.scan
         val scanId = initialJob?.id
         if (!startResponse.isSuccessful || scanId.isNullOrBlank()) {
+            val serverError = startResponse.body()?.error?.takeIf { it.isNotBlank() }
+                ?: extractServerError(startResponse)
             AppLogger.log(
                 tag = "scan_repository",
                 message = "Deep scan start rejected",
                 level = "WARN",
                 metadata = mapOf(
                     "package" to app.packageName,
-                    "status_code" to startResponse.code().toString()
+                    "status_code" to startResponse.code().toString(),
+                    "server_error" to (serverError ?: "")
                 )
             )
-            throw IllegalStateException("Сервер не принял проверку для ${app.appName}.")
+            throw IllegalStateException(
+                serverError ?: "Сервер не принял проверку для ${app.appName}."
+            )
         }
 
         if (initialJob.nextAction.equals("upload_apk", ignoreCase = true)) {
@@ -638,8 +644,8 @@ class ScanRepository(private val context: Context) {
                 accessToken = accessToken,
                 reason = "required_by_server"
             )
-            if (!uploaded) {
-                throw IllegalStateException("Сервер не принял APK ${app.appName} для проверки.")
+            if (uploaded != null) {
+                throw IllegalStateException(uploaded)
             }
             apkUploaded = true
         }
@@ -656,7 +662,7 @@ class ScanRepository(private val context: Context) {
                 accessToken = accessToken,
                 reason = "client_second_stage"
             )
-            if (secondStageUploaded) {
+            if (secondStageUploaded == null) {
                 apkUploaded = true
                 val enrichedJob = pollDeepScanUntilCompleted(scanId, accessToken)
                 if (enrichedJob != null) {
@@ -674,9 +680,9 @@ class ScanRepository(private val context: Context) {
         apkFile: File,
         accessToken: String,
         reason: String
-    ): Boolean {
+    ): String? {
         if (!apkFile.exists() || !apkFile.canRead()) {
-            return false
+            return "Не удалось прочитать APK ${app.appName} для серверной проверки."
         }
         val uploadResponse = ApiClient.executeShieldCall { api ->
             api.uploadDeepScanApk(
@@ -687,6 +693,8 @@ class ScanRepository(private val context: Context) {
             )
         }
         if (!uploadResponse.isSuccessful) {
+            val serverError = uploadResponse.body()?.error?.takeIf { it.isNotBlank() }
+                ?: extractServerError(uploadResponse)
             AppLogger.log(
                 tag = "scan_repository",
                 message = "APK upload rejected",
@@ -695,12 +703,13 @@ class ScanRepository(private val context: Context) {
                     "scan_id" to scanId,
                     "package" to app.packageName,
                     "status_code" to uploadResponse.code().toString(),
-                    "reason" to reason
+                    "reason" to reason,
+                    "server_error" to (serverError ?: "")
                 )
             )
-            return false
+            return serverError ?: "Сервер не принял APK ${app.appName} для проверки."
         }
-        return true
+        return null
     }
 
     private suspend fun pollDeepScanUntilCompleted(scanId: String, accessToken: String): DeepScanJob? {
@@ -710,27 +719,52 @@ class ScanRepository(private val context: Context) {
                 api.getDeepScan("Bearer $accessToken", scanId)
             }
             if (!pollResponse.isSuccessful) {
+                val serverError = pollResponse.body()?.error?.takeIf { it.isNotBlank() }
+                    ?: extractServerError(pollResponse)
                 AppLogger.log(
                     tag = "scan_repository",
                     message = "Deep scan polling rejected",
                     level = "WARN",
                     metadata = mapOf(
                         "scan_id" to scanId,
-                        "status_code" to pollResponse.code().toString()
+                        "status_code" to pollResponse.code().toString(),
+                        "server_error" to (serverError ?: "")
                     )
                 )
-                return null
+                throw IllegalStateException(serverError ?: "Сервер не отдал статус проверки.")
             }
 
-            val currentJob = pollResponse.body()?.scan ?: return null
+            val currentBody = pollResponse.body()
+            val currentJob = currentBody?.scan
+                ?: throw IllegalStateException("Сервер вернул пустой статус проверки.")
             when (currentJob.status.uppercase()) {
                 "AWAITING_UPLOAD", "QUEUED", "RUNNING" -> Unit
-                "FAILED" -> return null
+                "FAILED" -> throw IllegalStateException(
+                    currentJob.error?.takeIf { it.isNotBlank() }
+                        ?: currentBody.error?.takeIf { it.isNotBlank() }
+                        ?: "Сервер завершил проверку с ошибкой."
+                )
                 "COMPLETED" -> return currentJob
-                else -> return null
+                else -> throw IllegalStateException("Сервер вернул неизвестный статус проверки.")
             }
         }
-        return null
+        throw IllegalStateException("Сервер не успел завершить проверку вовремя.")
+    }
+
+    private fun extractServerError(response: Response<*>): String? {
+        val raw = runCatching { response.errorBody()?.string() }
+            .getOrNull()
+            .orEmpty()
+            .trim()
+        if (raw.isBlank()) return null
+
+        val parsed = runCatching { gson.fromJson(raw, ApiError::class.java) }.getOrNull()
+        if (!parsed?.error.isNullOrBlank()) {
+            return parsed.error
+        }
+
+        val messageMatch = Regex("\"message\"\\s*:\\s*\"([^\"]+)\"").find(raw)
+        return messageMatch?.groupValues?.getOrNull(1)
     }
 
     private fun shouldAutoUploadAfterFirstCompletion(job: DeepScanJob): Boolean {

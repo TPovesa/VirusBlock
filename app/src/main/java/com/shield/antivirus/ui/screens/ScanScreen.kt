@@ -17,14 +17,15 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.WavyProgressIndicatorDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -44,12 +45,11 @@ import com.shield.antivirus.ui.components.ShieldScreenScaffold
 import com.shield.antivirus.ui.components.ShieldSectionHeader
 import com.shield.antivirus.ui.components.ShieldStatusChip
 import com.shield.antivirus.ui.theme.criticalTone
-import com.shield.antivirus.ui.theme.safeTone
 import com.shield.antivirus.ui.theme.signalTone
 import com.shield.antivirus.ui.theme.warningTone
 import com.shield.antivirus.viewmodel.ScanViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ScanScreen(
     viewModel: ScanViewModel,
@@ -147,25 +147,14 @@ fun ScanScreen(
                             eyebrow = "Проверка",
                             title = if (progress?.isComplete == true) "Готово" else "Идёт сканирование"
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ShieldStatusChip(
-                                label = "${(animatedProgress * 100).toInt()}%",
-                                icon = Icons.Filled.TrackChanges,
-                                color = MaterialTheme.colorScheme.signalTone
-                            )
-                            ShieldStatusChip(
-                                label = if (threatCount > 0) "Угроз: $threatCount" else "Совпадений нет",
-                                icon = if (threatCount > 0) Icons.Filled.Warning else Icons.Filled.Security,
-                                color = if (threatCount > 0) MaterialTheme.colorScheme.warningTone else MaterialTheme.colorScheme.safeTone
-                            )
-                        }
                         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(
+                            CircularWavyProgressIndicator(
                                 progress = { animatedProgress.coerceIn(0f, 1f) },
                                 modifier = Modifier.size(160.dp),
                                 color = accent,
-                                strokeWidth = 14.dp,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                amplitude = WavyProgressIndicatorDefaults.indicatorAmplitude,
+                                wavelength = WavyProgressIndicatorDefaults.CircularWavelength
                             )
                             Text(
                                 text = "${(animatedProgress * 100).toInt()}%",

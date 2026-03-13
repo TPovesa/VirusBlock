@@ -239,13 +239,6 @@ private fun HomeContent(
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ShieldStatusChip(
-                            label = if (isGuestMode) "Гость" else "Защита активна",
-                            icon = Icons.Filled.Security,
-                            color = statusColor
-                        )
-                    }
                     if (state.lastScanThreatCount > 0) {
                         val latestId = state.lastBackgroundScanResultId
                         Button(

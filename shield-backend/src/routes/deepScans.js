@@ -44,6 +44,55 @@ function classifyFullReportError(error) {
     return null;
 }
 
+function classifyDeepScanRuntimeError(error) {
+    const code = String(error?.code || '').toUpperCase();
+    const message = String(error?.message || '').toLowerCase();
+    const sqlMessage = String(error?.sqlMessage || '').toLowerCase();
+
+    if ([
+        'ECONNREFUSED',
+        'ECONNRESET',
+        'ETIMEDOUT',
+        'EAI_AGAIN',
+        'PROTOCOL_CONNECTION_LOST',
+        'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR'
+    ].includes(code)) {
+        return {
+            status: 503,
+            payload: { error: 'Сервер проверки временно недоступен. Попробуйте ещё раз через минуту.' }
+        };
+    }
+
+    if (code === 'EACCES' || message.includes('permission denied')) {
+        return {
+            status: 503,
+            payload: { error: 'Сервер не смог подготовить хранилище для APK. Повторите попытку позже.' }
+        };
+    }
+
+    if (code.startsWith('ER_') || code === 'WARN_DATA_TRUNCATED') {
+        if (sqlMessage.includes('unknown column') || sqlMessage.includes('data truncated')) {
+            return {
+                status: 503,
+                payload: { error: 'Сервер проверки обновляется. Повторите попытку через минуту.' }
+            };
+        }
+        return {
+            status: 503,
+            payload: { error: 'База данных сервера проверки временно недоступна. Попробуйте позже.' }
+        };
+    }
+
+    if (message.includes('database') || message.includes('mysql') || message.includes('pool')) {
+        return {
+            status: 503,
+            payload: { error: 'База данных сервера проверки временно недоступна. Попробуйте позже.' }
+        };
+    }
+
+    return null;
+}
+
 function sanitizeDeepScanForClient(scan) {
     if (!scan || typeof scan !== 'object') {
         return scan;
@@ -84,7 +133,11 @@ router.post('/start', auth, async (req, res) => {
         });
     } catch (error) {
         console.error('Deep scan start error:', error);
-        return res.status(500).json({ error: 'Server error' });
+        const classified = classifyDeepScanRuntimeError(error);
+        if (classified) {
+            return res.status(classified.status).json(classified.payload);
+        }
+        return res.status(500).json({ error: 'Сервер не смог запустить проверку. Попробуйте позже.' });
     }
 });
 
@@ -112,7 +165,11 @@ router.post(
             return res.status(202).json({ success: true, scan });
         } catch (error) {
             console.error('Deep scan upload error:', error);
-            return res.status(500).json({ error: 'Server error' });
+            const classified = classifyDeepScanRuntimeError(error);
+            if (classified) {
+                return res.status(classified.status).json(classified.payload);
+            }
+            return res.status(500).json({ error: 'Сервер не смог принять APK для проверки.' });
         }
     }
 );
@@ -193,7 +250,11 @@ router.get('/:id', auth, async (req, res) => {
         });
     } catch (error) {
         console.error('Deep scan fetch error:', error);
-        return res.status(500).json({ error: 'Server error' });
+        const classified = classifyDeepScanRuntimeError(error);
+        if (classified) {
+            return res.status(classified.status).json(classified.payload);
+        }
+        return res.status(500).json({ error: 'Сервер не смог отдать статус проверки.' });
     }
 });
 
