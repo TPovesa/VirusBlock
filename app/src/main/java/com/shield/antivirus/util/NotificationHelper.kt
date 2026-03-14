@@ -83,7 +83,7 @@ object NotificationHelper {
     ): android.app.Notification {
         createChannels(context)
         val normalizedProgress = progress.coerceIn(0, 100)
-        val safeStatus = status.ifBlank { if (deepMode) "Идёт глубокая проверка" else "Идёт проверка" }
+        val safeStatus = status.ifBlank { "Идёт проверка" }
         val safeStage = stage?.takeIf { it.isNotBlank() } ?: if (normalizedProgress <= 0) {
             "Подготавливаем проверку"
         } else {
@@ -91,7 +91,7 @@ object NotificationHelper {
         }
         return NotificationCompat.Builder(context, CHANNEL_SCAN)
             .setSmallIcon(R.drawable.ic_notification_shield)
-            .setContentTitle(if (deepMode) "Глубокая проверка" else "Проверка приложений")
+            .setContentTitle("Проверка")
             .setContentText(safeStatus)
             .setSubText(safeStage)
             .setStyle(

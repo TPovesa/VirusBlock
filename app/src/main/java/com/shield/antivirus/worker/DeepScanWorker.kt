@@ -194,8 +194,8 @@ private fun ScanProgress.stageLabel(scanType: String): String = when {
 }
 
 private fun ScanProgress.notificationStatus(scanType: String): String = when (scanType.uppercase()) {
-    "FULL" -> "Идёт глубокая проверка"
-    "SELECTIVE" -> "Идёт выборочная проверка"
-    "APK" -> "Идёт проверка APK"
+    "FULL" -> "Идёт проверка"
+    "SELECTIVE" -> "Идёт проверка"
+    "APK" -> "Идёт проверка"
     else -> "Идёт проверка"
 }

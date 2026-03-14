@@ -985,9 +985,7 @@ class ScanRepository(private val context: Context) {
     }
 
     private fun notificationStatusForScan(scanType: String): String = when (scanType.uppercase()) {
-        "FULL" -> "Идёт глубокая проверка"
-        "SELECTIVE" -> "Идёт выборочная проверка"
-        "APK" -> "Идёт проверка APK"
+        "FULL", "SELECTIVE", "APK" -> "Идёт проверка"
         else -> "Идёт быстрая проверка"
     }
 

@@ -223,6 +223,9 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                         }
                     }
                 },
+                onCancelActiveScan = {
+                    vm.cancelActiveScan()
+                },
                 onOpenHistory = {
                     throttledNavigate {
                         navController.safeNavigate(Screen.History.route)

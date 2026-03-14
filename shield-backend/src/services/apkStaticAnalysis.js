@@ -1,7 +1,7 @@
 const path = require('path');
 const { spawn } = require('child_process');
 
-const ANALYZER_TIMEOUT_MS = parseInt(process.env.APK_ANALYZER_TIMEOUT_MS || '0', 10);
+const ANALYZER_TIMEOUT_MS = parseInt(process.env.APK_ANALYZER_TIMEOUT_MS || '1200000', 10);
 const ANALYZER_PYTHON = process.env.APK_ANALYZER_PYTHON || 'python3';
 
 function runAnalyzer(apkPath) {

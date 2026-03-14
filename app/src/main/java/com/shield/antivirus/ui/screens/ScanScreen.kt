@@ -173,7 +173,7 @@ fun ScanScreen(
                         )
                         if (keepRunningInBackground) {
                             Text(
-                                text = "Если выйти из приложения, глубокая проверка продолжится в уведомлении.",
+                                text = "Если выйти из приложения, проверка продолжится в уведомлении.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -303,9 +303,7 @@ private fun scanError(progress: ScanProgress?): String? {
 private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
     "QUICK" -> "Быстрая проверка"
     "QUICK_BG", "BACKGROUND_QUICK" -> "Быстрая проверка (фон)"
-    "FULL" -> "Глубокая проверка"
-    "SELECTIVE" -> "Выборочная проверка"
-    "APK" -> "Проверка APK"
+    "FULL", "SELECTIVE", "APK" -> "Проверка"
     else -> scanType
 }
 

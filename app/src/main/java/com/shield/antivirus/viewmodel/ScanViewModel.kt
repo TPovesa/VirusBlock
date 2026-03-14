@@ -130,30 +130,21 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                 _guestLimitReached.value = false
             }
 
-            val selectedCountToday = repo.getDailyLaunchCount(scanType)
-            val isDeveloperMode = prefs.isDeveloperMode.first()
             val dailyLimitMessage = when (scanType.uppercase()) {
-                "FULL" -> if (selectedCountToday >= 1) {
-                    "Лимит запусков: глубокая проверка доступна 1 раз в сутки."
-                } else {
-                    null
-                }
                 "SELECTIVE" -> when {
                     selectedPackages.isEmpty() -> "Для выборочной проверки сначала выберите приложение."
-                    selectedCountToday >= 3 -> "Лимит запусков: выборочная проверка доступна 3 раза в сутки."
                     else -> null
                 }
                 "APK" -> when {
                     apkUri.isNullOrBlank() -> "Выберите APK-файл перед запуском проверки."
-                    selectedCountToday >= 3 -> "Лимит запусков: проверка APK доступна 3 раза в сутки."
                     else -> null
                 }
                 else -> null
             }
-            if (!isDeveloperMode && !dailyLimitMessage.isNullOrBlank()) {
+            if (!dailyLimitMessage.isNullOrBlank()) {
                 AppLogger.log(
                     tag = "scan_view_model",
-                    message = "Scan limited by daily quota",
+                    message = "Scan start blocked by missing input",
                     level = "WARN",
                     metadata = mapOf("scan_type" to normalizedType)
                 )
@@ -372,9 +363,7 @@ class ScanViewModel(private val context: Context) : ViewModel() {
     }
 
     private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
-        "FULL" -> "глубокая проверка"
-        "SELECTIVE" -> "выборочная проверка"
-        "APK" -> "проверка APK"
+        "FULL", "SELECTIVE", "APK" -> "проверка"
         else -> "проверка"
     }
 

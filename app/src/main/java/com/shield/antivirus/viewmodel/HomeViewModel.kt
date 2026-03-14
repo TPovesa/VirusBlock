@@ -8,6 +8,7 @@ import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.data.model.ScanResult
 import com.shield.antivirus.data.repository.ScanRepository
 import com.shield.antivirus.util.PackageUtils
+import com.shield.antivirus.worker.DeepScanWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -205,6 +206,14 @@ class HomeViewModel(private val context: Context) : ViewModel() {
     fun exitGuestMode() {
         viewModelScope.launch {
             prefs.exitGuestMode()
+        }
+    }
+
+    fun cancelActiveScan() {
+        viewModelScope.launch {
+            DeepScanWorker.cancel(context.applicationContext)
+            prefs.clearActiveDeepScan()
+            prefs.clearActiveScan()
         }
     }
 

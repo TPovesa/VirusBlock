@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Report
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TrackChanges
@@ -85,6 +86,7 @@ fun HomeScreen(
     sessionGateIsGuest: Boolean,
     onStartScan: (scanType: String, selectedPackage: String?, apkUri: String?) -> Unit,
     onOpenActiveScan: (String) -> Unit,
+    onCancelActiveScan: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenLatestReport: (Long) -> Unit,
     onOpenSettings: () -> Unit,
@@ -117,6 +119,7 @@ fun HomeScreen(
             state = current,
             onStartScan = onStartScan,
             onOpenActiveScan = onOpenActiveScan,
+            onCancelActiveScan = onCancelActiveScan,
             onOpenHistory = onOpenHistory,
             onOpenLatestReport = onOpenLatestReport,
             onOpenSettings = onOpenSettings,
@@ -132,6 +135,7 @@ private fun HomeContent(
     state: HomeUiState,
     onStartScan: (scanType: String, selectedPackage: String?, apkUri: String?) -> Unit,
     onOpenActiveScan: (String) -> Unit,
+    onCancelActiveScan: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenLatestReport: (Long) -> Unit,
     onOpenSettings: () -> Unit,
@@ -146,10 +150,6 @@ private fun HomeContent(
         state.lastScanThreatCount > 0 -> MaterialTheme.colorScheme.warningTone
         else -> MaterialTheme.colorScheme.safeTone
     }
-
-    val fullLimitReached = !state.isDeveloperMode && state.fullScansToday >= 1
-    val selectiveLimitReached = !state.isDeveloperMode && state.selectiveScansToday >= 3
-    val apkLimitReached = !state.isDeveloperMode && state.apkScansToday >= 3
 
     var guestIntroLoading by rememberSaveable(isGuestMode) { mutableStateOf(isGuestMode) }
     var showAppPicker by rememberSaveable { mutableStateOf(false) }
@@ -288,12 +288,9 @@ private fun HomeContent(
 
             if (scanLocked) {
                 item {
-                    val activeIsDeep = state.activeScanType.equals("FULL", ignoreCase = true) ||
-                        state.activeScanType.equals("SELECTIVE", ignoreCase = true) ||
-                        state.activeScanType.equals("APK", ignoreCase = true)
                     ShieldPanel(accent = MaterialTheme.colorScheme.signalTone) {
                         Text(
-                            text = if (activeIsDeep) "Идёт глубокая проверка" else "Идёт проверка",
+                            text = "Идёт проверка",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.SemiBold
@@ -316,141 +313,130 @@ private fun HomeContent(
                         ) {
                             Text("Посмотреть текущую проверку")
                         }
-                    }
-                }
-            }
-
-            item {
-                ModeWideCard(
-                    title = "Глубокая",
-                    icon = Icons.Filled.Security,
-                    accent = MaterialTheme.colorScheme.tertiary,
-                    enabled = !scanLocked,
-                        onAction = {
-                            modeMessage = null
-                            actionOverlay = true
-                            when {
-                                isGuestMode -> onOpenLogin()
-                                scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "FULL" })
-                                fullLimitReached -> modeMessage = "Дневной лимит: глубокая проверка доступна 1 раз в сутки"
-                                else -> onStartScan("FULL", null, null)
-                        }
-                    }
-                )
-            }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    ModeGridCard(
-                        modifier = Modifier.weight(1f),
-                        title = "Быстрая",
-                        icon = Icons.Filled.FlashOn,
-                        accent = MaterialTheme.colorScheme.primary,
-                        enabled = !scanLocked,
-                        onAction = {
-                            modeMessage = null
-                            actionOverlay = true
-                            when {
-                                scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "QUICK" })
-                                else -> onStartScan("QUICK", null, null)
-                            }
-                        }
-                    )
-                    ModeGridCard(
-                        modifier = Modifier.weight(1f),
-                        title = "Выборочная",
-                        icon = Icons.Filled.TrackChanges,
-                        accent = MaterialTheme.colorScheme.signalTone,
-                        enabled = !scanLocked,
-                        onAction = {
-                            modeMessage = null
-                            actionOverlay = true
-                            when {
-                                isGuestMode -> onOpenLogin()
-                                scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "SELECTIVE" })
-                                selectiveLimitReached -> {
-                                    modeMessage = "Дневной лимит: выборочная проверка доступна 3 раза в сутки"
-                                }
-                                state.installedApps.isEmpty() -> {
-                                    modeMessage = "Не удалось получить список установленных приложений"
-                                }
-                                else -> {
-                                    showAppPicker = true
-                                }
-                            }
-                        }
-                    )
-                }
-            }
-
-            item {
-                val apkCardEnabled = !scanLocked
-                val apkCardContainerColor = if (apkCardEnabled) {
-                    MaterialTheme.colorScheme.surfaceContainerHigh
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHighest
-                }
-                val apkCardBorderColor = if (apkCardEnabled) {
-                    MaterialTheme.colorScheme.signalTone.copy(alpha = 0.38f)
-                } else {
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.85f)
-                }
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = apkCardContainerColor),
-                    shape = MaterialTheme.shapes.large,
-                    border = BorderStroke(1.dp, apkCardBorderColor)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 58.dp)
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.UploadFile,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.signalTone
-                            )
-                            Text(
-                                text = "Проверить APK",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
                         Button(
-                            onClick = {
+                            onClick = onCancelActiveScan,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ShieldPrimaryButtonColors(MaterialTheme.colorScheme.warningTone),
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Icon(Icons.Filled.Close, contentDescription = null)
+                            Text("  Отменить проверку")
+                        }
+                    }
+                }
+            }
+
+            if (!scanLocked) {
+                item {
+                    ModeWideCard(
+                        title = "Глубокая",
+                        icon = Icons.Filled.Security,
+                        accent = MaterialTheme.colorScheme.tertiary,
+                        enabled = true,
+                        onAction = {
+                            modeMessage = null
+                            actionOverlay = true
+                            when {
+                                isGuestMode -> onOpenLogin()
+                                else -> onStartScan("FULL", null, null)
+                            }
+                        }
+                    )
+                }
+
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        ModeGridCard(
+                            modifier = Modifier.weight(1f),
+                            title = "Быстрая",
+                            icon = Icons.Filled.FlashOn,
+                            accent = MaterialTheme.colorScheme.primary,
+                            enabled = true,
+                            onAction = {
+                                modeMessage = null
+                                actionOverlay = true
+                                onStartScan("QUICK", null, null)
+                            }
+                        )
+                        ModeGridCard(
+                            modifier = Modifier.weight(1f),
+                            title = "Выборочная",
+                            icon = Icons.Filled.TrackChanges,
+                            accent = MaterialTheme.colorScheme.signalTone,
+                            enabled = true,
+                            onAction = {
                                 modeMessage = null
                                 actionOverlay = true
                                 when {
                                     isGuestMode -> onOpenLogin()
-                                    scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "APK" })
-                                    apkLimitReached -> {
-                                        modeMessage = "Дневной лимит: проверка APK доступна 3 раза в сутки"
+                                    state.installedApps.isEmpty() -> {
+                                        modeMessage = "Не удалось получить список установленных приложений"
                                     }
-                                    else -> apkPicker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream", "*/*"))
+                                    else -> {
+                                        showAppPicker = true
+                                    }
                                 }
-                            },
-                            colors = ShieldPrimaryButtonColors(
-                                if (!isGuestMode && !apkLimitReached && apkCardEnabled) {
-                                    MaterialTheme.colorScheme.signalTone
-                                } else {
-                                    MaterialTheme.colorScheme.outline
-                                }
-                            ),
-                            shape = MaterialTheme.shapes.medium
+                            }
+                        )
+                    }
+                }
+
+                item {
+                    val apkCardContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    val apkCardBorderColor = MaterialTheme.colorScheme.signalTone.copy(alpha = 0.38f)
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = apkCardContainerColor),
+                        shape = MaterialTheme.shapes.large,
+                        border = BorderStroke(1.dp, apkCardBorderColor)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 58.dp)
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(if (isGuestMode) "Войти" else "Выбрать")
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.UploadFile,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.signalTone
+                                )
+                                Text(
+                                    text = "Проверить APK",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    modeMessage = null
+                                    actionOverlay = true
+                                    when {
+                                        isGuestMode -> onOpenLogin()
+                                        else -> apkPicker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream", "*/*"))
+                                    }
+                                },
+                                colors = ShieldPrimaryButtonColors(
+                                    if (!isGuestMode) {
+                                        MaterialTheme.colorScheme.signalTone
+                                    } else {
+                                        MaterialTheme.colorScheme.outline
+                                    }
+                                ),
+                                shape = MaterialTheme.shapes.medium
+                            ) {
+                                Text(if (isGuestMode) "Войти" else "Выбрать")
+                            }
                         }
                     }
                 }
