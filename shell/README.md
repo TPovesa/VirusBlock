@@ -1,19 +1,27 @@
-# NeuralV shell
+# NeuralV Linux shell
 
-Linux shell/TUI client and resident daemon scaffold for NeuralV.
+Linux shell/TUI flow for NeuralV now starts with `nv`.
 
-Install:
+## Bootstrap nv
 
-```bash
-curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash
+```sh
+curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh
 ```
 
-Commands:
-- `bash ~/.local/bin/neuralv-shell` or direct binary launch after install
-- `curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash -s -- update`
-- `curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash -s -- uninstall`
-- `curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash -s -- start`
-- `curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash -s -- stop`
-- `curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash -s -- status`
+## Install NeuralV
 
-Resident mode is provided by `neuralvd` as a systemd user service.
+```sh
+nv install neuralv@latest
+```
+
+## Common commands
+
+```sh
+nv install neuralv@latest
+nv install neuralv@<version>
+nv uninstall neuralv
+nv -v
+neuralv -v
+```
+
+`nv` installs the NeuralV shell client into `~/.local/bin`. After install, run `neuralv` to open the TUI client.

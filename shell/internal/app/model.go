@@ -60,8 +60,13 @@ func NewModel(client *api.Client, store *session.Store) Model {
 		store:     store,
 		session:   saved,
 		lowMotion: true,
-		screen:    func() screen { if saved != nil { return screenHome }; return screenWelcome }(),
-		status:    "Готово",
+		screen: func() screen {
+			if saved != nil {
+				return screenHome
+			}
+			return screenWelcome
+		}(),
+		status: "Готово",
 	}
 }
 
@@ -83,7 +88,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab", "down", "j":
 			m.cursor++
 		case "shift+tab", "up", "k":
-			if m.cursor > 0 { m.cursor-- }
+			if m.cursor > 0 {
+				m.cursor--
+			}
 		case "1":
 			m.screen = screenWelcome
 		case "2":
@@ -151,7 +158,7 @@ func (m Model) View() string {
 		sections = append(sections, card.Render(strings.Join([]string{
 			"Добро пожаловать в NeuralV shell.",
 			"Платформа: " + runtime.GOOS,
-			"Вход: клавиша Enter на экране авторизации.",
+			"Bootstrap: nv install neuralv@latest",
 			"Навигация: 1-6, j/k, q.",
 		}, "\n")))
 	case screenAuth:
@@ -169,14 +176,14 @@ func (m Model) View() string {
 	case screenHome:
 		sections = append(sections, card.Render(strings.Join([]string{
 			"Сессия: " + blankFallback(func() string { if m.session != nil { return m.session.Email }; return "" }(), "не авторизован"),
-			"Меню: scan/history/settings placeholders готовы.",
-			"Shell и daemon будут устанавливаться через curl|bash + systemd.",
+			"Установка и удаление идут через nv.",
+			"GUI, shell и daemon используют один backend.",
 		}, "\n")))
 	case screenScan:
 		sections = append(sections, card.Render(strings.Join([]string{
 			"Режимы: on-demand / selective / artifact / resident-event",
 			"CLI-клиент ходит в /api/scans/desktop/*",
-			"Heavy animation intentionally disabled by default.",
+			"Тяжёлые анимации выключены по умолчанию.",
 		}, "\n")))
 	case screenHistory:
 		sections = append(sections, card.Render("История desktop scan будет подгружаться из backend после расширения read API."))
@@ -217,12 +224,12 @@ func (m Model) verifyLoginCmd() tea.Cmd {
 			return authVerifiedMsg{err: err}
 		}
 		saved := &session.Session{
-			Token: response.Token,
+			Token:        response.Token,
 			RefreshToken: response.RefreshToken,
-			SessionID: response.SessionID,
-			DeviceID: m.client.DeviceID(),
-			Email: response.User.Email,
-			Name: response.User.Name,
+			SessionID:    response.SessionID,
+			DeviceID:     m.client.DeviceID(),
+			Email:        response.User.Email,
+			Name:         response.User.Name,
 		}
 		if err := m.store.Save(saved); err != nil {
 			return authVerifiedMsg{err: err}
@@ -246,6 +253,8 @@ func mask(value string) string {
 }
 
 func max(a, b int) int {
-	if a > b { return a }
+	if a > b {
+		return a
+	}
 	return b
 }

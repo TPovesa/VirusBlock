@@ -1,5 +1,5 @@
 export type ReleaseArtifact = {
-  platform: 'android' | 'windows' | 'linux' | 'shell' | 'site' | 'linux_shell' | string;
+  platform: 'android' | 'windows' | 'linux' | 'shell' | 'site' | 'nv' | 'linux_shell' | string;
   channel?: string;
   version?: string;
   sha256?: string;
@@ -38,10 +38,17 @@ export const fallbackManifest: ReleaseManifest = {
       notes: ['Linux GUI готовится, загрузка появится после CI pipeline.']
     },
     {
+      platform: 'nv',
+      channel: 'beta',
+      version: 'pending',
+      installCommand: 'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh',
+      notes: ['nv bootstrap появится после публикации Linux shell artifacts.']
+    },
+    {
       platform: 'shell',
       channel: 'beta',
       version: 'pending',
-      installCommand: 'curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash',
+      installCommand: 'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh && nv install neuralv@latest',
       notes: ['Shell installer будет доступен после публикации Linux artifact.']
     }
   ]
@@ -97,7 +104,9 @@ export async function fetchReleaseManifest(signal?: AbortSignal): Promise<Releas
         fileName:
           typeof item.fileName === 'string'
             ? item.fileName
-            : (typeof item.artifact_name === 'string' ? item.artifact_name : undefined),
+            : (typeof item.file_name === 'string'
+                ? item.file_name
+                : (typeof item.artifact_name === 'string' ? item.artifact_name : undefined)),
         installCommand:
           typeof item.installCommand === 'string'
             ? item.installCommand

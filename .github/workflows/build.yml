@@ -102,7 +102,29 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 21
+          java-version: 17
+
+      - name: Install Linux desktop dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2 \
+            libgtk-3-0 \
+            libx11-6 \
+            libxext6 \
+            libxrender1 \
+            libxtst6 \
+            libxi6 \
+            libxrandr2 \
+            libxinerama1 \
+            libxcursor1 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxfixes3 \
+            libgbm1 \
+            libnss3 \
+            libxkbcommon0
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -149,7 +171,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 21
+          java-version: 17
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -199,9 +221,11 @@ jobs:
           mkdir -p dist/shell
           cd shell
           go mod tidy
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ../dist/shell/nv ./cmd/nv
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ../dist/shell/neuralv-shell ./cmd/neuralv-shell
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ../dist/shell/neuralvd ./cmd/neuralvd
           cd ..
+          tar -C dist/shell -czf dist/shell/nv-linux.tar.gz nv
           tar -C dist/shell -czf dist/shell/neuralv-shell-linux.tar.gz neuralv-shell
           tar -C dist/shell -czf dist/shell/neuralvd-linux.tar.gz neuralvd
 
@@ -210,6 +234,7 @@ jobs:
         with:
           name: neuralv-shell-linux
           path: |
+            dist/shell/nv-linux.tar.gz
             dist/shell/neuralv-shell-linux.tar.gz
             dist/shell/neuralvd-linux.tar.gz
           if-no-files-found: error
@@ -271,6 +296,7 @@ jobs:
           mkdir -p publish-site/install
           unzip -q stage/site/neuralv-site.zip -d publish-site
           cp shell/install/linux.sh publish-site/install/linux.sh
+          cp shell/install/nv.sh publish-site/install/nv.sh
           cat > publish-site/BUILD_INFO.txt <<INFO
           Repository: ${{ github.repository }}
           Commit: ${{ github.sha }}
@@ -365,11 +391,13 @@ jobs:
             cp stage/linux/neuralv-linux.tar.gz publish/linux/
             cp stage/linux/neuralv-linux.tar.gz publish/desktop/linux/
           fi
+          cp stage/shell/nv-linux.tar.gz publish/shell/
           cp stage/shell/neuralv-shell-linux.tar.gz publish/shell/
           cp stage/shell/neuralvd-linux.tar.gz publish/shell/
           cp stage/site/neuralv-site.zip publish/site/
           unzip -q publish/site/neuralv-site.zip -d publish/site
           cp shell/install/linux.sh publish/install/linux.sh
+          cp shell/install/nv.sh publish/install/nv.sh
 
           sha_android=""
           if [ -f publish/android/neuralv-android-release.apk ]; then
@@ -383,6 +411,7 @@ jobs:
           if [ -f publish/linux/neuralv-linux.tar.gz ]; then
             sha_linux="$(sha256sum publish/linux/neuralv-linux.tar.gz | awk '{print $1}')"
           fi
+          sha_nv="$(sha256sum publish/shell/nv-linux.tar.gz | awk '{print $1}')"
           sha_shell="$(sha256sum publish/shell/neuralv-shell-linux.tar.gz | awk '{print $1}')"
           sha_daemon="$(sha256sum publish/shell/neuralvd-linux.tar.gz | awk '{print $1}')"
           sha_site="$(sha256sum publish/site/neuralv-site.zip | awk '{print $1}')"
@@ -390,6 +419,7 @@ jobs:
           export SHA_ANDROID="${sha_android}"
           export SHA_WINDOWS="${sha_windows}"
           export SHA_LINUX="${sha_linux}"
+          export SHA_NV="${sha_nv}"
           export SHA_SHELL="${sha_shell}"
           export SHA_DAEMON="${sha_daemon}"
           export SHA_SITE="${sha_site}"
@@ -445,12 +475,23 @@ jobs:
               })
           artifacts.extend([
               {
+                  "platform": "nv",
+                  "channel": "beta",
+                  "version": os.environ["GITHUB_SHA"],
+                  "sha256": os.environ["SHA_NV"],
+                  "download_url": f"{raw_base}/shell/nv-linux.tar.gz",
+                  "install_command": "curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh",
+                  "file_name": "nv-linux.tar.gz",
+                  "notes": ["Linux package manager for NeuralV releases"],
+                  "metadata": {}
+              },
+              {
                   "platform": "shell",
                   "channel": "beta",
                   "version": os.environ["GITHUB_SHA"],
                   "sha256": os.environ["SHA_SHELL"],
                   "download_url": f"{raw_base}/shell/neuralv-shell-linux.tar.gz",
-                  "install_command": "curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash",
+                  "install_command": "curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh && nv install neuralv@latest",
                   "file_name": "neuralv-shell-linux.tar.gz",
                   "notes": ["Bubble Tea shell client"],
                   "metadata": {

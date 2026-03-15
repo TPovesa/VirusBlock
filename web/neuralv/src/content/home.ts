@@ -40,18 +40,18 @@ export type HomeInstallStep = {
 export const homeMetrics: HomeMetric[] = [
   {
     value: '3',
-    label: 'клиентские поверхности',
-    detail: 'Android, Windows и Linux получают одинаково ясный вход в продукт.'
+    label: 'версии',
+    detail: 'Android, Windows и Linux в одном аккаунте.'
   },
   {
     value: '1',
-    label: 'release manifest',
-    detail: 'Один источник правды для версий, ссылок, SHA256 и install-команд.'
+    label: 'аккаунт',
+    detail: 'Одна история и одна авторизация на всех устройствах.'
   },
   {
-    value: '2',
-    label: 'слоя анализа',
-    detail: 'Локальный сигнал на устройстве усиливается серверным triage и репутацией.'
+    value: '24/7',
+    label: 'защита',
+    detail: 'Быстрая локальная проверка и серверная перепроверка там, где это нужно.'
   }
 ];
 
@@ -62,11 +62,11 @@ export const homePlatformCards: HomePlatformCard[] = [
     eyebrow: 'Мобильный контур',
     title: 'Android',
     summary:
-      'APK-доставка, локальная проверка приложений и серверные deep/selective/APK сценарии в одном потоке.',
+      'Проверка установленных приложений, фоновая защита и серверная перепроверка прямо на телефоне.',
     bullets: [
-      'mobile-first UX с понятным статусом защиты и фоновой проверкой',
-      'локальный анализ приложений, разрешений и install source',
-      'серверная перепроверка без разрыва между телефоном и desktop-историей'
+      'быстрая проверка сразу после установки',
+      'фоновый контроль новых приложений',
+      'серверные проверки для сложных случаев'
     ],
     primaryLabel: 'Открыть Android',
     secondaryLabel: 'Скачать APK',
@@ -79,11 +79,11 @@ export const homePlatformCards: HomePlatformCard[] = [
     eyebrow: 'Рабочая станция',
     title: 'Windows',
     summary:
-      'Compose Desktop для on-demand и resident сценариев с фокусом на EXE/DLL, signer validation и persistence.',
+      'Отдельная версия для проверки `.exe` и других исполняемых файлов Windows.',
     bullets: [
-      'installer или portable build отдаются через manifest без ручных ссылок',
-      'локальная эвристика по PE-сигналам, entropy, imports и signer metadata',
-      'сервер хранит расширенный отчёт, UI показывает только чистый итог'
+      'простая установка и вход в тот же аккаунт',
+      'локальные проверки подозрительных файлов',
+      'серверная перепроверка спорных находок'
     ],
     primaryLabel: 'Открыть Windows',
     secondaryLabel: 'Скачать build',
@@ -96,11 +96,11 @@ export const homePlatformCards: HomePlatformCard[] = [
     eyebrow: 'GUI + shell',
     title: 'Linux',
     summary:
-      'Desktop GUI и shell/TUI клиент сходятся в одном продукте: GUI для desktop, shell для серверных и ops-сценариев.',
+      'GUI для рабочего стола и shell-версия для тех, кому удобнее терминал.',
     bullets: [
-      'desktop-артефакт и shell installer публикуются как часть одного релиза',
-      'локальный анализ ELF, autorun, package provenance и systemd entrypoints',
-      'resident-модель строится вокруг neuralvd, а shell остаётся first-class поверхностью'
+      'подходит для популярных Linux-дистрибутивов',
+      'можно ставить через терминал одной командой',
+      'GUI и shell используют один backend и один аккаунт'
     ],
     primaryLabel: 'Открыть Linux',
     secondaryLabel: 'Скачать GUI',
@@ -195,33 +195,27 @@ export const homeArchitectureCards: HomeArchitectureCard[] = [
 
 export const homeInstallSteps: HomeInstallStep[] = [
   {
-    title: 'Релиз публикуется в manifest.',
+    title: 'Выбери свою платформу.',
     text:
-      'Backend отдаёт актуальные версии, каналы, SHA256, download URL и installCommand. Витрина главной страницы читает именно этот слой.'
+      'На главной сразу видно, есть ли версия для Android, Windows или Linux.'
   },
   {
-    title: 'Пользователь выбирает свою поверхность.',
+    title: 'Скачай актуальный релиз.',
     text:
-      'Android получает прямой APK-flow, Windows получает desktop build, Linux получает GUI-артефакт и при необходимости shell installer.'
+      'Кнопки загрузки берут версию и файл из release manifest, без ручных ссылок на странице.'
   },
   {
-    title: 'Установка следует platform-native пути.',
+    title: 'Установи и войди в аккаунт.',
     text:
-      'APK ставится как мобильное приложение, desktop-клиенты запускаются через installer или archive, shell-клиент поднимает CLI и daemon через одну команду.'
-  },
-  {
-    title: 'После входа включается единый продуктовый контур.',
-    text:
-      'История проверок, серверные отчёты и статусы защиты синхронизируются между клиентами, поэтому переход между платформами не ломает опыт.'
+      'После входа история и статус защиты синхронизируются между устройствами.'
   }
 ];
 
 export const homeManifestFacts = [
-  'Версии и каналы не размазываются по странице вручную.',
-  'Download URL и installCommand приходят из backend release contract.',
-  'SHA256 и file name можно показывать рядом с CTA без отдельной ручной правки.',
-  'Fallback режим сохраняет витрину рабочей даже до первого живого релиза.'
+  'Версия и файл подтягиваются автоматически.',
+  'Ссылки на скачивание не захардкожены в тексте.',
+  'SHA256 можно проверить до установки.'
 ];
 
 export const homeShellFallbackCommand =
-  'curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash';
+  'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh';

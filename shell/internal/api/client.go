@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -41,23 +42,30 @@ type ScanEnvelope struct {
 }
 
 type ManifestResponse struct {
-	Success   bool              `json:"success"`
+	Success   bool               `json:"success"`
 	Artifacts []ManifestArtifact `json:"artifacts"`
-	Error     string            `json:"error"`
+	Error     string             `json:"error"`
 }
 
 type ManifestArtifact struct {
-	Platform       string `json:"platform"`
-	Channel        string `json:"channel"`
-	Version        string `json:"version"`
-	DownloadURL    string `json:"download_url"`
-	InstallCommand string `json:"install_command"`
+	Platform       string         `json:"platform"`
+	Channel        string         `json:"channel"`
+	Version        string         `json:"version"`
+	DownloadURL    string         `json:"download_url"`
+	InstallCommand string         `json:"install_command"`
+	FileName       string         `json:"file_name"`
+	Notes          []string       `json:"notes"`
+	Metadata       map[string]any `json:"metadata"`
 }
 
 func NewClient(baseURL string) *Client {
+	if strings.TrimSpace(baseURL) == "" {
+		baseURL = "https://sosiskibot.ru/basedata"
+	}
+
 	return &Client{
-		baseURL: baseURL,
-		http: &http.Client{Timeout: 120 * time.Second},
+		baseURL: strings.TrimRight(baseURL, "/"),
+		http:    &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -71,7 +79,7 @@ func (c *Client) DeviceID() string {
 
 func (c *Client) StartLogin(email, password string) (*ChallengeResponse, error) {
 	return postJSON[ChallengeResponse](c, "/api/auth/login/start", map[string]any{
-		"email": email,
+		"email":    email,
 		"password": password,
 		"device_id": c.DeviceID(),
 	})
@@ -80,17 +88,17 @@ func (c *Client) StartLogin(email, password string) (*ChallengeResponse, error) 
 func (c *Client) VerifyLogin(challengeID, email, code string) (*AuthResponse, error) {
 	return postJSON[AuthResponse](c, "/api/auth/login/verify", map[string]any{
 		"challenge_id": challengeID,
-		"email": email,
-		"code": code,
-		"device_id": c.DeviceID(),
+		"email":        email,
+		"code":         code,
+		"device_id":    c.DeviceID(),
 	})
 }
 
 func (c *Client) StartDesktopScan(token string, platform, mode string, artifact map[string]any) (*ScanEnvelope, error) {
 	return authorizedJSON[ScanEnvelope](c, "POST", "/api/scans/desktop/start", token, map[string]any{
-		"platform": platform,
-		"mode": mode,
-		"artifact_kind": artifact["artifact_kind"],
+		"platform":          platform,
+		"mode":              mode,
+		"artifact_kind":     artifact["artifact_kind"],
 		"artifact_metadata": artifact,
 	})
 }
@@ -101,6 +109,26 @@ func (c *Client) CancelDesktopScan(token string) (*ScanEnvelope, error) {
 
 func (c *Client) ReleaseManifest() (*ManifestResponse, error) {
 	return getJSON[ManifestResponse](c, "/api/releases/manifest")
+}
+
+func (m *ManifestResponse) Artifact(platforms ...string) *ManifestArtifact {
+	for _, platform := range platforms {
+		wanted := normalizePlatform(platform)
+		for i := range m.Artifacts {
+			if normalizePlatform(m.Artifacts[i].Platform) == wanted {
+				return &m.Artifacts[i]
+			}
+		}
+	}
+	return nil
+}
+
+func normalizePlatform(platform string) string {
+	normalized := strings.ToLower(strings.TrimSpace(platform))
+	if normalized == "linux_shell" {
+		return "shell"
+	}
+	return normalized
 }
 
 func postJSON[T any](c *Client, route string, payload any) (*T, error) {

@@ -91,9 +91,10 @@ object WallpaperPaletteService {
         }
         if (count == 0L) return NeuralVPrimary
         return Color(
-            red = ((red / count).toInt().coerceIn(0, 255)),
-            green = ((green / count).toInt().coerceIn(0, 255)),
-            blue = ((blue / count).toInt().coerceIn(0, 255))
+            red = ((red / count).toInt().coerceIn(0, 255)) / 255f,
+            green = ((green / count).toInt().coerceIn(0, 255)) / 255f,
+            blue = ((blue / count).toInt().coerceIn(0, 255)) / 255f,
+            alpha = 1f
         )
     }
 }

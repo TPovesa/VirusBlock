@@ -99,7 +99,7 @@ export const platformContent: PlatformContent[] = [
       'Для resident protection подтвердите установку systemd service neuralvd.'
     ],
     secondaryInstall: [
-      'Shell installer: curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash',
+      'Shell installer: curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh',
       'После установки доступны команды update, uninstall, start, stop и status.'
     ],
     accent: 'amber',
