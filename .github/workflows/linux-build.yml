@@ -42,24 +42,31 @@ jobs:
       - name: Install Linux desktop dependencies
         shell: bash
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y \
-            libasound2 \
-            libgtk-3-0 \
-            libx11-6 \
-            libxext6 \
-            libxrender1 \
-            libxtst6 \
-            libxi6 \
-            libxrandr2 \
-            libxinerama1 \
-            libxcursor1 \
-            libxcomposite1 \
-            libxdamage1 \
-            libxfixes3 \
-            libgbm1 \
-            libnss3 \
+          packages=(
+            libgtk-3-0
+            libx11-6
+            libxext6
+            libxrender1
+            libxtst6
+            libxi6
+            libxrandr2
+            libxinerama1
+            libxcursor1
+            libxcomposite1
+            libxdamage1
+            libxfixes3
+            libgbm1
+            libnss3
             libxkbcommon0
+          )
+          if apt-cache show libasound2t64 >/dev/null 2>&1; then
+            packages+=(libasound2t64)
+          elif apt-cache show libasound2 >/dev/null 2>&1; then
+            packages+=(libasound2)
+          fi
+          sudo apt-get install -y "${packages[@]}"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
