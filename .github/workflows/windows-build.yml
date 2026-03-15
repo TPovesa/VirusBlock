@@ -1,0 +1,152 @@
+name: Windows Build
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/windows-build.yml'
+      - 'desktop-app/**'
+      - 'desktop-core/**'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'settings.gradle.kts'
+      - 'build.gradle.kts'
+      - 'branding/**'
+  workflow_dispatch:
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows GUI
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Windows desktop distributable
+        shell: pwsh
+        run: |
+          .\gradlew.bat :desktop-app:createDistributable --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
+
+      - name: Package Windows archive
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
+          $appDir = Get-ChildItem desktop-app/build/compose/binaries/main/app -Directory | Select-Object -First 1
+          if (-not $appDir) { throw "Desktop app directory not found" }
+          Compress-Archive -Path "$($appDir.FullName)\*" -DestinationPath dist\windows\neuralv-windows.zip -Force
+
+      - name: Upload Windows build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-gradle-log
+          path: windows-build.log
+
+      - name: Upload Windows bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: neuralv-windows-gui
+          path: dist/windows/*
+          if-no-files-found: error
+
+  publish-windows:
+    name: Publish Windows Branch
+    needs:
+      - build-windows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: neuralv-windows-gui
+          path: stage/windows
+
+      - name: Prepare windows-builds payload
+        shell: bash
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          rm -rf publish-windows
+          mkdir -p publish-windows/windows
+          cp stage/windows/neuralv-windows.zip publish-windows/windows/
+          sha_windows="$(sha256sum publish-windows/windows/neuralv-windows.zip | awk '{print $1}')"
+          raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/windows-builds"
+          export SHA_WINDOWS="$sha_windows"
+          export RAW_BASE="$raw_base"
+          python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+          manifest = {
+              "success": True,
+              "generated_at": generated_at,
+              "release_channel": "beta",
+              "artifacts": [
+                  {
+                      "platform": "windows",
+                      "channel": "beta",
+                      "version": os.environ["GITHUB_SHA"],
+                      "sha256": os.environ["SHA_WINDOWS"],
+                      "download_url": f"{os.environ['RAW_BASE']}/windows/neuralv-windows.zip",
+                      "install_command": "",
+                      "file_name": "neuralv-windows.zip",
+                      "notes": ["Compose Desktop Windows GUI"],
+                      "metadata": {}
+                  }
+              ]
+          }
+          with open("publish-windows/manifest.json", "w", encoding="utf-8") as f:
+              json.dump(manifest, f, ensure_ascii=False, indent=2)
+          with open("publish-windows/BUILD_INFO.txt", "w", encoding="utf-8") as f:
+              f.write(
+                  f"Repository: {os.environ['GITHUB_REPOSITORY']}\n"
+                  f"Commit: {os.environ['GITHUB_SHA']}\n"
+                  f"Workflow Run: {os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\n"
+                  f"Built At: {generated_at}\n"
+              )
+          PY
+
+      - name: Publish windows-builds branch
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/windows-builds
+          mkdir -p /tmp/windows-builds
+          cp -R publish-windows/. /tmp/windows-builds/
+          cd /tmp/windows-builds
+          git init
+          git checkout -b windows-builds
+          git add .
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish Windows bundle for ${GITHUB_SHA} [skip ci]"
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin windows-builds
