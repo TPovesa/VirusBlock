@@ -25,7 +25,12 @@ GitHub Actions теперь готовятся собирать:
 - Linux desktop GUI
 - Linux shell binaries
 - Website bundle
-- unified `release-builds` branch с `release-manifest.json`
+- отдельные publish-ветки:
+  - `site-builds`
+  - `android-builds`
+  - `windows-builds`
+  - `linux-builds`
+- aggregated manifest через `/basedata/api/releases/manifest`
 
 ## Сборка
 По требованию проекта локальные тяжёлые билды не являются основным путём. Основной путь — GitHub Actions.
