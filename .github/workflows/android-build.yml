@@ -1,0 +1,176 @@
+name: Android Build
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/android-build.yml'
+      - 'app/**'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'settings.gradle.kts'
+      - 'build.gradle.kts'
+      - 'signing/**'
+      - 'branding/**'
+  workflow_dispatch:
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Build Android Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
+
+      - name: Assemble release APK
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew assembleRelease --stacktrace --no-daemon --console=plain 2>&1 | tee android-build.log
+
+      - name: Upload Android build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-gradle-log
+          path: android-build.log
+
+      - name: Package Android bundle
+        shell: bash
+        run: |
+          mkdir -p dist/android
+          APK_PATH="$(find app/build/outputs/apk/release -name '*.apk' | head -n 1)"
+          test -n "$APK_PATH"
+          cp "$APK_PATH" dist/android/neuralv-android-release.apk
+
+      - name: Upload Android bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: neuralv-android-release
+          path: dist/android/*
+          if-no-files-found: error
+
+  publish-android:
+    name: Publish Android Branch
+    needs:
+      - build-android
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Android bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: neuralv-android-release
+          path: stage/android
+
+      - name: Prepare android-builds payload
+        shell: bash
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          rm -rf publish-android
+          mkdir -p publish-android/android
+          cp stage/android/neuralv-android-release.apk publish-android/android/
+          sha_android="$(sha256sum publish-android/android/neuralv-android-release.apk | awk '{print $1}')"
+          raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/android-builds"
+          export SHA_ANDROID="$sha_android"
+          export RAW_BASE="$raw_base"
+          python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+          manifest = {
+              "success": True,
+              "generated_at": generated_at,
+              "release_channel": "release",
+              "artifacts": [
+                  {
+                      "platform": "android",
+                      "channel": "release",
+                      "version": os.environ["GITHUB_SHA"],
+                      "sha256": os.environ["SHA_ANDROID"],
+                      "download_url": f"{os.environ['RAW_BASE']}/android/neuralv-android-release.apk",
+                      "install_command": "",
+                      "file_name": "neuralv-android-release.apk",
+                      "notes": ["Android APK"],
+                      "metadata": {}
+                  }
+              ]
+          }
+          with open("publish-android/manifest.json", "w", encoding="utf-8") as f:
+              json.dump(manifest, f, ensure_ascii=False, indent=2)
+          with open("publish-android/BUILD_INFO.txt", "w", encoding="utf-8") as f:
+              f.write(
+                  f"Repository: {os.environ['GITHUB_REPOSITORY']}\n"
+                  f"Commit: {os.environ['GITHUB_SHA']}\n"
+                  f"Workflow Run: {os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\n"
+                  f"Built At: {generated_at}\n"
+              )
+          PY
+
+      - name: Publish android-builds branch
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/android-builds
+          mkdir -p /tmp/android-builds
+          cp -R publish-android/. /tmp/android-builds/
+          cd /tmp/android-builds
+          git init
+          git checkout -b android-builds
+          git add .
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish Android bundle for ${GITHUB_SHA} [skip ci]"
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin android-builds
+
+      - name: Delete legacy apk-builds branch
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set +e
+          git ls-remote --exit-code --heads "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" apk-builds >/dev/null 2>&1
+          if [ "$?" -eq 0 ]; then
+            git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" --delete apk-builds || true
+          fi
