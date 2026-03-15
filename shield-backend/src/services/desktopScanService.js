@@ -665,6 +665,23 @@ async function getReleaseManifest() {
 
     const repo = String(process.env.PUBLIC_REPOSITORY || 'Perdonus/fatalerror').trim();
     const baseRaw = `https://raw.githubusercontent.com/${repo}/release-builds`;
+    const manifestUrl = `${baseRaw}/manifest.json`;
+    try {
+        const response = await fetch(manifestUrl, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            signal: AbortSignal.timeout(10_000)
+        });
+        if (response.ok) {
+            const remoteManifest = await response.json();
+            if (remoteManifest && Array.isArray(remoteManifest.artifacts) && remoteManifest.artifacts.length > 0) {
+                return remoteManifest;
+            }
+        }
+    } catch (error) {
+        console.warn(`Release manifest remote fetch failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
     return {
         success: true,
         generated_at: nowMs(),
