@@ -8,14 +8,19 @@ router.get('/manifest', async (req, res) => {
         const artifacts = Array.isArray(manifest.artifacts)
             ? manifest.artifacts
             : Object.values(manifest.artifacts || {});
+        const sources = Array.isArray(manifest.sources) ? manifest.sources : [];
+
         return res.json({
             success: true,
             generated_at: manifest.generated_at,
-            release_channel: manifest.release_channel || 'split-builds',
+            release_channel: manifest.release_channel || 'main',
+            partial: Boolean(manifest.partial),
+            sources,
             artifacts,
             manifest: {
                 ...manifest,
-                artifacts
+                artifacts,
+                sources
             }
         });
     } catch (error) {
