@@ -43,15 +43,20 @@ jobs:
       - name: Build Windows desktop distributable
         shell: pwsh
         run: |
-          .\gradlew.bat :desktop-app:createDistributable --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
+          & .\gradlew.bat :desktop-app:createDistributable --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
 
       - name: Package Windows archive
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
-          $appDir = Get-ChildItem desktop-app/build/compose/binaries/main/app -Directory | Select-Object -First 1
-          if (-not $appDir) { throw "Desktop app directory not found" }
-          Compress-Archive -Path "$($appDir.FullName)\*" -DestinationPath dist\windows\neuralv-windows.zip -Force
+          $appRoot = "desktop-app/build/compose/binaries/main/app"
+          if (-not (Test-Path $appRoot)) { throw "Desktop app root not found: $appRoot" }
+          $appDir = Get-ChildItem $appRoot -Directory | Sort-Object Name | Select-Object -First 1
+          $sourcePath = if ($appDir) { $appDir.FullName } else { $appRoot }
+          Compress-Archive -Path "$sourcePath\*" -DestinationPath dist\windows\neuralv-windows.zip -Force
 
       - name: Upload Windows build log
         if: always()

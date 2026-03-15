@@ -84,9 +84,14 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist/linux
-          APP_DIR="$(find desktop-app/build/compose/binaries/main/app -maxdepth 1 -mindepth 1 -type d | head -n 1)"
-          test -n "$APP_DIR"
-          tar -C "$(dirname "$APP_DIR")" -czf dist/linux/neuralv-linux.tar.gz "$(basename "$APP_DIR")"
+          APP_ROOT="desktop-app/build/compose/binaries/main/app"
+          test -d "$APP_ROOT"
+          APP_DIR="$(find "$APP_ROOT" -maxdepth 1 -mindepth 1 -type d | head -n 1)"
+          if [ -n "$APP_DIR" ]; then
+            tar -C "$(dirname "$APP_DIR")" -czf dist/linux/neuralv-linux.tar.gz "$(basename "$APP_DIR")"
+          else
+            tar -C "$(dirname "$APP_ROOT")" -czf dist/linux/neuralv-linux.tar.gz "$(basename "$APP_ROOT")"
+          fi
 
       - name: Setup Go
         uses: actions/setup-go@v5
