@@ -77,11 +77,11 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
-      - name: Build Linux desktop distributable
+      - name: Build Linux desktop GUI bundle
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew :desktop-app:createDistributable --stacktrace --no-daemon --console=plain 2>&1 | tee linux-gui-build.log
+          ./gradlew :desktop-app:packageReleaseUberJarForCurrentOS --stacktrace --no-daemon --console=plain 2>&1 | tee linux-gui-build.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             echo "::group::linux-gui-build tail"
@@ -94,7 +94,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          root="desktop-app/build/compose/binaries/main"
+          root="desktop-app/build"
           if [ -d "$root" ]; then
             find "$root" -maxdepth 5 -print | sort
           else
@@ -104,15 +104,20 @@ jobs:
       - name: Package Linux GUI archive
         shell: bash
         run: |
-          mkdir -p dist/linux
-          APP_ROOT="desktop-app/build/compose/binaries/main/app"
-          test -d "$APP_ROOT"
-          APP_DIR="$(find "$APP_ROOT" -maxdepth 1 -mindepth 1 -type d | head -n 1)"
-          if [ -n "$APP_DIR" ]; then
-            tar -C "$(dirname "$APP_DIR")" -czf dist/linux/neuralv-linux.tar.gz "$(basename "$APP_DIR")"
-          else
-            tar -C "$(dirname "$APP_ROOT")" -czf dist/linux/neuralv-linux.tar.gz "$(basename "$APP_ROOT")"
-          fi
+          set -euo pipefail
+          mkdir -p dist/linux/gui/bin dist/linux/gui/lib
+          GUI_JAR="$(find desktop-app/build -type f -path '*/compose/jars/*.jar' | head -n 1)"
+          test -n "$GUI_JAR"
+          cp "$GUI_JAR" dist/linux/gui/lib/neuralv-desktop.jar
+          cat > dist/linux/gui/bin/neuralv <<'SH'
+          #!/bin/sh
+          set -eu
+          SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+          APP_HOME="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+          exec java -jar "$APP_HOME/lib/neuralv-desktop.jar" "$@"
+          SH
+          chmod +x dist/linux/gui/bin/neuralv
+          tar -C dist/linux/gui -czf dist/linux/neuralv-linux.tar.gz .
 
       - name: Setup Go
         uses: actions/setup-go@v5
