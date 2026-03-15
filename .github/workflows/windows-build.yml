@@ -48,6 +48,16 @@ jobs:
             exit $LASTEXITCODE
           }
 
+      - name: Inspect Windows compose output
+        shell: pwsh
+        run: |
+          $root = "desktop-app/build/compose/binaries/main"
+          if (Test-Path $root) {
+            Get-ChildItem $root -Recurse | Select-Object FullName
+          } else {
+            Write-Host "Compose output root missing: $root"
+          }
+
       - name: Package Windows archive
         shell: pwsh
         run: |
@@ -64,6 +74,7 @@ jobs:
         with:
           name: windows-gradle-log
           path: windows-build.log
+          if-no-files-found: warn
 
       - name: Upload Windows bundle
         uses: actions/upload-artifact@v4

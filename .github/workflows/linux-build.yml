@@ -90,6 +90,17 @@ jobs:
             exit "$status"
           fi
 
+      - name: Inspect Linux compose output
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="desktop-app/build/compose/binaries/main"
+          if [ -d "$root" ]; then
+            find "$root" -maxdepth 5 -print | sort
+          else
+            echo "Compose output root missing: $root"
+          fi
+
       - name: Package Linux GUI archive
         shell: bash
         run: |
@@ -129,6 +140,7 @@ jobs:
         with:
           name: linux-gui-gradle-log
           path: linux-gui-build.log
+          if-no-files-found: warn
 
       - name: Upload Linux payloads
         uses: actions/upload-artifact@v4
