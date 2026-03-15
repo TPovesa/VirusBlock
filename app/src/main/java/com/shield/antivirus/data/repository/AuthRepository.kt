@@ -260,12 +260,17 @@ class AuthRepository(context: Context) {
     suspend fun verifyToken(): Boolean {
         return try {
             val token = sessionManager.getValidAccessToken()
-            if (token.isNullOrBlank()) return false
-            ApiClient.executeShieldCall { api ->
+            if (token.isNullOrBlank()) return sessionManager.hasStoredSession()
+            val response = ApiClient.executeShieldCall { api ->
                 api.getMe("Bearer $token")
-            }.isSuccessful
+            }
+            when {
+                response.isSuccessful -> true
+                response.code() == 401 || response.code() == 403 -> false
+                else -> sessionManager.hasStoredSession()
+            }
         } catch (_: Exception) {
-            false
+            sessionManager.hasStoredSession()
         }
     }
 
