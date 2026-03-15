@@ -28,6 +28,7 @@ jobs:
   build-linux:
     name: Build Linux GUI And NV
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -88,9 +89,10 @@ jobs:
       - name: Build nv and shell binaries
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p dist/shell
           cd shell
-          go mod tidy
+          go mod download
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ../dist/shell/nv ./cmd/nv
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ../dist/shell/neuralv-shell ./cmd/neuralv-shell
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ../dist/shell/neuralvd ./cmd/neuralvd
@@ -122,6 +124,7 @@ jobs:
     needs:
       - build-linux
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -167,11 +170,11 @@ jobs:
           manifest = {
               "success": True,
               "generated_at": generated_at,
-              "release_channel": "beta",
+              "release_channel": "main",
               "artifacts": [
                   {
                       "platform": "linux",
-                      "channel": "beta",
+                      "channel": "main",
                       "version": os.environ["GITHUB_SHA"],
                       "sha256": os.environ["SHA_LINUX"],
                       "download_url": f"{os.environ['RAW_BASE']}/linux/neuralv-linux.tar.gz",
@@ -185,7 +188,7 @@ jobs:
                   },
                   {
                       "platform": "nv",
-                      "channel": "beta",
+                      "channel": "main",
                       "version": os.environ["GITHUB_SHA"],
                       "sha256": os.environ["SHA_NV"],
                       "download_url": f"{os.environ['RAW_BASE']}/shell/nv-linux.tar.gz",
@@ -196,7 +199,7 @@ jobs:
                   },
                   {
                       "platform": "shell",
-                      "channel": "beta",
+                      "channel": "main",
                       "version": os.environ["GITHUB_SHA"],
                       "sha256": os.environ["SHA_SHELL"],
                       "download_url": f"{os.environ['RAW_BASE']}/shell/neuralv-shell-linux.tar.gz",
