@@ -12,6 +12,10 @@ import java.util.concurrent.TimeUnit
 
 object ApiClient {
     private const val VT_BASE_URL = "https://www.virustotal.com/api/v3/"
+    private const val SHIELD_READ_TIMEOUT_SECONDS = 600L
+    private const val SHIELD_WRITE_TIMEOUT_SECONDS = 600L
+    private const val DEFAULT_READ_TIMEOUT_SECONDS = 45L
+    private const val DEFAULT_WRITE_TIMEOUT_SECONDS = 45L
 
     data class ShieldEndpoint(
         val label: String,
@@ -32,11 +36,15 @@ object ApiClient {
         .add("www.sosiskibot.ru", "sha256/IzT37viwhm92tzAiJv1ZBp+Pwu59GRrghDARNVFwvmM=")
         .build()
 
-    private fun newHttpClient(usePinnedTls: Boolean): OkHttpClient {
+    private fun newHttpClient(
+        usePinnedTls: Boolean,
+        readTimeoutSeconds: Long = DEFAULT_READ_TIMEOUT_SECONDS,
+        writeTimeoutSeconds: Long = DEFAULT_WRITE_TIMEOUT_SECONDS
+    ): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(45, TimeUnit.SECONDS)
-            .writeTimeout(45, TimeUnit.SECONDS)
+            .readTimeout(readTimeoutSeconds, TimeUnit.SECONDS)
+            .writeTimeout(writeTimeoutSeconds, TimeUnit.SECONDS)
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = if (BuildConfig.DEBUG) {
                     HttpLoggingInterceptor.Level.BASIC
@@ -55,14 +63,26 @@ object ApiClient {
     private fun createShieldApi(endpoint: ShieldEndpoint): ShieldApi =
         Retrofit.Builder()
             .baseUrl(endpoint.baseUrl)
-            .client(newHttpClient(endpoint.usePinnedTls))
+            .client(
+                newHttpClient(
+                    usePinnedTls = endpoint.usePinnedTls,
+                    readTimeoutSeconds = SHIELD_READ_TIMEOUT_SECONDS,
+                    writeTimeoutSeconds = SHIELD_WRITE_TIMEOUT_SECONDS
+                )
+            )
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(ShieldApi::class.java)
 
     val virusTotalApi: VirusTotalApi = Retrofit.Builder()
         .baseUrl(VT_BASE_URL)
-        .client(newHttpClient(usePinnedTls = true))
+        .client(
+            newHttpClient(
+                usePinnedTls = true,
+                readTimeoutSeconds = DEFAULT_READ_TIMEOUT_SECONDS,
+                writeTimeoutSeconds = DEFAULT_WRITE_TIMEOUT_SECONDS
+            )
+        )
         .addConverterFactory(GsonConverterFactory.create())
         .build()
         .create(VirusTotalApi::class.java)

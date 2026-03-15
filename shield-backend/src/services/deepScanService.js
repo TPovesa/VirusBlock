@@ -1,4 +1,5 @@
 const fs = require('fs/promises');
+const fsNative = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const pool = require('../db/pool');
@@ -87,6 +88,29 @@ function isVirusTotalConfigured() {
 
 function computeSha256(buffer) {
     return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+async function computeSha256ForFile(filePath) {
+    const hash = crypto.createHash('sha256');
+    return new Promise((resolve, reject) => {
+        const stream = fsNative.createReadStream(filePath);
+        stream.on('data', (chunk) => hash.update(chunk));
+        stream.on('error', reject);
+        stream.on('end', () => resolve(hash.digest('hex')));
+    });
+}
+
+async function moveFileSafe(sourcePath, targetPath) {
+    await fs.rm(targetPath, { force: true }).catch(() => {});
+    try {
+        await fs.rename(sourcePath, targetPath);
+    } catch (error) {
+        if (String(error?.code || '').toUpperCase() !== 'EXDEV') {
+            throw error;
+        }
+        await fs.copyFile(sourcePath, targetPath);
+        await fs.rm(sourcePath, { force: true });
+    }
 }
 
 function severityRank(severity) {
@@ -929,6 +953,53 @@ function chooseNextAction(normalized) {
     };
 }
 
+function shouldRunHeavyApkStage({ normalized, vt, heuristics }) {
+    const mode = normalizeScanMode(normalized?.scanMode);
+    if (mode === 'APK') {
+        return {
+            enabled: true,
+            reason: 'apk_mode'
+        };
+    }
+
+    if (normalized?.uploadedApkPath) {
+        return {
+            enabled: true,
+            reason: 'uploaded_apk_present'
+        };
+    }
+
+    if (normalized?.isSystemApp) {
+        return {
+            enabled: false,
+            reason: 'system_app_skipped'
+        };
+    }
+
+    const vtMalicious = Number(vt?.malicious || 0);
+    const vtSuspicious = Number(vt?.suspicious || 0);
+    if (vtMalicious > 0 || vtSuspicious > 0) {
+        return {
+            enabled: true,
+            reason: 'virustotal_signal'
+        };
+    }
+
+    const riskScore = Number(heuristics?.riskScore || 0);
+    const verdict = String(heuristics?.verdict || '').toLowerCase();
+    if (verdict === 'malicious' || verdict === 'suspicious' || riskScore >= 45) {
+        return {
+            enabled: true,
+            reason: 'heuristics_signal'
+        };
+    }
+
+    return {
+        enabled: false,
+        reason: 'lightweight_signals_only'
+    };
+}
+
 function dedupeFindings(findings) {
     const seen = new Set();
     return findings.filter((finding) => {
@@ -1046,36 +1117,56 @@ function buildApkFetchUrl(sha256) {
     return APK_FETCH_URL_TEMPLATE.replace(/\{sha256\}/g, encodeURIComponent(sha256));
 }
 
-async function readResponseBufferWithLimit(response, maxBytes) {
+async function downloadResponseToFileWithLimit(response, targetPath, maxBytes) {
     const contentLength = Number(response.headers.get('content-length') || 0);
     if (Number.isFinite(contentLength) && contentLength > 0 && contentLength > maxBytes) {
         throw new Error(`APK fetch exceeded max size (${contentLength} > ${maxBytes})`);
     }
 
-    if (response.body && typeof response.body.getReader === 'function') {
-        const reader = response.body.getReader();
-        const chunks = [];
-        let total = 0;
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) {
-                break;
-            }
-            const chunk = Buffer.from(value);
-            total += chunk.length;
-            if (total > maxBytes) {
-                throw new Error(`APK fetch exceeded max size (${total} > ${maxBytes})`);
-            }
-            chunks.push(chunk);
-        }
-        return Buffer.concat(chunks, total);
-    }
+    const output = fsNative.createWriteStream(targetPath, { flags: 'wx' });
+    const hash = crypto.createHash('sha256');
+    let total = 0;
 
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length > maxBytes) {
-        throw new Error(`APK fetch exceeded max size (${buffer.length} > ${maxBytes})`);
+    try {
+        if (response.body && typeof response.body.getReader === 'function') {
+            const reader = response.body.getReader();
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    break;
+                }
+                const chunk = Buffer.from(value);
+                total += chunk.length;
+                if (total > maxBytes) {
+                    throw new Error(`APK fetch exceeded max size (${total} > ${maxBytes})`);
+                }
+                hash.update(chunk);
+                if (!output.write(chunk)) {
+                    await new Promise((resolve) => output.once('drain', resolve));
+                }
+            }
+        } else {
+            const buffer = Buffer.from(await response.arrayBuffer());
+            total = buffer.length;
+            if (buffer.length > maxBytes) {
+                throw new Error(`APK fetch exceeded max size (${buffer.length} > ${maxBytes})`);
+            }
+            hash.update(buffer);
+            output.write(buffer);
+        }
+
+        await new Promise((resolve, reject) => {
+            output.end((error) => (error ? reject(error) : resolve()));
+        });
+        return {
+            sizeBytes: total,
+            sha256: hash.digest('hex')
+        };
+    } catch (error) {
+        output.destroy();
+        await fs.rm(targetPath, { force: true }).catch(() => {});
+        throw error;
     }
-    return buffer;
 }
 
 async function tryFetchApkForJob(jobId, request, normalized) {
@@ -1108,28 +1199,27 @@ async function tryFetchApkForJob(jobId, request, normalized) {
         const maxBytes = Number.isFinite(APK_FETCH_MAX_BYTES) && APK_FETCH_MAX_BYTES > 0
             ? APK_FETCH_MAX_BYTES
             : MAX_UPLOAD_BYTES;
-        const buffer = await readResponseBufferWithLimit(response, maxBytes);
-        if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
-            throw new Error('empty payload');
-        }
-
-        const fetchedSha256 = computeSha256(buffer);
-        if (fetchedSha256 !== sha256) {
-            throw new Error(`hash mismatch (${fetchedSha256} != ${sha256})`);
-        }
 
         const dir = path.join(UPLOAD_ROOT, jobId);
         await fs.mkdir(dir, { recursive: true });
         const fileName = `fetched-${sha256.slice(0, 12)}.apk`;
         const filePath = path.join(dir, fileName);
-        await fs.writeFile(filePath, buffer);
+        const tempPath = path.join(dir, `fetched-${sha256.slice(0, 12)}-${Date.now()}.tmp`);
+        const downloaded = await downloadResponseToFileWithLimit(response, tempPath, maxBytes);
+        if (!downloaded.sizeBytes) {
+            throw new Error('empty payload');
+        }
+        if (downloaded.sha256 !== sha256) {
+            throw new Error(`hash mismatch (${downloaded.sha256} != ${sha256})`);
+        }
+        await moveFileSafe(tempPath, filePath);
 
         const updatedRequest = {
             ...request,
             uploaded_apk_path: filePath,
             uploaded_apk_name: fileName,
-            uploaded_apk_sha256: fetchedSha256,
-            uploaded_apk_size_bytes: buffer.length,
+            uploaded_apk_sha256: downloaded.sha256,
+            uploaded_apk_size_bytes: downloaded.sizeBytes,
             sha256,
             next_action: 'poll',
             upload_reason: null
@@ -1298,14 +1388,7 @@ async function getDeepScanFullReports(ids, userId) {
         .map((row) => buildDeepScanFullReportPayload(row));
 }
 
-async function attachDeepScanApk(id, userId, buffer, originalName = 'sample.apk') {
-    if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
-        return { error: 'APK payload is empty' };
-    }
-    if (buffer.length > MAX_UPLOAD_BYTES) {
-        return { error: 'APK payload is too large' };
-    }
-
+async function attachDeepScanApk(id, userId, payload, originalName = 'sample.apk') {
     const [rows] = await pool.query(
         `SELECT request_json FROM deep_scan_jobs WHERE id = ? AND user_id = ? LIMIT 1`,
         [id, userId]
@@ -1318,15 +1401,44 @@ async function attachDeepScanApk(id, userId, buffer, originalName = 'sample.apk'
     const dir = path.join(UPLOAD_ROOT, id);
     await fs.mkdir(dir, { recursive: true });
     const filePath = path.join(dir, 'sample.apk');
-    await fs.writeFile(filePath, buffer);
+    let uploadedSha256 = null;
+    let uploadedSizeBytes = 0;
 
-    const uploadedSha256 = computeSha256(buffer);
+    if (Buffer.isBuffer(payload)) {
+        if (payload.length === 0) {
+            return { error: 'APK payload is empty' };
+        }
+        if (payload.length > MAX_UPLOAD_BYTES) {
+            return { error: 'APK payload is too large' };
+        }
+        await fs.writeFile(filePath, payload);
+        uploadedSha256 = computeSha256(payload);
+        uploadedSizeBytes = payload.length;
+    } else {
+        const tempFilePath = String(payload?.tempFilePath || '').trim();
+        if (!tempFilePath) {
+            return { error: 'APK payload is empty' };
+        }
+        const stats = await fs.stat(tempFilePath).catch(() => null);
+        if (!stats || stats.size <= 0) {
+            await fs.rm(tempFilePath, { force: true }).catch(() => {});
+            return { error: 'APK payload is empty' };
+        }
+        if (stats.size > MAX_UPLOAD_BYTES) {
+            await fs.rm(tempFilePath, { force: true }).catch(() => {});
+            return { error: 'APK payload is too large' };
+        }
+        await moveFileSafe(tempFilePath, filePath);
+        uploadedSha256 = String(payload?.sha256 || '').trim() || await computeSha256ForFile(filePath);
+        uploadedSizeBytes = Number(payload?.sizeBytes || stats.size || 0);
+    }
+
     const updatedRequest = {
         ...request,
         uploaded_apk_path: filePath,
-        uploaded_apk_name: String(originalName || 'sample.apk').slice(0, 255),
+        uploaded_apk_name: String(payload?.originalName || originalName || 'sample.apk').slice(0, 255),
         uploaded_apk_sha256: uploadedSha256,
-        uploaded_apk_size_bytes: buffer.length,
+        uploaded_apk_size_bytes: uploadedSizeBytes,
         sha256: request.sha256 || uploadedSha256,
         next_action: 'poll'
     };
@@ -1420,15 +1532,8 @@ async function runDeepScanJob(jobId) {
 
     let request = parseJson(row.request_json, {});
     let normalized = normalizeDeepScanPayload(request);
-    const skipHeavyApkStage = Boolean(normalized?.isSystemApp);
 
     try {
-        if (!skipHeavyApkStage) {
-            const fetchResult = await tryFetchApkForJob(jobId, request, normalized);
-            request = fetchResult.request;
-            normalized = fetchResult.normalized;
-        }
-
         let vt = { status: normalized.sha256 ? 'pending' : 'skipped' };
         try {
             vt = await lookupVirusTotalByHash(normalized.sha256 || normalized.uploadedApkSha256);
@@ -1436,10 +1541,19 @@ async function runDeepScanJob(jobId) {
             vt = { status: 'error', error: error.message };
         }
 
-        const heuristics = analyzeHeuristics(normalized, vt);
-        const apkAnalysis = (!skipHeavyApkStage && normalized.uploadedApkPath)
+        let heuristics = analyzeHeuristics(normalized, vt);
+        const heavyStage = shouldRunHeavyApkStage({ normalized, vt, heuristics });
+
+        if (heavyStage.enabled && !normalized.uploadedApkPath) {
+            const fetchResult = await tryFetchApkForJob(jobId, request, normalized);
+            request = fetchResult.request;
+            normalized = fetchResult.normalized;
+            heuristics = analyzeHeuristics(normalized, vt);
+        }
+
+        const apkAnalysis = (heavyStage.enabled && normalized.uploadedApkPath)
             ? await runAnalyzer(normalized.uploadedApkPath)
-            : { ok: false, findings: [], metadata: {}, risk_bonus: 0, sources: [] };
+            : { ok: false, findings: [], metadata: {}, risk_bonus: 0, sources: [], skipped: true };
 
         const mergedFindings = dedupeFindings([
             ...heuristics.findings,
@@ -1462,15 +1576,16 @@ async function runDeepScanJob(jobId) {
                 metadata: heuristics.metadata || {}
             },
             static_analysis: {
-                ok: !skipHeavyApkStage && Boolean(apkAnalysis.ok),
+                ok: heavyStage.enabled && Boolean(apkAnalysis.ok),
                 risk_bonus: Number(apkAnalysis.risk_bonus || 0),
                 findings: normalizeFindingsList(apkAnalysis.findings || []),
                 metadata: {
                     ...(apkAnalysis.metadata || {}),
-                    skipped_for_system_app: skipHeavyApkStage
+                    heavy_stage_enabled: heavyStage.enabled,
+                    heavy_stage_reason: heavyStage.reason
                 },
                 sources: Array.isArray(apkAnalysis.sources) ? apkAnalysis.sources : [],
-                error: skipHeavyApkStage ? null : (apkAnalysis.error || null)
+                error: heavyStage.enabled ? (apkAnalysis.error || null) : null
             },
             merged_before_triage: {
                 verdict: baseVerdict,

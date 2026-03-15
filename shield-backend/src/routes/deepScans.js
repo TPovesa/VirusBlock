@@ -1,3 +1,8 @@
+const fs = require('fs');
+const fsp = require('fs/promises');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
@@ -8,6 +13,91 @@ const {
     getUserDeepScanLimits,
     getDeepScanFullReports
 } = require('../services/deepScanService');
+
+function parseUploadLimitBytes(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) {
+        return 256 * 1024 * 1024;
+    }
+    const matched = normalized.match(/^(\d+)(b|kb|mb|gb)?$/);
+    if (!matched) {
+        return 256 * 1024 * 1024;
+    }
+    const amount = Number(matched[1] || 0);
+    const unit = matched[2] || 'b';
+    const multiplier = unit === 'gb'
+        ? 1024 * 1024 * 1024
+        : unit === 'mb'
+            ? 1024 * 1024
+            : unit === 'kb'
+                ? 1024
+                : 1;
+    return amount * multiplier;
+}
+
+const UPLOAD_LIMIT_BYTES = parseUploadLimitBytes(process.env.DEEP_SCAN_UPLOAD_LIMIT || '256mb');
+
+async function readApkUploadToTempFile(req) {
+    const tempPath = path.join(os.tmpdir(), `shield-upload-${crypto.randomUUID()}.apk`);
+    const writeStream = fs.createWriteStream(tempPath, { flags: 'wx' });
+    const hash = crypto.createHash('sha256');
+    let total = 0;
+    let settled = false;
+
+    return new Promise((resolve, reject) => {
+        const cleanup = async () => {
+            try {
+                await fsp.rm(tempPath, { force: true });
+            } catch (_) {}
+        };
+
+        const fail = async (error) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            req.unpipe(writeStream);
+            writeStream.destroy();
+            await cleanup();
+            reject(error);
+        };
+
+        writeStream.on('error', (error) => {
+            void fail(error);
+        });
+        req.on('error', (error) => {
+            void fail(error);
+        });
+        req.on('data', (chunk) => {
+            total += chunk.length;
+            if (total > UPLOAD_LIMIT_BYTES) {
+                const error = new Error('APK payload is too large');
+                error.code = 'PAYLOAD_TOO_LARGE';
+                req.destroy(error);
+                return;
+            }
+            hash.update(chunk);
+        });
+
+        writeStream.on('finish', () => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            if (total <= 0) {
+                void cleanup().finally(() => reject(new Error('APK payload is empty')));
+                return;
+            }
+            resolve({
+                tempFilePath: tempPath,
+                sizeBytes: total,
+                sha256: hash.digest('hex')
+            });
+        });
+
+        req.pipe(writeStream);
+    });
+}
 
 function classifyFullReportError(error) {
     const code = String(error?.code || '').toUpperCase();
@@ -141,38 +231,40 @@ router.post('/start', auth, async (req, res) => {
     }
 });
 
-router.post(
-    '/:id/apk',
-    auth,
-    express.raw({
-        type: ['application/octet-stream', 'application/vnd.android.package-archive'],
-        limit: process.env.DEEP_SCAN_UPLOAD_LIMIT || '256mb'
-    }),
-    async (req, res) => {
-        try {
-            const scan = await attachDeepScanApk(
-                req.params.id,
-                req.userId,
-                req.body,
-                req.get('X-File-Name') || 'sample.apk'
-            );
-            if (scan?.error) {
-                return res.status(400).json({ error: scan.error });
+router.post('/:id/apk', auth, async (req, res) => {
+    let upload = null;
+    try {
+        upload = await readApkUploadToTempFile(req);
+        const scan = await attachDeepScanApk(
+            req.params.id,
+            req.userId,
+            {
+                ...upload,
+                originalName: req.get('X-File-Name') || 'sample.apk'
             }
-            if (!scan) {
-                return res.status(404).json({ error: 'Deep scan not found' });
-            }
-            return res.status(202).json({ success: true, scan });
-        } catch (error) {
-            console.error('Deep scan upload error:', error);
-            const classified = classifyDeepScanRuntimeError(error);
-            if (classified) {
-                return res.status(classified.status).json(classified.payload);
-            }
-            return res.status(500).json({ error: 'Сервер не смог принять APK для проверки.' });
+        );
+        if (scan?.error) {
+            return res.status(400).json({ error: scan.error });
         }
+        if (!scan) {
+            return res.status(404).json({ error: 'Deep scan not found' });
+        }
+        return res.status(202).json({ success: true, scan });
+    } catch (error) {
+        if (upload?.tempFilePath) {
+            await fsp.rm(upload.tempFilePath, { force: true }).catch(() => {});
+        }
+        if (String(error?.code || '').toUpperCase() === 'PAYLOAD_TOO_LARGE') {
+            return res.status(413).json({ error: 'APK payload is too large' });
+        }
+        console.error('Deep scan upload error:', error);
+        const classified = classifyDeepScanRuntimeError(error);
+        if (classified) {
+            return res.status(classified.status).json(classified.payload);
+        }
+        return res.status(500).json({ error: 'Сервер не смог принять APK для проверки.' });
     }
-);
+});
 
 router.get('/limits', auth, async (req, res) => {
     try {

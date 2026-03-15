@@ -130,9 +130,6 @@ class HomeViewModel(private val context: Context) : ViewModel() {
                     activeScanStartedAt = active.activeScanStartedAt
                 )
             }.combine(scanRepo.getAllResults()) { snapshot, results ->
-                val scanTooOld = snapshot.activeScanType.isNotBlank() &&
-                    snapshot.activeScanStartedAt > 0L &&
-                    System.currentTimeMillis() - snapshot.activeScanStartedAt > 30L * 60L * 1000L
                 val startOfDay = startOfCurrentDay()
                 val todayResults = results.filter { it.completedAt >= startOfDay }
                 val latestBackgroundResult = results
@@ -153,9 +150,9 @@ class HomeViewModel(private val context: Context) : ViewModel() {
                     totalScans = if (snapshot.isGuest) 0 else results.size,
                     isGuest = snapshot.isGuest,
                     guestScanUsed = snapshot.guestScanUsed,
-                    isScanActive = snapshot.activeScanType.isNotBlank() && !scanTooOld,
-                    activeScanType = if (scanTooOld) "" else snapshot.activeScanType,
-                    activeScanCurrentApp = if (scanTooOld) "" else snapshot.activeScanCurrentApp,
+                    isScanActive = snapshot.activeScanType.isNotBlank(),
+                    activeScanType = snapshot.activeScanType,
+                    activeScanCurrentApp = snapshot.activeScanCurrentApp,
                     activeScanProgress = snapshot.activeScanProgress,
                     fullScansToday = todayResults.count { it.scanType.uppercase() == "FULL" },
                     selectiveScansToday = todayResults.count { it.scanType.uppercase() == "SELECTIVE" },

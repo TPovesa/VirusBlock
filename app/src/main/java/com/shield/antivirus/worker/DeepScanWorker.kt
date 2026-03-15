@@ -3,6 +3,7 @@ package com.shield.antivirus.worker
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.util.Log
+import androidx.work.BackoffPolicy
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.ForegroundInfo
@@ -16,6 +17,8 @@ import com.shield.antivirus.data.repository.ScanProgress
 import com.shield.antivirus.data.repository.ScanRepository
 import com.shield.antivirus.util.AppLogger
 import com.shield.antivirus.util.NotificationHelper
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 class DeepScanWorker(
     context: Context,
@@ -97,6 +100,15 @@ class DeepScanWorker(
                 error = error,
                 metadata = mapOf("scan_type" to scanType)
             )
+            if (shouldRetry(error)) {
+                AppLogger.log(
+                    tag = "deep_scan_worker",
+                    message = "Deep worker retry scheduled",
+                    level = "WARN",
+                    metadata = mapOf("scan_type" to scanType)
+                )
+                return Result.retry()
+            }
             prefs.clearActiveDeepScan()
             NotificationHelper.cancelScanNotification(applicationContext)
             Result.failure(
@@ -123,6 +135,29 @@ class DeepScanWorker(
         )
     }
 
+    private fun shouldRetry(error: Exception): Boolean {
+        val message = error.message?.lowercase().orEmpty()
+        if (message.contains("требуется вход") || message.contains("нужен вход")) {
+            return false
+        }
+        if (message.contains("выберите apk") || message.contains("сначала выберите приложение")) {
+            return false
+        }
+        return error is IOException ||
+            message.contains("timeout") ||
+            message.contains("timed out") ||
+            message.contains("temporarily unavailable") ||
+            message.contains("temporary") ||
+            message.contains("503") ||
+            message.contains("502") ||
+            message.contains("504") ||
+            message.contains("429") ||
+            message.contains("временно") ||
+            message.contains("сервер") ||
+            message.contains("сеть") ||
+            message.contains("интернет")
+    }
+
     companion object {
         const val UNIQUE_WORK_NAME = "shield_deep_scan_active"
         const val KEY_SCAN_TYPE = "scan_type"
@@ -143,6 +178,11 @@ class DeepScanWorker(
             apkUri: String? = null
         ): java.util.UUID {
             val request = OneTimeWorkRequestBuilder<DeepScanWorker>()
+                .setBackoffCriteria(
+                    BackoffPolicy.EXPONENTIAL,
+                    30,
+                    TimeUnit.SECONDS
+                )
                 .setInputData(
                     workDataOf(
                         KEY_SCAN_TYPE to scanType,

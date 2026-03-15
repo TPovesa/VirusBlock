@@ -80,14 +80,6 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                 )
             )
             var activeType = prefs.activeScanType.first()
-            val activeStartedAt = prefs.activeScanStartedAt.first()
-            val activeTooOld = activeType.isNotBlank() &&
-                activeStartedAt > 0L &&
-                System.currentTimeMillis() - activeStartedAt > 30L * 60L * 1000L
-            if (activeTooOld) {
-                prefs.clearActiveScan()
-                activeType = ""
-            }
             val activeDeepWorkId = prefs.activeDeepScanWorkId.first()
             val attachToRunningDeep = activeType.equals(scanType, ignoreCase = true) &&
                 activeDeepWorkId.isNotBlank() &&

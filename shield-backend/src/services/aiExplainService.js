@@ -1,6 +1,19 @@
 const AIH_BASE_URL = (process.env.AIH_BASE_URL || 'https://sosiskibot.ru/api/v1').replace(/\/$/, '');
 const AIH_TIMEOUT_MS = parseInt(process.env.AIH_TIMEOUT_MS || '45000', 10);
 const AIH_DEFAULT_MODEL = String(process.env.AIH_MODEL || 'gpt-5.2').trim() || 'gpt-5.2';
+const AIH_FAILURE_COOLDOWN_MS = parsePositiveInt(process.env.AIH_FAILURE_COOLDOWN_MS, 30000);
+const AIH_FAILURE_THRESHOLD = parsePositiveInt(process.env.AIH_FAILURE_THRESHOLD, 2);
+
+let aiUpstreamBreaker = {
+    consecutiveFailures: 0,
+    openUntil: 0,
+    lastError: null
+};
+
+function parsePositiveInt(value, fallback) {
+    const parsed = parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 function isAiConfigured() {
     return Boolean(String(process.env.AIH_API_KEY || '').trim());
@@ -10,11 +23,89 @@ function shouldRetryAiStatus(statusCode) {
     return [408, 425, 429, 500, 502, 503, 504].includes(Number(statusCode || 0));
 }
 
+function aiBreakerRemainingMs() {
+    return Math.max(0, Number(aiUpstreamBreaker.openUntil || 0) - Date.now());
+}
+
+function isAiTimeoutError(error) {
+    const code = String(error?.code || error?.cause?.code || '').toUpperCase();
+    const message = String(error?.message || '').toLowerCase();
+    return error?.name === 'TimeoutError'
+        || error?.name === 'AbortError'
+        || ['ETIMEDOUT', 'ECONNABORTED', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT'].includes(code)
+        || message.includes('timeout')
+        || message.includes('timed out');
+}
+
+function shouldOpenAiBreaker(error) {
+    const statusCode = Number(error?.statusCode || 0);
+    const code = String(error?.code || error?.cause?.code || '').toUpperCase();
+    if (statusCode >= 500 && statusCode < 600) {
+        return true;
+    }
+    if (statusCode === 408 || isAiTimeoutError(error)) {
+        return true;
+    }
+    return ['ECONNRESET', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_SOCKET'].includes(code);
+}
+
+function getAiBreakerError() {
+    const remainingMs = aiBreakerRemainingMs();
+    if (remainingMs <= 0) {
+        return null;
+    }
+
+    const seconds = Math.max(1, Math.ceil(remainingMs / 1000));
+    const error = new Error(`AI upstream cooldown active for ${seconds}s`);
+    error.statusCode = 503;
+    error.circuitOpen = true;
+    error.code = 'AI_UPSTREAM_COOLDOWN';
+    return error;
+}
+
+function resetAiFailureCount() {
+    aiUpstreamBreaker = {
+        consecutiveFailures: 0,
+        openUntil: 0,
+        lastError: null
+    };
+}
+
+function recordAiSuccess() {
+    resetAiFailureCount();
+}
+
+function recordAiFailure(error) {
+    if (!shouldOpenAiBreaker(error)) {
+        resetAiFailureCount();
+        return;
+    }
+
+    const nextFailures = Number(aiUpstreamBreaker.consecutiveFailures || 0) + 1;
+    const shouldOpen = nextFailures >= AIH_FAILURE_THRESHOLD;
+    aiUpstreamBreaker = {
+        consecutiveFailures: shouldOpen ? 0 : nextFailures,
+        openUntil: shouldOpen ? Date.now() + AIH_FAILURE_COOLDOWN_MS : 0,
+        lastError: String(error?.message || error || 'AI upstream request failed').slice(0, 255)
+    };
+
+    if (shouldOpen) {
+        console.warn(
+            `AI upstream cooldown opened for ${Math.ceil(AIH_FAILURE_COOLDOWN_MS / 1000)}s after repeated transient failures`
+        );
+    }
+}
+
 async function apiRequest(path, body = null) {
     const maxAttempts = 2;
     let lastError = null;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const breakerError = getAiBreakerError();
+        if (breakerError) {
+            throw breakerError;
+        }
+
         try {
             const response = await fetch(`${AIH_BASE_URL}${path}`, {
                 method: body ? 'POST' : 'GET',
@@ -33,11 +124,15 @@ async function apiRequest(path, body = null) {
                 throw error;
             }
 
-            return response.json();
+            const payload = await response.json();
+            recordAiSuccess();
+            return payload;
         } catch (error) {
             lastError = error;
+            recordAiFailure(error);
+
             const statusCode = Number(error?.statusCode || 0);
-            if (attempt < maxAttempts && shouldRetryAiStatus(statusCode)) {
+            if (attempt < maxAttempts && shouldRetryAiStatus(statusCode) && !getAiBreakerError()) {
                 await new Promise((resolve) => setTimeout(resolve, attempt * 900));
                 continue;
             }
