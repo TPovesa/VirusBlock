@@ -31,6 +31,10 @@ compose.desktop {
             packageVersion = neuralvVersion
             description = "NeuralV desktop security client"
             vendor = "NeuralV"
+            val windowsIcon = rootProject.file("branding/generated/neuralv.ico")
+            if (windowsIcon.exists()) {
+                iconFile.set(windowsIcon)
+            }
         }
     }
 }

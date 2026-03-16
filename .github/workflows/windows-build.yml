@@ -32,6 +32,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Cache Compose and Kotlin native dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\.konan
+          key: windows-konan-${{ runner.os }}-${{ hashFiles('desktop-app/build.gradle.kts', 'desktop-core/build.gradle.kts', 'gradle/libs.versions.toml', 'settings-desktop.gradle.kts') }}
+          restore-keys: |
+            windows-konan-${{ runner.os }}-
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -50,6 +59,17 @@ jobs:
           key: windows-compose-${{ runner.os }}-${{ hashFiles('desktop-app/**', 'desktop-core/**', 'branding/**', 'gradle.properties', 'settings-desktop.gradle.kts', 'build.gradle.kts') }}
           restore-keys: |
             windows-compose-${{ runner.os }}-
+
+      - name: Generate Windows icon
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check pillow
+          New-Item -ItemType Directory -Force -Path branding\generated | Out-Null
+          @'
+          from PIL import Image
+          img = Image.open(r"app/src/main/res/mipmap-xxxhdpi/ic_launcher.png").convert("RGBA")
+          img.save(r"branding/generated/neuralv.ico", sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
+          '@ | python -
 
       - name: Build Windows desktop GUI distributable
         shell: pwsh
