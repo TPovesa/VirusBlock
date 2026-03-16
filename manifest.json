@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "generated_at": "2026-03-16T22:24:30Z",
+  "release_channel": "main",
+  "artifacts": [
+    {
+      "platform": "linux",
+      "channel": "main",
+      "version": "1.4.0",
+      "sha256": "c5c79c46bbfc41201440eb2a976f18d083211691e078d700fa9aef84ca73fde0",
+      "download_url": "https://raw.githubusercontent.com/Perdonus/fatalerror/linux-gui-builds/linux/neuralv-linux-1.4.0.tar.gz",
+      "install_command": "",
+      "file_name": "neuralv-linux-1.4.0.tar.gz",
+      "notes": [
+        "Portable Linux GUI archive."
+      ],
+      "metadata": {}
+    }
+  ]
+}
