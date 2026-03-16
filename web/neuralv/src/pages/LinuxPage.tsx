@@ -9,7 +9,6 @@ type DistroOption = {
   key: DistroKey;
   label: string;
   title: string;
-  note: string;
 };
 
 type PackageMetadata = {
@@ -17,10 +16,8 @@ type PackageMetadata = {
   url?: string;
   packageType?: string;
   format?: string;
-  fileName?: string;
   repoCommands?: string[];
   installCommands?: string[];
-  note?: string;
 };
 
 type ArtifactMetadataShape = {
@@ -29,42 +26,36 @@ type ArtifactMetadataShape = {
 
 type InstallVariant = {
   title: string;
-  lead: string;
-  note: string;
   commandText: string;
   downloadUrl?: string;
-  buttonLabel: string;
+  buttonLabel?: string;
 };
 
 const NV_INSTALL_URL = 'https://sosiskibot.ru/neuralv/install/nv.sh';
 const REPO_ROOT = 'https://sosiskibot.ru/neuralv/repo';
 
 const distroOptions: DistroOption[] = [
-  {
-    key: 'ubuntu',
-    label: 'Ubuntu / Debian',
-    title: 'Ubuntu, Debian, Pop!_OS, Mint',
-    note: 'Добавляем apt-репозиторий и ставим GUI как обычный пакет.'
-  },
-  {
-    key: 'fedora',
-    label: 'Fedora / RHEL',
-    title: 'Fedora, Nobara, RHEL-совместимые',
-    note: 'Подключаем RPM-репозиторий и ставим GUI через dnf.'
-  },
-  {
-    key: 'arch',
-    label: 'Arch / Manjaro',
-    title: 'Arch, EndeavourOS, Manjaro',
-    note: 'Подключаем pacman-репозиторий NeuralV и ставим пакет одной командой.'
-  },
-  {
-    key: 'generic',
-    label: 'Другой Linux',
-    title: 'Любой совместимый x64 Linux',
-    note: 'Если у тебя другой дистрибутив, бери portable GUI-файл.'
-  }
+  { key: 'ubuntu', label: 'Ubuntu / Debian', title: 'Ubuntu, Debian, Pop!_OS, Mint' },
+  { key: 'fedora', label: 'Fedora / RHEL', title: 'Fedora, Nobara, RHEL-совместимые' },
+  { key: 'arch', label: 'Arch / Manjaro', title: 'Arch, EndeavourOS, Manjaro' },
+  { key: 'generic', label: 'Другой Linux', title: 'Любой совместимый x64 Linux' }
 ];
+
+const compactSegmentsStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: '0.6rem',
+  flexWrap: 'wrap',
+  alignItems: 'center',
+  padding: 0,
+  background: 'transparent',
+  boxShadow: 'none'
+};
+
+const compactSegmentStyle: React.CSSProperties = {
+  flex: '0 0 auto',
+  width: 'auto',
+  minWidth: 'unset'
+};
 
 function getMetadata(artifact?: ReleaseArtifact): ArtifactMetadataShape | undefined {
   return artifact?.metadata && typeof artifact.metadata === 'object'
@@ -90,7 +81,7 @@ function buildUbuntuCommands(packageUrl?: string) {
     '# 2) Установи GUI',
     'sudo apt install neuralv',
     '',
-    '# 3) Если нужен локальный пакет',
+    '# 3) Локальный пакет',
     `# ${packageUrl ?? '<deb-url>'}`
   ].join('\n');
 }
@@ -111,7 +102,7 @@ function buildFedoraCommands(packageUrl?: string) {
     '# 2) Установи GUI',
     'sudo dnf install neuralv',
     '',
-    '# 3) Если нужен локальный пакет',
+    '# 3) Локальный пакет',
     `# ${packageUrl ?? '<rpm-url>'}`
   ].join('\n');
 }
@@ -129,14 +120,14 @@ function buildArchCommands(packageUrl?: string) {
     '# 2) Установи GUI',
     'sudo pacman -S neuralv',
     '',
-    '# 3) Если нужен portable-файл',
+    '# 3) Portable-файл',
     `# ${packageUrl ?? '<appimage-url>'}`
   ].join('\n');
 }
 
 function buildGenericCommands(packageUrl?: string) {
   return [
-    '# 1) Скачай portable GUI',
+    '# 1) Скачай GUI',
     `curl -L "${packageUrl ?? '<gui-url>'}" -o NeuralV.AppImage`,
     '',
     '# 2) Дай права на запуск',
@@ -164,7 +155,7 @@ function buildGuiVariant(distro: DistroOption, artifact?: ReleaseArtifact): Inst
       '# 1) Подключи репозиторий NeuralV',
       ...repoCommands,
       '',
-      '# 2) Установи GUI через системный менеджер пакетов',
+      '# 2) Установи GUI',
       ...installCommands
     ].join('\n');
   } else {
@@ -193,23 +184,16 @@ function buildGuiVariant(distro: DistroOption, artifact?: ReleaseArtifact): Inst
         : 'Скачать GUI';
 
   return {
-    title: 'GUI для Linux',
-    lead: distro.title,
-    note: packageMeta?.note ?? distro.note,
+    title: 'GUI',
     commandText,
     downloadUrl,
     buttonLabel
   };
 }
 
-function buildCliVariant(shellArtifact?: ReleaseArtifact, nvArtifact?: ReleaseArtifact): InstallVariant {
-  const preferredDownload = nvArtifact?.downloadUrl ?? shellArtifact?.downloadUrl ?? NV_INSTALL_URL;
-  const buttonLabel = nvArtifact?.downloadUrl ? 'Скачать nv' : 'Скачать nv.sh';
-
+function buildCliVariant(): InstallVariant {
   return {
-    title: 'CLI через nv',
-    lead: 'Без выбора дистрибутива',
-    note: 'CLI ставится одинаково: сначала nv, потом сама утилита. Подходит для терминала, SSH и headless-машин.',
+    title: 'CLI',
     commandText: [
       '# 1) Установи nv',
       `curl -fsSL ${NV_INSTALL_URL} | sh`,
@@ -219,19 +203,14 @@ function buildCliVariant(shellArtifact?: ReleaseArtifact, nvArtifact?: ReleaseAr
       '',
       '# 3) Запусти клиент',
       'neuralv'
-    ].join('\n'),
-    downloadUrl: preferredDownload,
-    buttonLabel
+    ].join('\n')
   };
 }
 
 export function LinuxPage() {
   const manifestState = useReleaseManifest();
   const guiArtifact = getArtifact(manifestState.manifest, 'linux');
-  const shellArtifact = getArtifact(manifestState.manifest, 'shell');
-  const nvArtifact = getArtifact(manifestState.manifest, 'nv');
   const guiReady = isArtifactReady(guiArtifact);
-  const cliReady = isArtifactReady(shellArtifact) || isArtifactReady(nvArtifact);
 
   const [installMode, setInstallMode] = useState<InstallMode>(() => (guiReady ? 'gui' : 'cli'));
   const [distro, setDistro] = useState<DistroKey>('ubuntu');
@@ -245,7 +224,7 @@ export function LinuxPage() {
 
   const selectedDistro = distroOptions.find((item) => item.key === distro) ?? distroOptions[0];
   const guiVariant = useMemo(() => buildGuiVariant(selectedDistro, guiArtifact), [guiArtifact, selectedDistro]);
-  const cliVariant = useMemo(() => buildCliVariant(shellArtifact, nvArtifact), [nvArtifact, shellArtifact]);
+  const cliVariant = useMemo(() => buildCliVariant(), []);
   const activeVariant = installMode === 'gui' ? guiVariant : cliVariant;
 
   const handleCopy = async () => {
@@ -267,27 +246,13 @@ export function LinuxPage() {
       <section className="hero-card platform-hero linux-hero">
         <div className="hero-copy">
           <h1>NeuralV для Linux</h1>
-          <p>Выбираешь GUI или CLI и сразу получаешь готовую установку без длинной инструкции.</p>
           <div className="hero-actions">
             <a className="nv-button" href="#linux-install">Установка</a>
             {guiReady && guiArtifact?.downloadUrl ? (
               <a className="nv-button tonal" href={guiArtifact.downloadUrl} target="_blank" rel="noreferrer">Скачать GUI</a>
-            ) : cliReady && activeVariant.downloadUrl ? (
-              <a className="nv-button tonal" href={activeVariant.downloadUrl} target="_blank" rel="noreferrer">{activeVariant.buttonLabel}</a>
             ) : (
-              <button className="nv-button tonal is-disabled" type="button" disabled>Файлы скоро</button>
+              <button className="nv-button tonal is-disabled" type="button" disabled>GUI скоро</button>
             )}
-          </div>
-        </div>
-
-        <div className="hero-panel compact-panel">
-          <div className="mini-stat">
-            <strong>{guiReady ? 'GUI готов' : 'GUI скоро'}</strong>
-            <span className="hero-support-text">Обычное окно для рабочего стола.</span>
-          </div>
-          <div className="mini-stat">
-            <strong>{cliReady ? 'CLI готов' : 'CLI скоро'}</strong>
-            <span className="hero-support-text">Терминал и серверные сценарии.</span>
           </div>
         </div>
       </section>
@@ -300,11 +265,11 @@ export function LinuxPage() {
         <div className="install-layout">
           <aside className="content-card chooser-card">
             <div className="chooser-section">
-              <span className="chooser-label">Что установить</span>
-              <div className="segmented-row">
+              <div className="segmented-row" style={compactSegmentsStyle}>
                 <button
                   type="button"
                   className={`segment${installMode === 'gui' ? ' is-active' : ''}`}
+                  style={compactSegmentStyle}
                   onClick={() => setInstallMode('gui')}
                   disabled={!guiReady}
                 >
@@ -313,6 +278,7 @@ export function LinuxPage() {
                 <button
                   type="button"
                   className={`segment${installMode === 'cli' ? ' is-active' : ''}`}
+                  style={compactSegmentStyle}
                   onClick={() => setInstallMode('cli')}
                 >
                   CLI
@@ -335,37 +301,28 @@ export function LinuxPage() {
                     </button>
                   ))}
                 </div>
-                <p className="chooser-note">{selectedDistro.note}</p>
               </div>
-            ) : (
-              <div className="chooser-section">
-                <span className="chooser-label">CLI</span>
-                <p className="chooser-note">Один install-flow для всех Linux-систем. Без выбора дистрибутива и без лишних шагов.</p>
-              </div>
-            )}
+            ) : null}
           </aside>
 
           <div className="content-card install-card">
             <div className="install-card-head">
               <div>
                 <h3>{activeVariant.title}</h3>
-                <p>{activeVariant.lead}</p>
               </div>
               <div className="install-card-head-actions">
-                {activeVariant.downloadUrl ? (
-                  <a className="nv-button tonal" href={activeVariant.downloadUrl} target="_blank" rel="noreferrer">{activeVariant.buttonLabel}</a>
-                ) : (
-                  <button className="nv-button tonal is-disabled" type="button" disabled>
-                    {installMode === 'gui' ? 'Пакет скоро' : 'CLI скоро'}
-                  </button>
-                )}
+                {installMode === 'gui' ? (
+                  activeVariant.downloadUrl ? (
+                    <a className="nv-button tonal" href={activeVariant.downloadUrl} target="_blank" rel="noreferrer">{activeVariant.buttonLabel}</a>
+                  ) : (
+                    <button className="nv-button tonal is-disabled" type="button" disabled>Пакет скоро</button>
+                  )
+                ) : null}
                 <button className="copy-button" type="button" onClick={handleCopy}>
                   {copyState === 'done' ? 'Скопировано' : 'Скопировать'}
                 </button>
               </div>
             </div>
-
-            <p>{activeVariant.note}</p>
 
             <div className="command-shell">
               <pre>{activeVariant.commandText}</pre>

@@ -125,7 +125,7 @@ export function AppShell() {
                 key={item.to}
                 to={item.to}
                 end={item.to === '/'}
-                className={({ isActive }) => `shell-nav-link${isActive ? ' is-active' : ''}`}
+                className={({ isActive }) => `shell-link shell-nav-link${isActive ? ' is-active' : ''}`}
               >
                 {item.label}
               </NavLink>
@@ -160,7 +160,7 @@ export function AppShell() {
       <footer className="site-footer">
         <nav className="site-footer-links" aria-label="Навигация внизу сайта">
           {navItems.map((item) => (
-            <a key={item.to} href={`/neuralv${item.to === '/' ? '/' : item.to}`}>
+            <a key={item.to} className="shell-link footer-link" href={`/neuralv${item.to === '/' ? '/' : item.to}`}>
               {item.label}
             </a>
           ))}

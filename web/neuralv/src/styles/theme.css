@@ -183,6 +183,7 @@ ul {
   gap: 10px;
 }
 
+.shell-link,
 .shell-nav-link,
 .segment,
 .distro-pill,
@@ -191,7 +192,7 @@ ul {
   transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease, color 180ms ease;
 }
 
-.shell-nav-link {
+.shell-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -199,12 +200,24 @@ ul {
   padding: 0 16px;
   border-radius: 999px;
   color: var(--nv-text-soft);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.shell-nav-link {
+  background: transparent;
 }
 
 .shell-nav-link:hover,
 .shell-nav-link.is-active {
   background: var(--nv-surface-strong);
   border-color: var(--nv-stroke-strong);
+  color: var(--nv-text);
+}
+
+.footer-link:hover {
+  background: var(--nv-primary-soft);
+  border-color: transparent;
   color: var(--nv-text);
 }
 
@@ -221,6 +234,7 @@ ul {
 }
 
 .theme-toggle:hover {
+  background: var(--nv-primary-soft);
   color: var(--nv-text);
   transform: translateY(-1px);
 }
@@ -357,6 +371,13 @@ ul {
   gap: 12px;
   flex-wrap: wrap;
   align-items: center;
+}
+
+.hero-actions > *,
+.card-actions > *,
+.install-card-footer > *,
+.install-card-head-actions > * {
+  flex: 0 0 auto;
 }
 
 .card-actions-stacked {
@@ -725,18 +746,8 @@ ul {
 
 .site-footer-links a {
   min-height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 8px;
-  border-radius: 999px;
-  color: var(--nv-text-soft);
-  transition: color 180ms ease, transform 180ms ease;
-}
-
-.site-footer-links a:hover {
-  color: var(--nv-text);
-  transform: translateY(-1px);
+  padding-inline: 10px;
+  transition: color 180ms ease, transform 180ms ease, background-color 180ms ease;
 }
 
 .site-footer-copy {
@@ -778,6 +789,10 @@ ul {
     justify-content: flex-start;
   }
 
+  .site-footer-links {
+    gap: 12px;
+  }
+
   .three-up {
     grid-template-columns: 1fr;
   }
@@ -801,6 +816,11 @@ ul {
 
   .shell-nav {
     justify-content: flex-start;
+  }
+
+  .shell-link {
+    min-height: 40px;
+    padding: 0 14px;
   }
 
   .theme-toggle {
