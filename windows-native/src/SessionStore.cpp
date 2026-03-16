@@ -1,12 +1,10 @@
 #include "NeuralV/SessionStore.h"
 
 #include <filesystem>
-#include <fstream>
 #include <objbase.h>
 #include <shlobj.h>
-#include <sstream>
 #include <unordered_map>
-#include <locale>
+#include <vector>
 
 namespace neuralv {
 
@@ -36,34 +34,79 @@ std::wstring GenerateGuidString() {
     return buffer;
 }
 
+std::string ReadUtf8File(const std::wstring& path) {
+    const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        return {};
+    }
+
+    LARGE_INTEGER size{};
+    if (!GetFileSizeEx(file, &size) || size.QuadPart <= 0) {
+        CloseHandle(file);
+        return {};
+    }
+
+    std::vector<char> buffer(static_cast<size_t>(size.QuadPart));
+    DWORD bytesRead = 0;
+    const BOOL ok = ReadFile(file, buffer.data(), static_cast<DWORD>(buffer.size()), &bytesRead, nullptr);
+    CloseHandle(file);
+    if (!ok) {
+        return {};
+    }
+    return std::string(buffer.data(), bytesRead);
+}
+
+bool WriteUtf8File(const std::wstring& path, const std::string& content) {
+    const HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    DWORD written = 0;
+    const BOOL ok = WriteFile(file, content.data(), static_cast<DWORD>(content.size()), &written, nullptr);
+    CloseHandle(file);
+    return ok && written == content.size();
+}
+
 std::unordered_map<std::wstring, std::wstring> ReadKeyValueFile(const std::wstring& path) {
     std::unordered_map<std::wstring, std::wstring> map;
-    std::wifstream input{std::filesystem::path(path)};
-    input.imbue(std::locale(""));
-    if (!input.is_open()) {
+    const std::string content = ReadUtf8File(path);
+    if (content.empty()) {
         return map;
     }
-    std::wstring line;
-    while (std::getline(input, line)) {
-        const auto pos = line.find(L'=');
-        if (pos == std::wstring::npos) {
+
+    size_t start = 0;
+    while (start < content.size()) {
+        size_t end = content.find('\n', start);
+        if (end == std::string::npos) {
+            end = content.size();
+        }
+        std::string line = content.substr(start, end - start);
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+
+        const auto pos = line.find('=');
+        if (pos == std::string::npos) {
+            start = end + 1;
             continue;
         }
-        map[line.substr(0, pos)] = line.substr(pos + 1);
+
+        map[Utf8ToWide(line.substr(0, pos))] = Utf8ToWide(line.substr(pos + 1));
+        start = end + 1;
     }
     return map;
 }
 
 bool WriteKeyValueFile(const std::wstring& path, const std::unordered_map<std::wstring, std::wstring>& values) {
-    std::wofstream output{std::filesystem::path(path), std::ios::trunc};
-    output.imbue(std::locale(""));
-    if (!output.is_open()) {
-        return false;
-    }
+    std::string content;
     for (const auto& [key, value] : values) {
-        output << key << L'=' << value << L'\n';
+        content += WideToUtf8(key);
+        content.push_back('=');
+        content += WideToUtf8(value);
+        content.push_back('\n');
     }
-    return true;
+    return WriteUtf8File(path, content);
 }
 
 bool ParseBool(const std::wstring& value) {
@@ -109,17 +152,12 @@ std::wstring GetSessionFilePath() {
 
 std::wstring EnsureDeviceId() {
     const auto path = (std::filesystem::path(AppDirectory()) / L"device.id").wstring();
-    std::wifstream input{std::filesystem::path(path)};
-    if (input.is_open()) {
-        std::wstring existing;
-        std::getline(input, existing);
-        if (!existing.empty()) {
-            return existing;
-        }
+    const auto existing = Utf8ToWide(ReadUtf8File(path));
+    if (!existing.empty()) {
+        return existing;
     }
     const auto generated = GenerateGuidString();
-    std::wofstream output{std::filesystem::path(path), std::ios::trunc};
-    output << generated;
+    WriteUtf8File(path, WideToUtf8(generated));
     return generated;
 }
 
