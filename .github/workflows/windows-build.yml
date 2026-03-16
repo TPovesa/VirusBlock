@@ -14,6 +14,7 @@ on:
       - 'gradlew'
       - 'gradlew.bat'
       - 'settings.gradle.kts'
+      - 'settings-desktop.gradle.kts'
       - 'build.gradle.kts'
       - 'branding/**'
   workflow_dispatch:
@@ -45,7 +46,7 @@ jobs:
       - name: Build Windows desktop GUI bundle
         shell: pwsh
         run: |
-          & .\gradlew.bat :desktop-app:packageReleaseUberJarForCurrentOS --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
+          & .\gradlew.bat --settings-file settings-desktop.gradle.kts :desktop-app:packageReleaseUberJarForCurrentOS --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }

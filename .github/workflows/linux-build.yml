@@ -14,6 +14,7 @@ on:
       - 'gradlew'
       - 'gradlew.bat'
       - 'settings.gradle.kts'
+      - 'settings-desktop.gradle.kts'
       - 'build.gradle.kts'
       - 'branding/**'
   workflow_dispatch:
@@ -82,7 +83,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew :desktop-app:packageReleaseUberJarForCurrentOS --stacktrace --no-daemon --console=plain 2>&1 | tee linux-gui-build.log
+          ./gradlew --settings-file settings-desktop.gradle.kts :desktop-app:packageReleaseUberJarForCurrentOS --stacktrace --no-daemon --console=plain 2>&1 | tee linux-gui-build.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             echo "::group::linux-gui-build tail"
