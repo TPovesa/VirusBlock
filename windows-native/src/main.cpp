@@ -200,7 +200,7 @@ int ProgressForStatus(const std::wstring& status, bool finished) {
 }
 
 void PostScanPayload(UINT message, ScanUpdatePayload* payload) {
-    if (!g_app.hwnd) {
+    if (!g_app.hwnd || !IsWindow(g_app.hwnd)) {
         delete payload;
         return;
     }
@@ -798,6 +798,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         PaintWindow(hwnd);
         return 0;
     case WM_DESTROY:
+        g_app.scanCancelRequested = true;
+        g_app.hwnd = nullptr;
         for (HWND control : { g_name, g_email, g_password, g_passwordRepeat, g_code, g_primary, g_secondary, g_tertiary, g_scan, g_history, g_settings, g_logout }) {
             if (control) {
                 RemoveWindowSubclass(control, InputSubclassProc, kInputSubclassId);
