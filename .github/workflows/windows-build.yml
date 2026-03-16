@@ -47,9 +47,25 @@ jobs:
         shell: pwsh
         run: |
           & .\gradlew.bat --settings-file settings-desktop.gradle.kts :desktop-app:packageUberJarForCurrentOS --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
+          "WINDOWS_GUI_BUILD_EXIT=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Explain Windows desktop build failure
+        if: env.WINDOWS_GUI_BUILD_EXIT != '0'
+        shell: pwsh
+        run: |
+          Write-Host "::group::windows-build tail"
+          Get-Content windows-build.log -Tail 240
+          Write-Host "::endgroup::"
+          $summary = Select-String -Path windows-build.log -Pattern '^e: ','^FAILURE:','BUILD FAILED','Unresolved reference','Could not ','No such ','not found','Exception','Execution failed' |
+            Select-Object -Last 20 |
+            ForEach-Object { $_.Line.Trim() }
+          if (-not $summary) {
+            $summary = Get-Content windows-build.log -Tail 60
           }
+          $text = (($summary -join ' ') -replace '\s+', ' ')
+          if ($text.Length -gt 1800) { $text = $text.Substring(0, 1800) }
+          Write-Host "::error::$text"
+          exit 1
 
       - name: Inspect Windows compose output
         shell: pwsh

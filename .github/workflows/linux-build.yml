@@ -85,12 +85,22 @@ jobs:
           set -euo pipefail
           ./gradlew --settings-file settings-desktop.gradle.kts :desktop-app:packageUberJarForCurrentOS --stacktrace --no-daemon --console=plain 2>&1 | tee linux-gui-build.log
           status=${PIPESTATUS[0]}
-          if [ "$status" -ne 0 ]; then
-            echo "::group::linux-gui-build tail"
-            tail -n 200 linux-gui-build.log || true
-            echo "::endgroup::"
-            exit "$status"
+          echo "LINUX_GUI_BUILD_EXIT=$status" >> "$GITHUB_ENV"
+
+      - name: Explain Linux desktop build failure
+        if: env.LINUX_GUI_BUILD_EXIT != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::linux-gui-build tail"
+          tail -n 240 linux-gui-build.log || true
+          echo "::endgroup::"
+          summary="$(grep -E '(^e: |^FAILURE:|BUILD FAILED|Unresolved reference|Could not |No such |not found|Exception|Execution failed)' linux-gui-build.log | tail -n 20 | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-1800 || true)"
+          if [ -z "$summary" ]; then
+            summary="$(tail -n 60 linux-gui-build.log | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-1800)"
           fi
+          echo "::error::${summary}"
+          exit 1
 
       - name: Inspect Linux compose output
         shell: bash
