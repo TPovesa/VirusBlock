@@ -18,7 +18,7 @@ on:
 
 concurrency:
   group: linux-gui-build-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -47,15 +47,12 @@ jobs:
       - name: Build Linux desktop GUI portable jar
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          set +e
           ./gradlew --settings-file settings-desktop.gradle.kts :desktop-app:portableDesktopJar --stacktrace --no-daemon --console=plain 2>&1 | tee linux-gui-build.log
           status=${PIPESTATUS[0]}
-          if [ "$status" -ne 0 ]; then
-            echo "::group::linux-gui-build tail"
-            tail -n 200 linux-gui-build.log || true
-            echo "::endgroup::"
-            exit "$status"
-          fi
+          set -e
+          echo "LINUX_GUI_BUILD_EXIT=$status" >> "$GITHUB_ENV"
 
       - name: Package Linux GUI archive
         shell: bash
@@ -84,14 +81,25 @@ jobs:
           if-no-files-found: warn
 
       - name: Emit Linux GUI failure annotation
-        if: always()
+        if: env.LINUX_GUI_BUILD_EXIT != '0'
         shell: bash
         run: |
           set -euo pipefail
           if [ -f linux-gui-build.log ]; then
-            tail_text="$(python3 -c "from pathlib import Path; text='\n'.join(Path('linux-gui-build.log').read_text().splitlines()[-60:]); text=text.replace('%','%25').replace('\r','%0D').replace('\n','%0A'); print(text)")"
-            echo "::error title=Linux GUI tail::$tail_text"
+            summary="$(grep -E '(^e: |^FAILURE:|BUILD FAILED|Unresolved reference|Could not |No such |not found|Exception|Execution failed)' linux-gui-build.log | tail -n 20 | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-1800 || true)"
+            if [ -z "$summary" ]; then
+              summary="$(tail -n 80 linux-gui-build.log | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-1800)"
+            fi
+          else
+            summary="linux-gui-build.log was not generated"
           fi
+          {
+            echo "### Linux desktop build failure"
+            echo
+            echo "$summary"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error file=.github/workflows/linux-build.yml,line=39::$summary"
+          exit 1
 
       - name: Upload Linux GUI payload
         uses: actions/upload-artifact@v4

@@ -19,7 +19,7 @@ on:
 
 concurrency:
   group: windows-build-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -45,9 +45,7 @@ jobs:
         shell: pwsh
         run: |
           & .\gradlew.bat --settings-file settings-desktop.gradle.kts :desktop-app:portableDesktopJar --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
+          "WINDOWS_GUI_BUILD_EXIT=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Package Windows archive
         shell: pwsh
@@ -76,14 +74,29 @@ jobs:
           if-no-files-found: warn
 
       - name: Emit Windows GUI failure annotation
-        if: always()
+        if: env.WINDOWS_GUI_BUILD_EXIT != '0'
         shell: pwsh
         run: |
+          $summary = @()
           if (Test-Path windows-build.log) {
-            $tail = (Get-Content windows-build.log -Tail 60) -join "`n"
-            $tail = $tail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-            Write-Host "::error title=Windows GUI tail::$tail"
+            $summary = Select-String -Path windows-build.log -Pattern '^e: ','^FAILURE:','BUILD FAILED','Unresolved reference','Could not ','No such ','not found','Exception','Execution failed' |
+              Select-Object -Last 20 |
+              ForEach-Object { $_.Line.Trim() }
+            if (-not $summary) {
+              $summary = Get-Content windows-build.log -Tail 80
+            }
+          } else {
+            $summary = @('windows-build.log was not generated')
           }
+          $text = (($summary -join ' ') -replace '\s+', ' ')
+          if ($text.Length -gt 1800) { $text = $text.Substring(0, 1800) }
+          @(
+            '### Windows desktop build failure',
+            '',
+            $text
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          Write-Host "::error file=.github/workflows/windows-build.yml,line=44::$text"
+          exit 1
 
       - name: Upload Windows bundle
         uses: actions/upload-artifact@v4
