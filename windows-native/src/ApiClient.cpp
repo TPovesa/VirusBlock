@@ -1,7 +1,7 @@
 #include "NeuralV/ApiClient.h"
 
-#include <winhttp.h>
 #include <windows.h>
+#include <winhttp.h>
 
 #include <sstream>
 
