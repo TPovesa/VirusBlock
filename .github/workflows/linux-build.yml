@@ -58,9 +58,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ "${LINUX_GUI_BUILD_EXIT:-0}" != "0" ]; then
+            echo "Gradle desktop build failed earlier; skip packaging" >&2
+            exit 1
+          fi
           rm -rf dist/linux
           mkdir -p dist/linux
-          APP_DIR="$(find desktop-app/build/compose/binaries -type d -name 'NeuralV' -path '*app/*' | head -n 1)"
+          APP_DIR="$(find desktop-app/build/compose/binaries -type d -name 'NeuralV' -path '*app/*' | head -n 1 || true)"
+          if [ -z "$APP_DIR" ]; then
+            APP_DIR="$(find desktop-app/build/compose/binaries -type d -name 'NeuralV' | head -n 1 || true)"
+          fi
           test -n "$APP_DIR"
           cp -R "$APP_DIR" dist/linux/NeuralV
           tar -C dist/linux -czf dist/linux/neuralv-linux.tar.gz NeuralV

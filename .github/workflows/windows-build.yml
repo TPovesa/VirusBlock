@@ -80,11 +80,19 @@ jobs:
       - name: Package Windows archive
         shell: pwsh
         run: |
+          if ($env:WINDOWS_GUI_BUILD_EXIT -ne '0') {
+            throw "Gradle desktop build failed earlier; skip packaging"
+          }
           Remove-Item -Recurse -Force dist\windows -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
           $appDir = Get-ChildItem -Path "desktop-app/build/compose/binaries" -Directory -Recurse |
             Where-Object { $_.Name -eq "NeuralV" -and $_.FullName -match "[\\\\/]app[\\\\/]" } |
             Select-Object -First 1
+          if (-not $appDir) {
+            $appDir = Get-ChildItem -Path "desktop-app/build/compose/binaries" -Directory -Recurse |
+              Where-Object { $_.Name -eq "NeuralV" } |
+              Select-Object -First 1
+          }
           if (-not $appDir) { throw "Bundled Windows app directory not found under desktop-app/build/compose/binaries" }
           Copy-Item $appDir.FullName dist\windows\NeuralV -Recurse -Force
           Compress-Archive -Path dist\windows\NeuralV -DestinationPath dist\windows\neuralv-windows.zip -Force
