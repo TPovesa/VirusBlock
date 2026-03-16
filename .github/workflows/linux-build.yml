@@ -168,6 +168,21 @@ jobs:
           path: linux-gui-build.log
           if-no-files-found: warn
 
+      - name: Write Linux failure summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f linux-gui-build.log ]; then
+            {
+              echo "## Linux desktop log tail"
+              echo '```text'
+              tail -n 120 linux-gui-build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+
       - name: Upload Linux payloads
         uses: actions/upload-artifact@v4
         with:

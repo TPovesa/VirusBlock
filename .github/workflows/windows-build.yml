@@ -118,6 +118,18 @@ jobs:
           path: windows-build.log
           if-no-files-found: warn
 
+      - name: Write Windows failure summary
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path windows-build.log) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Windows desktop log tail"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "```text"
+            Get-Content windows-build.log -Tail 120 | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "```"
+          }
+
+
       - name: Upload Windows bundle
         uses: actions/upload-artifact@v4
         with:
