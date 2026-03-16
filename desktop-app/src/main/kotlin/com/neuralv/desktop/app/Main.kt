@@ -2,7 +2,6 @@ package com.neuralv.desktop.app
 
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import androidx.compose.ui.window.exitApplication
 
 fun main() = application {
     Window(

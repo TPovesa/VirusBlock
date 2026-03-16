@@ -19,16 +19,18 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 class NeuralVApiClient(
-    private val baseUrl: String,
+    private val baseUrl: String
+) {
     private val gson: Gson = GsonBuilder()
         .setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
-        .create(),
+        .create()
+
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(120, TimeUnit.SECONDS)
         .build()
-) {
+
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     fun postChallenge(path: String, payload: Any): ChallengeResponse = executeJson(
