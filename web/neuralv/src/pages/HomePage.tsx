@@ -30,7 +30,6 @@ export function HomePage() {
           <p>Выбирай платформу, переходи на нужную страницу и ставь свою версию без длинных инструкций.</p>
           <div className="hero-actions">
             <a className="nv-button" href="#downloads">Скачать</a>
-            <Link className="nv-button tonal" to="/nv">NV</Link>
           </div>
         </div>
       </section>

@@ -23,15 +23,21 @@ function resolveInitialTheme(): 'light' | 'dark' {
 }
 
 if (typeof document !== 'undefined') {
+  const currentPath = window.location.pathname.replace(/\/+$/, '');
+  if (currentPath === '/neuralv/nv') {
+    window.location.replace('/nv');
+  }
+
   const initialTheme = resolveInitialTheme();
   document.documentElement.dataset.theme = initialTheme;
   document.documentElement.style.colorScheme = initialTheme;
 }
-
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <BrowserRouter basename={import.meta.env.BASE_URL}>
-      <App />
-    </BrowserRouter>
-  </React.StrictMode>
-);
+if (typeof window === 'undefined' || window.location.pathname.replace(/\/+$/, '') !== '/neuralv/nv') {
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <App />
+      </BrowserRouter>
+    </React.StrictMode>
+  );
+}

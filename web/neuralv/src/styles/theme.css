@@ -730,20 +730,6 @@ ul {
   align-items: center;
 }
 
-.nv-page .hero-card,
-.nv-page .content-card {
-  background:
-    linear-gradient(155deg, color-mix(in srgb, var(--nv-surface) 86%, rgba(37, 87, 244, 0.18)), var(--nv-surface));
-}
-
-.nv-hero-card {
-  border-color: color-mix(in srgb, var(--nv-stroke) 78%, var(--nv-primary));
-}
-
-.nv-build-grid .platform-card {
-  background: color-mix(in srgb, var(--nv-surface) 88%, rgba(0, 165, 149, 0.12));
-}
-
 .chooser-section {
   display: grid;
   gap: 12px;

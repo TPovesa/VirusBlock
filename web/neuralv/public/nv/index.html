@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NV</title>
+    <meta name="description" content="NV — отдельный пакетный менеджер для установки и обновления NeuralV и других пакетов." />
+    <link rel="icon" href="/neuralv/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/nv/app.css" />
+  </head>
+  <body>
+    <div class="nv-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Package manager</p>
+          <h1>NV</h1>
+          <p class="hero-text">Отдельный пакетный менеджер. Ставь, обновляй и удаляй пакеты одной командой.</p>
+          <div class="hero-actions">
+            <a class="primary-button" href="#install">Установить</a>
+            <a class="ghost-button" href="#packages">Пакеты</a>
+          </div>
+        </div>
+        <div class="hero-console" aria-hidden="true">
+          <div class="console-window">
+            <div class="console-bar">
+              <span></span><span></span><span></span>
+            </div>
+            <pre>$ nv install neuralv@latest
+$ nv install nv@latest
+$ nv uninstall neuralv</pre>
+          </div>
+        </div>
+      </header>
+
+      <main class="content">
+        <section id="install" class="panel two-column">
+          <div class="panel-copy">
+            <h2>Установка NV</h2>
+            <p>Выбери свою систему и сразу получи рабочую команду или прямую загрузку.</p>
+            <div class="platform-tabs" role="tablist" aria-label="Платформа NV">
+              <button class="tab-button is-active" type="button" data-platform="linux">Linux</button>
+              <button class="tab-button" type="button" data-platform="windows">Windows</button>
+            </div>
+          </div>
+
+          <div class="install-stack">
+            <article class="install-card">
+              <div class="install-head">
+                <h3 id="platform-title">Linux</h3>
+                <span class="version-pill" id="platform-version">Загрузка…</span>
+              </div>
+              <div class="command-block">
+                <div class="command-head">
+                  <span>Команда</span>
+                  <button id="copy-command" type="button">Копировать</button>
+                </div>
+                <pre id="install-command">curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh</pre>
+              </div>
+            </article>
+
+            <article class="install-card install-card-compact">
+              <div class="install-head">
+                <h3>Загрузка</h3>
+              </div>
+              <a id="download-link" class="download-button" href="https://raw.githubusercontent.com/Perdonus/NV/linux-builds/linux/nv-linux-1.1.0.tar.gz">Скачать текущую сборку</a>
+              <p class="muted" id="download-note">Linux build branch: Perdonus/NV/linux-builds</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="packages" class="panel">
+          <div class="panel-head">
+            <h2>Пакеты</h2>
+            <p>NV не захардкожен только под NeuralV. Сервер отдаёт версии и артефакты по имени пакета.</p>
+          </div>
+          <div class="package-grid">
+            <article class="package-card">
+              <h3>neuralv</h3>
+              <p>GUI и CLI версии клиента.</p>
+              <pre>nv install neuralv@latest</pre>
+            </article>
+            <article class="package-card">
+              <h3>nv</h3>
+              <p>Сам пакетный менеджер.</p>
+              <pre>nv install nv@latest</pre>
+            </article>
+            <article class="package-card package-card-muted">
+              <h3>Версии</h3>
+              <p>Используется обычный semver: `0.21.1`, `1.2.1` и так далее.</p>
+              <pre>nv install neuralv@1.3.1</pre>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel command-matrix">
+          <div class="panel-head">
+            <h2>Основные команды</h2>
+          </div>
+          <div class="command-grid">
+            <div class="command-tile">
+              <span>Установка пакета</span>
+              <pre>nv install &lt;package&gt;@latest</pre>
+            </div>
+            <div class="command-tile">
+              <span>Установка версии</span>
+              <pre>nv install &lt;package&gt;@&lt;version&gt;</pre>
+            </div>
+            <div class="command-tile">
+              <span>Удаление</span>
+              <pre>nv uninstall &lt;package&gt;</pre>
+            </div>
+            <div class="command-tile">
+              <span>Текущая версия NV</span>
+              <pre>nv -v</pre>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/nv/app.js"></script>
+  </body>
+</html>

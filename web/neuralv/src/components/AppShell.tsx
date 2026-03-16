@@ -10,8 +10,7 @@ const navItems = [
   { to: '/', label: 'Главная' },
   { to: '/android', label: 'Android' },
   { to: '/windows', label: 'Windows' },
-  { to: '/linux', label: 'Linux' },
-  { to: '/nv', label: 'NV' }
+  { to: '/linux', label: 'Linux' }
 ];
 
 function readStoredPreference(): ThemePreference | null {
