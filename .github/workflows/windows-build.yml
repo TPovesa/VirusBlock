@@ -41,6 +41,16 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Cache Compose prepare artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.konan
+            desktop-app/build/compose
+          key: windows-compose-${{ runner.os }}-${{ hashFiles('desktop-app/**', 'desktop-core/**', 'branding/**', 'gradle.properties', 'settings-desktop.gradle.kts', 'build.gradle.kts') }}
+          restore-keys: |
+            windows-compose-${{ runner.os }}-
+
       - name: Build Windows desktop GUI distributable
         shell: pwsh
         run: |
