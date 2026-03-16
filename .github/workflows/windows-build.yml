@@ -181,7 +181,11 @@ jobs:
                           "wingetUninstallCommand": "winget uninstall --id NeuralV.NeuralV -e",
                           "directDownloadLabel": "Скачать portable",
                           "setupDownloadLabel": "Скачать setup",
-                          "nativeClient": True
+                          "nativeClient": True,
+                          "setupCreatesShortcuts": True,
+                          "powershellCreatesShortcuts": True,
+                          "cmdCreatesShortcuts": True,
+                          "portableCreatesShortcuts": False
                       }
                   }
               ]
