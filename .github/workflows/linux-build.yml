@@ -49,7 +49,7 @@ jobs:
         run: |
           set -uo pipefail
           set +e
-          ./gradlew --settings-file settings-desktop.gradle.kts :desktop-app:createReleaseDistributable --stacktrace --no-daemon --console=plain 2>&1 | tee linux-gui-build.log
+          ./gradlew --settings-file settings-desktop.gradle.kts :desktop-app:createDistributable --stacktrace --no-daemon --console=plain 2>&1 | tee linux-gui-build.log
           status=${PIPESTATUS[0]}
           set -e
           echo "LINUX_GUI_BUILD_EXIT=$status" >> "$GITHUB_ENV"
@@ -60,7 +60,7 @@ jobs:
           set -euo pipefail
           rm -rf dist/linux
           mkdir -p dist/linux
-          APP_DIR="$(find desktop-app/build/compose/binaries -type d -name 'NeuralV' -path '*main-release/app/*' | head -n 1)"
+          APP_DIR="$(find desktop-app/build/compose/binaries -type d -name 'NeuralV' -path '*app/*' | head -n 1)"
           test -n "$APP_DIR"
           cp -R "$APP_DIR" dist/linux/NeuralV
           tar -C dist/linux -czf dist/linux/neuralv-linux.tar.gz NeuralV

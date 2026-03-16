@@ -44,7 +44,7 @@ jobs:
       - name: Build Windows desktop GUI distributable
         shell: pwsh
         run: |
-          & .\gradlew.bat --settings-file settings-desktop.gradle.kts :desktop-app:createReleaseDistributable --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
+          & .\gradlew.bat --settings-file settings-desktop.gradle.kts :desktop-app:createDistributable --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
           "WINDOWS_GUI_BUILD_EXIT=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Package Windows archive
@@ -53,7 +53,7 @@ jobs:
           Remove-Item -Recurse -Force dist\windows -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
           $appDir = Get-ChildItem -Path "desktop-app/build/compose/binaries" -Directory -Recurse |
-            Where-Object { $_.Name -eq "NeuralV" -and $_.FullName -match "main-release[\\\\/]app" } |
+            Where-Object { $_.Name -eq "NeuralV" -and $_.FullName -match "[\\\\/]app[\\\\/]" } |
             Select-Object -First 1
           if (-not $appDir) { throw "Bundled Windows app directory not found under desktop-app/build/compose/binaries" }
           Copy-Item $appDir.FullName dist\windows\NeuralV -Recurse -Force
