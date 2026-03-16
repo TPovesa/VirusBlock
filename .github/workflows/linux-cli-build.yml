@@ -60,7 +60,6 @@ jobs:
           path: |
             dist/shell/neuralv-shell-linux.tar.gz
             dist/shell/neuralvd-linux.tar.gz
-            shell/install/linux.sh
           if-no-files-found: error
 
   publish-linux-cli:
@@ -90,13 +89,17 @@ jobs:
           set -euo pipefail
           semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' gradle.properties)"
           test -n "$semver"
+          shell_archive="$(find stage/linux-cli -type f -name 'neuralv-shell-linux.tar.gz' | head -n 1)"
+          daemon_archive="$(find stage/linux-cli -type f -name 'neuralvd-linux.tar.gz' | head -n 1)"
+          test -n "$shell_archive"
+          test -n "$daemon_archive"
           rm -rf publish-linux-cli
           mkdir -p publish-linux-cli/shell publish-linux-cli/install
-          cp stage/linux-cli/neuralv-shell-linux.tar.gz "publish-linux-cli/shell/neuralv-shell-linux-${semver}.tar.gz"
-          cp stage/linux-cli/neuralv-shell-linux.tar.gz publish-linux-cli/shell/neuralv-shell-linux.tar.gz
-          cp stage/linux-cli/neuralvd-linux.tar.gz "publish-linux-cli/shell/neuralvd-linux-${semver}.tar.gz"
-          cp stage/linux-cli/neuralvd-linux.tar.gz publish-linux-cli/shell/neuralvd-linux.tar.gz
-          cp stage/linux-cli/linux.sh publish-linux-cli/install/linux.sh
+          cp "$shell_archive" "publish-linux-cli/shell/neuralv-shell-linux-${semver}.tar.gz"
+          cp "$shell_archive" publish-linux-cli/shell/neuralv-shell-linux.tar.gz
+          cp "$daemon_archive" "publish-linux-cli/shell/neuralvd-linux-${semver}.tar.gz"
+          cp "$daemon_archive" publish-linux-cli/shell/neuralvd-linux.tar.gz
+          cp shell/install/linux.sh publish-linux-cli/install/linux.sh
           sha_shell="$(sha256sum "publish-linux-cli/shell/neuralv-shell-linux-${semver}.tar.gz" | awk '{print $1}')"
           sha_daemon="$(sha256sum "publish-linux-cli/shell/neuralvd-linux-${semver}.tar.gz" | awk '{print $1}')"
           raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/linux-cli-builds"
@@ -157,8 +160,16 @@ jobs:
           cd /tmp/linux-cli-builds
           git init
           git checkout -b linux-cli-builds
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch origin linux-cli-builds || true
+          if git show-ref --verify --quiet refs/remotes/origin/linux-cli-builds; then
+            git reset --soft origin/linux-cli-builds
+          fi
           git add .
           semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' "${GITHUB_WORKSPACE}/gradle.properties")"
+          if git diff --cached --quiet; then
+            echo "linux-cli-builds is already up to date"
+            exit 0
+          fi
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish Linux CLI ${semver} for ${GITHUB_SHA} [skip ci]"
-          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin linux-cli-builds
