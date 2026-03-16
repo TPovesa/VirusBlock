@@ -41,6 +41,51 @@ std::string BuildJson(std::initializer_list<std::pair<std::string, std::string>>
     return body;
 }
 
+std::string BuildJsonStringArray(const std::vector<std::wstring>& values) {
+    std::string body = "[";
+    bool first = true;
+    for (const auto& value : values) {
+        if (value.empty()) {
+            continue;
+        }
+        if (!first) {
+            body += ",";
+        }
+        first = false;
+        body += "\"";
+        body += EscapeJson(WideToUtf8(value));
+        body += "\"";
+    }
+    body += "]";
+    return body;
+}
+
+std::string BuildDesktopScanPayload(
+    const std::wstring& platform,
+    const std::wstring& mode,
+    const std::wstring& artifactKind,
+    const std::wstring& targetName,
+    const std::wstring& targetPath,
+    const std::vector<std::wstring>& scanRoots,
+    const std::vector<std::wstring>& installRoots
+) {
+    std::ostringstream body;
+    body << "{"
+         << "\"platform\":\"" << EscapeJson(WideToUtf8(platform)) << "\","
+         << "\"mode\":\"" << EscapeJson(WideToUtf8(mode)) << "\","
+         << "\"artifact_kind\":\"" << EscapeJson(WideToUtf8(artifactKind)) << "\","
+         << "\"artifact_metadata\":{"
+         << "\"target_name\":\"" << EscapeJson(WideToUtf8(targetName)) << "\","
+         << "\"target_path\":\"" << EscapeJson(WideToUtf8(targetPath)) << "\","
+         << "\"scan_roots\":" << BuildJsonStringArray(scanRoots) << ","
+         << "\"install_roots\":" << BuildJsonStringArray(installRoots) << ","
+         << "\"package_count\":0,"
+         << "\"candidate_count\":0"
+         << "}"
+         << "}";
+    return body.str();
+}
+
 } // namespace
 
 ApiClient::HttpResult ApiClient::JsonRequest(const std::wstring& method, const std::wstring& path, const std::string& bodyUtf8, const std::vector<std::pair<std::wstring, std::wstring>>& headers) const {
@@ -193,6 +238,35 @@ std::optional<SessionData> ApiClient::ParseSession(const std::string& body, cons
     return session;
 }
 
+std::optional<DesktopScanState> ApiClient::ParseDesktopScan(const std::string& body, std::wstring& error) const {
+    const auto scanBody = ExtractJsonObject(body, "scan");
+    if (!scanBody) {
+        error = L"Сервер вернул неполную desktop-задачу";
+        return std::nullopt;
+    }
+
+    DesktopScanState scan;
+    scan.id = Utf8ToWide(FindJsonString(*scanBody, "id").value_or(""));
+    scan.platform = Utf8ToWide(FindJsonString(*scanBody, "platform").value_or(""));
+    scan.mode = Utf8ToWide(FindJsonString(*scanBody, "mode").value_or(""));
+    scan.status = Utf8ToWide(FindJsonString(*scanBody, "status").value_or(""));
+    scan.verdict = Utf8ToWide(FindJsonString(*scanBody, "verdict").value_or(""));
+    scan.message = Utf8ToWide(FindJsonString(*scanBody, "message").value_or(""));
+    scan.riskScore = static_cast<int>(FindJsonInt64(*scanBody, "risk_score").value_or(0));
+    scan.surfacedFindings = static_cast<int>(FindJsonInt64(*scanBody, "surfaced_findings").value_or(0));
+    scan.hiddenFindings = static_cast<int>(FindJsonInt64(*scanBody, "hidden_findings").value_or(0));
+    scan.startedAt = FindJsonInt64(*scanBody, "started_at").value_or(0);
+    scan.completedAt = FindJsonInt64(*scanBody, "completed_at").value_or(0);
+    for (const auto& entry : FindJsonStringArray(*scanBody, "timeline")) {
+        scan.timeline.push_back(Utf8ToWide(entry));
+    }
+    if (!scan.ok()) {
+        error = L"Сервер не вернул id desktop-задачи";
+        return std::nullopt;
+    }
+    return scan;
+}
+
 std::optional<SessionData> ApiClient::VerifyChallenge(ChallengeMode mode, const std::wstring& challengeId, const std::wstring& email, const std::wstring& code, const std::wstring& deviceId, std::wstring& error) const {
     const auto path = mode == ChallengeMode::Register ? L"/api/auth/register/verify" : L"/api/auth/login/verify";
     const auto response = JsonRequest(L"POST", path, BuildJson({
@@ -234,6 +308,70 @@ bool ApiClient::Logout(const SessionData& current) const {
         {L"Authorization", L"Bearer " + current.accessToken}
     });
     return response.ok() && response.statusCode >= 200 && response.statusCode < 300;
+}
+
+std::optional<DesktopScanState> ApiClient::StartDesktopScan(
+    const SessionData& current,
+    const std::wstring& platform,
+    const std::wstring& mode,
+    const std::wstring& artifactKind,
+    const std::wstring& targetName,
+    const std::wstring& targetPath,
+    const std::vector<std::wstring>& scanRoots,
+    const std::vector<std::wstring>& installRoots,
+    std::wstring& error
+) const {
+    const auto response = JsonRequest(
+        L"POST",
+        L"/api/scans/desktop/start",
+        BuildDesktopScanPayload(platform, mode, artifactKind, targetName, targetPath, scanRoots, installRoots),
+        {{L"Authorization", L"Bearer " + current.accessToken}}
+    );
+    if (!response.ok()) {
+        error = response.error;
+        return std::nullopt;
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+        error = JsonError(response.body, response.statusCode);
+        return std::nullopt;
+    }
+    return ParseDesktopScan(response.body, error);
+}
+
+std::optional<DesktopScanState> ApiClient::GetDesktopScan(const SessionData& current, const std::wstring& scanId, std::wstring& error) const {
+    const auto response = JsonRequest(
+        L"GET",
+        std::wstring(L"/api/scans/desktop/") + scanId,
+        "",
+        {{L"Authorization", L"Bearer " + current.accessToken}}
+    );
+    if (!response.ok()) {
+        error = response.error;
+        return std::nullopt;
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+        error = JsonError(response.body, response.statusCode);
+        return std::nullopt;
+    }
+    return ParseDesktopScan(response.body, error);
+}
+
+bool ApiClient::CancelDesktopScan(const SessionData& current, std::wstring& error) const {
+    const auto response = JsonRequest(
+        L"POST",
+        L"/api/scans/desktop/cancel-active",
+        "{}",
+        {{L"Authorization", L"Bearer " + current.accessToken}}
+    );
+    if (!response.ok()) {
+        error = response.error;
+        return false;
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+        error = JsonError(response.body, response.statusCode);
+        return false;
+    }
+    return FindJsonBool(response.body, "success").value_or(false);
 }
 
 UpdateInfo ApiClient::CheckForUpdate(const std::wstring& currentVersion) const {

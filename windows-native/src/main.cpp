@@ -4,9 +4,12 @@
 #include <shellapi.h>
 #include <urlmon.h>
 
+#include <atomic>
 #include <cmath>
 #include <filesystem>
 #include <string>
+#include <thread>
+#include <vector>
 
 #include "NeuralV/ApiClient.h"
 #include "NeuralV/Config.h"
@@ -23,6 +26,7 @@ enum class Screen {
     Login,
     Register,
     Code,
+    Scan,
     Home,
     History,
     Settings
@@ -54,9 +58,27 @@ struct AppContext {
     std::wstring status;
     neuralv::ChallengeTicket challenge{};
     neuralv::SessionData session{};
+    std::wstring activeScanId;
+    std::wstring scanStatus;
+    std::wstring scanVerdict;
+    std::vector<std::wstring> scanTimeline;
+    int scanProgress = 0;
+    bool scanRunning = false;
+    bool scanFinished = false;
+    std::atomic_bool scanCancelRequested = false;
     HFONT titleFont = nullptr;
     HFONT bodyFont = nullptr;
     HFONT smallFont = nullptr;
+};
+
+struct ScanUpdatePayload {
+    std::wstring scanId;
+    std::wstring status;
+    std::wstring verdict;
+    std::wstring message;
+    std::vector<std::wstring> timeline;
+    int progress = 0;
+    bool finished = false;
 };
 
 AppContext g_app;
@@ -77,6 +99,8 @@ HWND g_logout = nullptr;
 constexpr wchar_t kWindowClass[] = L"NeuralVNativeWindow";
 constexpr UINT_PTR kSplashTimer = 1;
 constexpr UINT_PTR kInputSubclassId = 100;
+constexpr UINT WM_NEURALV_SCAN_UPDATE = WM_APP + 10;
+constexpr UINT WM_NEURALV_SCAN_FINISH = WM_APP + 11;
 
 RECT GetClientArea(HWND hwnd) {
     RECT rect{};
@@ -124,6 +148,65 @@ std::wstring TempFilePath(const std::wstring& fileName) {
     return std::wstring(buffer) + fileName;
 }
 
+std::wstring ReadEnvVar(const wchar_t* key) {
+    const DWORD needed = GetEnvironmentVariableW(key, nullptr, 0);
+    if (needed == 0) {
+        return {};
+    }
+    std::wstring value(needed, L'\0');
+    GetEnvironmentVariableW(key, value.data(), needed);
+    if (!value.empty() && value.back() == L'\0') {
+        value.pop_back();
+    }
+    return value;
+}
+
+std::vector<std::wstring> DetectWindowsRoots() {
+    std::vector<std::wstring> roots;
+    const auto add = [&roots](const std::wstring& value) {
+        if (value.empty()) {
+            return;
+        }
+        for (const auto& existing : roots) {
+            if (_wcsicmp(existing.c_str(), value.c_str()) == 0) {
+                return;
+            }
+        }
+        roots.push_back(value);
+    };
+    add(ReadEnvVar(L"ProgramFiles"));
+    add(ReadEnvVar(L"ProgramFiles(x86)"));
+    add(ReadEnvVar(L"ProgramData"));
+    const auto localAppData = ReadEnvVar(L"LOCALAPPDATA");
+    add(localAppData);
+    if (!localAppData.empty()) {
+        add(localAppData + L"\\Programs");
+    }
+    add(ReadEnvVar(L"APPDATA"));
+    const auto userProfile = ReadEnvVar(L"USERPROFILE");
+    if (!userProfile.empty()) {
+        add(userProfile + L"\\Desktop");
+        add(userProfile + L"\\Downloads");
+    }
+    return roots;
+}
+
+int ProgressForStatus(const std::wstring& status, bool finished) {
+    if (finished) return 100;
+    if (_wcsicmp(status.c_str(), L"RUNNING") == 0) return 72;
+    if (_wcsicmp(status.c_str(), L"QUEUED") == 0) return 28;
+    if (_wcsicmp(status.c_str(), L"AWAITING_UPLOAD") == 0) return 16;
+    return 8;
+}
+
+void PostScanPayload(UINT message, ScanUpdatePayload* payload) {
+    if (!g_app.hwnd) {
+        delete payload;
+        return;
+    }
+    PostMessageW(g_app.hwnd, message, 0, reinterpret_cast<LPARAM>(payload));
+}
+
 void MaybeRunAutoUpdate() {
     const auto update = g_app.api.CheckForUpdate(NEURALV_VERSION_W);
     if (!update.available || update.setupUrl.empty()) {
@@ -138,6 +221,88 @@ void MaybeRunAutoUpdate() {
     }
     ShellExecuteW(g_app.hwnd, L"open", setupPath.c_str(), L"--self-update --no-launch", nullptr, SW_SHOWNORMAL);
     PostQuitMessage(0);
+}
+
+void StartDesktopScanAsync() {
+    if (!g_app.session.IsValid() || g_app.scanRunning) {
+        return;
+    }
+
+    g_app.activeScanId.clear();
+    g_app.scanStatus = L"Подготавливаем системные каталоги...";
+    g_app.scanVerdict.clear();
+    g_app.scanTimeline = { L"Определяем каталоги Windows" };
+    g_app.scanProgress = 10;
+    g_app.scanRunning = true;
+    g_app.scanFinished = false;
+    g_app.scanCancelRequested = false;
+    g_app.status.clear();
+
+    const auto session = g_app.session;
+    std::thread([session]() {
+        auto initial = new ScanUpdatePayload();
+        initial->status = L"Подключаем backend";
+        initial->message = L"NeuralV запускает серверную desktop-проверку Windows.";
+        initial->timeline = { L"Подготовка", L"Старт задачи" };
+        initial->progress = 18;
+        PostScanPayload(WM_NEURALV_SCAN_UPDATE, initial);
+
+        const auto roots = DetectWindowsRoots();
+        std::wstring error;
+        auto scan = g_app.api.StartDesktopScan(
+            session,
+            L"WINDOWS",
+            L"FULL",
+            L"EXECUTABLE",
+            L"Windows host",
+            !roots.empty() ? roots.front() : L"C:\\",
+            roots,
+            roots,
+            error
+        );
+        if (!scan) {
+            auto failure = new ScanUpdatePayload();
+            failure->status = L"Ошибка запуска проверки";
+            failure->message = error.empty() ? L"Не удалось создать desktop-задачу" : error;
+            failure->timeline = { L"Старт desktop-задачи" };
+            failure->progress = 0;
+            failure->finished = true;
+            PostScanPayload(WM_NEURALV_SCAN_FINISH, failure);
+            return;
+        }
+
+        while (true) {
+            auto update = new ScanUpdatePayload();
+            update->scanId = scan->id;
+            update->status = scan->status.empty() ? L"RUNNING" : scan->status;
+            update->verdict = scan->verdict;
+            update->message = scan->message;
+            update->timeline = scan->timeline;
+            update->finished =
+                _wcsicmp(update->status.c_str(), L"COMPLETED") == 0 ||
+                _wcsicmp(update->status.c_str(), L"FAILED") == 0 ||
+                _wcsicmp(update->status.c_str(), L"CANCELLED") == 0;
+            update->progress = ProgressForStatus(update->status, update->finished);
+            PostScanPayload(update->finished ? WM_NEURALV_SCAN_FINISH : WM_NEURALV_SCAN_UPDATE, update);
+
+            if (update->finished || g_app.scanCancelRequested.load()) {
+                return;
+            }
+
+            Sleep(2200);
+            scan = g_app.api.GetDesktopScan(session, scan->id, error);
+            if (!scan) {
+                auto failure = new ScanUpdatePayload();
+                failure->status = L"Ошибка чтения проверки";
+                failure->message = error.empty() ? L"Не удалось получить статус desktop-задачи" : error;
+                failure->timeline = { L"Polling desktop-задачи" };
+                failure->progress = 0;
+                failure->finished = true;
+                PostScanPayload(WM_NEURALV_SCAN_FINISH, failure);
+                return;
+            }
+        }
+    }).detach();
 }
 
 void LayoutControls() {
@@ -174,8 +339,8 @@ void SetScreen(Screen screen) {
     ShowControl(g_passwordRepeat, screen == Screen::Register);
     ShowControl(g_code, screen == Screen::Code);
 
-    ShowControl(g_primary, screen == Screen::Welcome || screen == Screen::Login || screen == Screen::Register || screen == Screen::Code || screen == Screen::History || screen == Screen::Settings);
-    ShowControl(g_secondary, screen == Screen::Welcome || screen == Screen::Login || screen == Screen::Register || screen == Screen::Code || screen == Screen::History || screen == Screen::Settings);
+    ShowControl(g_primary, screen == Screen::Welcome || screen == Screen::Login || screen == Screen::Register || screen == Screen::Code || screen == Screen::Scan || screen == Screen::History || screen == Screen::Settings);
+    ShowControl(g_secondary, screen == Screen::Welcome || screen == Screen::Login || screen == Screen::Register || screen == Screen::Code || screen == Screen::Scan || screen == Screen::History || screen == Screen::Settings);
     ShowControl(g_tertiary, screen == Screen::Code);
 
     ShowControl(g_scan, screen == Screen::Home);
@@ -197,6 +362,10 @@ void SetScreen(Screen screen) {
         SetWindowTextW(g_primary, L"Подтвердить");
         SetWindowTextW(g_secondary, L"Назад");
         SetWindowTextW(g_tertiary, L"Код отправлен");
+        break;
+    case Screen::Scan:
+        SetWindowTextW(g_primary, L"Назад");
+        SetWindowTextW(g_secondary, g_app.scanRunning && !g_app.scanFinished ? L"Отменить" : L"Готово");
         break;
     case Screen::History:
     case Screen::Settings:
@@ -347,6 +516,7 @@ void PaintWindow(HWND hwnd) {
     case Screen::Login: subtitleText = L"Вход"; break;
     case Screen::Register: subtitleText = L"Регистрация"; break;
     case Screen::Code: subtitleText = L"Код из почты"; break;
+    case Screen::Scan: subtitleText = L"Проверка"; break;
     case Screen::Home: subtitleText = g_app.session.user.name.empty() ? std::wstring(L"Главный экран") : g_app.session.user.name; break;
     case Screen::History: subtitleText = L"История"; break;
     case Screen::Settings: subtitleText = L"Настройки"; break;
@@ -369,8 +539,13 @@ void PaintWindow(HWND hwnd) {
     case Screen::Code:
         text = L"Введи код из письма и нажми Enter.";
         break;
+    case Screen::Scan:
+        text = g_app.scanRunning
+            ? L"NeuralV держит проверку на сервере и показывает текущий этап прямо в окне."
+            : L"Проверка завершена. Можно вернуться назад или запустить новый проход.";
+        break;
     case Screen::Home:
-        text = L"Авторизация, сессия и автообновление уже работают нативно. Локальный scan engine переносится следующим шагом поверх этого клиента.";
+        text = L"Авторизация и автообновление уже работают нативно. Проверка Windows стартует отсюда и уходит в server-side анализ.";
         break;
     case Screen::History:
         text = L"Экран истории уже выделен под native-клиент. Подтянем отчёты после перевода desktop scan flow.";
@@ -388,6 +563,31 @@ void PaintWindow(HWND hwnd) {
         SelectObject(hdc, g_app.smallFont);
         SetTextColor(hdc, g_app.palette.textMuted);
         DrawTextW(hdc, g_app.status.c_str(), -1, &status, DT_LEFT | DT_WORDBREAK);
+    }
+
+    if (g_app.screen == Screen::Scan) {
+        RECT progressRect{ 104, 310, rect.right - 104, 350 };
+        SelectObject(hdc, g_app.bodyFont);
+        SetTextColor(hdc, g_app.palette.text);
+        const std::wstring progress = std::to_wstring(g_app.scanProgress) + L"%";
+        DrawTextW(hdc, progress.c_str(), -1, &progressRect, DT_LEFT | DT_SINGLELINE);
+
+        RECT statusRect{ 104, 356, rect.right - 104, 426 };
+        SelectObject(hdc, g_app.smallFont);
+        SetTextColor(hdc, g_app.palette.textMuted);
+        const std::wstring statusText = g_app.scanStatus.empty() ? L"Ожидание ответа от desktop scan..." : g_app.scanStatus;
+        DrawTextW(hdc, statusText.c_str(), -1, &statusRect, DT_LEFT | DT_WORDBREAK);
+
+        RECT timelineRect{ 104, 440, rect.right - 104, rect.bottom - 212 };
+        std::wstring timelineText;
+        for (size_t i = 0; i < g_app.scanTimeline.size(); ++i) {
+            if (i > 0) {
+                timelineText += L"\r\n";
+            }
+            timelineText += L"• ";
+            timelineText += g_app.scanTimeline[i];
+        }
+        DrawTextW(hdc, timelineText.c_str(), -1, &timelineRect, DT_LEFT | DT_WORDBREAK);
     }
 
     EndPaint(hwnd, &ps);
@@ -416,6 +616,7 @@ LRESULT CALLBACK InputSubclassProc(HWND hwnd, UINT message, WPARAM wParam, LPARA
             case Screen::Code:
                 SetScreen(Screen::Welcome);
                 return 0;
+            case Screen::Scan:
             case Screen::History:
             case Screen::Settings:
                 SetScreen(Screen::Home);
@@ -494,7 +695,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
                 SetScreen(Screen::Welcome);
                 return 0;
             }
-            if (g_app.screen == Screen::History || g_app.screen == Screen::Settings) {
+            if (g_app.screen == Screen::Scan || g_app.screen == Screen::History || g_app.screen == Screen::Settings) {
                 SetScreen(Screen::Home);
                 return 0;
             }
@@ -516,16 +717,31 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             if (g_app.screen == Screen::Welcome) SetScreen(Screen::Login);
             else if (g_app.screen == Screen::Login || g_app.screen == Screen::Register) SubmitAuth();
             else if (g_app.screen == Screen::Code) VerifyCode();
-            else if (g_app.screen == Screen::History || g_app.screen == Screen::Settings) SetScreen(Screen::Home);
+            else if (g_app.screen == Screen::Scan || g_app.screen == Screen::History || g_app.screen == Screen::Settings) SetScreen(Screen::Home);
             return 0;
         case IdSecondary:
             if (g_app.screen == Screen::Welcome) SetScreen(Screen::Register);
             else if (g_app.screen == Screen::Login || g_app.screen == Screen::Register || g_app.screen == Screen::Code) SetScreen(Screen::Welcome);
+            else if (g_app.screen == Screen::Scan) {
+                if (g_app.scanRunning && !g_app.scanFinished) {
+                    g_app.scanCancelRequested = true;
+                    std::wstring error;
+                    if (g_app.api.CancelDesktopScan(g_app.session, error)) {
+                        g_app.scanStatus = L"Запрос на отмену отправлен";
+                        g_app.scanTimeline.push_back(L"Отправили cancel-active на backend");
+                    } else {
+                        g_app.scanStatus = error.empty() ? L"Не удалось отменить проверку" : error;
+                    }
+                    InvalidateRect(hwnd, nullptr, TRUE);
+                } else {
+                    SetScreen(Screen::Home);
+                }
+            }
             else if (g_app.screen == Screen::Settings) MaybeRunAutoUpdate();
             return 0;
         case IdScan:
-            g_app.status = L"Native scan engine будет следующим патчем поверх этого окна.";
-            InvalidateRect(hwnd, nullptr, TRUE);
+            SetScreen(Screen::Scan);
+            StartDesktopScanAsync();
             return 0;
         case IdHistory:
             SetScreen(Screen::History);
@@ -540,6 +756,36 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             break;
         }
         break;
+    case WM_NEURALV_SCAN_UPDATE: {
+        const auto payload = reinterpret_cast<ScanUpdatePayload*>(lParam);
+        if (payload) {
+            g_app.activeScanId = payload->scanId;
+            g_app.scanStatus = payload->message.empty() ? payload->status : payload->message;
+            g_app.scanVerdict = payload->verdict;
+            g_app.scanTimeline = payload->timeline;
+            g_app.scanProgress = payload->progress;
+            g_app.scanRunning = !payload->finished;
+            g_app.scanFinished = payload->finished;
+            delete payload;
+            SetScreen(Screen::Scan);
+        }
+        return 0;
+    }
+    case WM_NEURALV_SCAN_FINISH: {
+        const auto payload = reinterpret_cast<ScanUpdatePayload*>(lParam);
+        if (payload) {
+            g_app.activeScanId = payload->scanId;
+            g_app.scanStatus = payload->message.empty() ? payload->status : payload->message;
+            g_app.scanVerdict = payload->verdict;
+            g_app.scanTimeline = payload->timeline;
+            g_app.scanProgress = payload->progress;
+            g_app.scanRunning = false;
+            g_app.scanFinished = true;
+            delete payload;
+            SetScreen(Screen::Scan);
+        }
+        return 0;
+    }
     case WM_CTLCOLOREDIT:
     case WM_CTLCOLORSTATIC: {
         HDC hdc = reinterpret_cast<HDC>(wParam);
