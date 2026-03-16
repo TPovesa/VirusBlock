@@ -1,4 +1,4 @@
-name: Linux Build
+name: Linux GUI Build
 
 on:
   push:
@@ -8,29 +8,26 @@ on:
       - '.github/workflows/linux-build.yml'
       - 'desktop-app/**'
       - 'desktop-core/**'
-      - 'shell/**'
       - 'gradle/**'
       - 'gradle.properties'
       - 'gradlew'
-      - 'gradlew.bat'
-      - 'settings.gradle.kts'
       - 'settings-desktop.gradle.kts'
       - 'build.gradle.kts'
       - 'branding/**'
   workflow_dispatch:
 
 concurrency:
-  group: linux-build-${{ github.ref }}
-  cancel-in-progress: false
+  group: linux-gui-build-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
 
 jobs:
-  build-linux:
-    name: Build Linux GUI And NV
+  build-linux-gui:
+    name: Build Linux GUI
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,79 +38,23 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Install Linux desktop dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          packages=(
-            dpkg-dev
-            fakeroot
-            libgtk-3-0
-            libx11-6
-            libxext6
-            libxrender1
-            libxtst6
-            libxi6
-            libxrandr2
-            libxinerama1
-            libxcursor1
-            libxcomposite1
-            libxdamage1
-            libxfixes3
-            libgbm1
-            libnss3
-            libxkbcommon0
-            rpm
-          )
-          if apt-cache show libasound2t64 >/dev/null 2>&1; then
-            packages+=(libasound2t64)
-          elif apt-cache show libasound2 >/dev/null 2>&1; then
-            packages+=(libasound2)
-          fi
-          sudo apt-get install -y "${packages[@]}"
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
-      - name: Build Linux desktop GUI uber jar
-        continue-on-error: true
+      - name: Build Linux desktop GUI portable jar
         shell: bash
         run: |
-          set -uo pipefail
-          set +e
-          ./gradlew --settings-file settings-desktop.gradle.kts :desktop-app:packageUberJarForCurrentOS --stacktrace --no-daemon --console=plain 2>&1 | tee linux-gui-build.log
+          set -euo pipefail
+          ./gradlew --settings-file settings-desktop.gradle.kts :desktop-app:portableDesktopJar --stacktrace --no-daemon --console=plain 2>&1 | tee linux-gui-build.log
           status=${PIPESTATUS[0]}
-          set -e
-          echo "LINUX_GUI_BUILD_EXIT=$status" >> "$GITHUB_ENV"
-
-      - name: Explain Linux desktop build failure
-        if: env.LINUX_GUI_BUILD_EXIT != '0'
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "::group::linux-gui-build tail"
-          tail -n 240 linux-gui-build.log || true
-          echo "::endgroup::"
-          summary="$(grep -E '(^e: |^FAILURE:|BUILD FAILED|Unresolved reference|Could not |No such |not found|Exception|Execution failed)' linux-gui-build.log | tail -n 20 | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-1800 || true)"
-          if [ -z "$summary" ]; then
-            summary="$(tail -n 60 linux-gui-build.log | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-1800)"
-          fi
-          echo "::error::${summary}"
-          exit 1
-
-      - name: Inspect Linux compose output
-        shell: bash
-        run: |
-          set -euo pipefail
-          root="desktop-app/build"
-          if [ -d "$root" ]; then
-            find "$root" -maxdepth 5 -print | sort
-          else
-            echo "Compose output root missing: $root"
+          if [ "$status" -ne 0 ]; then
+            echo "::group::linux-gui-build tail"
+            tail -n 200 linux-gui-build.log || true
+            echo "::endgroup::"
+            exit "$status"
           fi
 
       - name: Package Linux GUI archive
@@ -121,7 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/linux/gui/bin dist/linux/gui/lib
-          GUI_JAR="$(find desktop-app/build -type f -path '*/compose/jars/*.jar' | head -n 1)"
+          GUI_JAR="$(find desktop-app/build/libs -type f -name '*portable*.jar' | head -n 1)"
           test -n "$GUI_JAR"
           cp "$GUI_JAR" dist/linux/gui/lib/neuralv-desktop.jar
           cat > dist/linux/gui/bin/neuralv <<'SH'
@@ -134,35 +75,6 @@ jobs:
           chmod +x dist/linux/gui/bin/neuralv
           tar -C dist/linux/gui -czf dist/linux/neuralv-linux.tar.gz .
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-
-      - name: Resolve release version
-        id: release_version
-        shell: bash
-        run: |
-          set -euo pipefail
-          semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' gradle.properties)"
-          test -n "$semver"
-          echo "semver=$semver" >> "$GITHUB_OUTPUT"
-
-      - name: Build nv and shell binaries
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist/shell
-          cd shell
-          go mod download
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.nvVersion=${{ steps.release_version.outputs.semver }}" -o ../dist/shell/nv ./cmd/nv
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.cliVersion=${{ steps.release_version.outputs.semver }}" -o ../dist/shell/neuralv-shell ./cmd/neuralv-shell
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.daemonVersion=${{ steps.release_version.outputs.semver }}" -o ../dist/shell/neuralvd ./cmd/neuralvd
-          cd ..
-          tar -C dist/shell -czf dist/shell/nv-linux.tar.gz nv
-          tar -C dist/shell -czf dist/shell/neuralv-shell-linux.tar.gz neuralv-shell
-          tar -C dist/shell -czf dist/shell/neuralvd-linux.tar.gz neuralvd
-
       - name: Upload Linux GUI log
         if: always()
         uses: actions/upload-artifact@v4
@@ -171,49 +83,46 @@ jobs:
           path: linux-gui-build.log
           if-no-files-found: warn
 
-      - name: Write Linux failure summary
+      - name: Emit Linux GUI failure annotation
         if: always()
         shell: bash
         run: |
           set -euo pipefail
           if [ -f linux-gui-build.log ]; then
-            {
-              echo "## Linux desktop log tail"
-              echo '```text'
-              tail -n 120 linux-gui-build.log
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
+            tail_text="$(python3 - <<'PY2'
+from pathlib import Path
+text='\n'.join(Path('linux-gui-build.log').read_text().splitlines()[-60:])
+text=text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+print(text)
+PY2
+)"
+            echo "::error title=Linux GUI tail::$tail_text"
           fi
 
-
-      - name: Upload Linux payloads
+      - name: Upload Linux GUI payload
         uses: actions/upload-artifact@v4
         with:
-          name: neuralv-linux-payloads
-          path: |
-            dist/linux/neuralv-linux.tar.gz
-            dist/shell/nv-linux.tar.gz
-            dist/shell/neuralv-shell-linux.tar.gz
-            dist/shell/neuralvd-linux.tar.gz
+          name: neuralv-linux-gui
+          path: dist/linux/neuralv-linux.tar.gz
           if-no-files-found: error
 
-  publish-linux:
-    name: Publish Linux Branch
+  publish-linux-gui:
+    name: Publish Linux GUI Branch
     needs:
-      - build-linux
+      - build-linux-gui
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download Linux payloads
+      - name: Download Linux GUI payload
         uses: actions/download-artifact@v4
         with:
-          name: neuralv-linux-payloads
+          name: neuralv-linux-gui
           path: stage/linux
 
-      - name: Prepare linux-builds payload
+      - name: Prepare linux-gui-builds payload
         shell: bash
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -225,27 +134,13 @@ jobs:
           semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' gradle.properties)"
           test -n "$semver"
           rm -rf publish-linux
-          mkdir -p publish-linux/linux publish-linux/shell publish-linux/install
+          mkdir -p publish-linux/linux
           cp stage/linux/neuralv-linux.tar.gz "publish-linux/linux/neuralv-linux-${semver}.tar.gz"
           cp stage/linux/neuralv-linux.tar.gz publish-linux/linux/neuralv-linux.tar.gz
-          cp stage/linux/nv-linux.tar.gz "publish-linux/shell/nv-linux-${semver}.tar.gz"
-          cp stage/linux/nv-linux.tar.gz publish-linux/shell/nv-linux.tar.gz
-          cp stage/linux/neuralv-shell-linux.tar.gz "publish-linux/shell/neuralv-shell-linux-${semver}.tar.gz"
-          cp stage/linux/neuralv-shell-linux.tar.gz publish-linux/shell/neuralv-shell-linux.tar.gz
-          cp stage/linux/neuralvd-linux.tar.gz "publish-linux/shell/neuralvd-linux-${semver}.tar.gz"
-          cp stage/linux/neuralvd-linux.tar.gz publish-linux/shell/neuralvd-linux.tar.gz
-          cp shell/install/linux.sh publish-linux/install/linux.sh
-          cp shell/install/nv.sh publish-linux/install/nv.sh
           sha_linux="$(sha256sum "publish-linux/linux/neuralv-linux-${semver}.tar.gz" | awk '{print $1}')"
-          sha_nv="$(sha256sum "publish-linux/shell/nv-linux-${semver}.tar.gz" | awk '{print $1}')"
-          sha_shell="$(sha256sum "publish-linux/shell/neuralv-shell-linux-${semver}.tar.gz" | awk '{print $1}')"
-          sha_daemon="$(sha256sum "publish-linux/shell/neuralvd-linux-${semver}.tar.gz" | awk '{print $1}')"
-          raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/linux-builds"
+          raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/linux-gui-builds"
           export SEMVER="$semver"
           export SHA_LINUX="$sha_linux"
-          export SHA_NV="$sha_nv"
-          export SHA_SHELL="$sha_shell"
-          export SHA_DAEMON="$sha_daemon"
           export RAW_BASE="$raw_base"
           python3 - <<'PY'
           import json
@@ -265,36 +160,8 @@ jobs:
                       "download_url": f"{os.environ['RAW_BASE']}/linux/neuralv-linux-{os.environ['SEMVER']}.tar.gz",
                       "install_command": "",
                       "file_name": f"neuralv-linux-{os.environ['SEMVER']}.tar.gz",
-                      "notes": ["Compose Desktop Linux GUI"],
-                      "metadata": {
-                          "daemonUrl": f"{os.environ['RAW_BASE']}/shell/neuralvd-linux-{os.environ['SEMVER']}.tar.gz",
-                          "daemonSha256": os.environ["SHA_DAEMON"]
-                      }
-                  },
-                  {
-                      "platform": "nv",
-                      "channel": "main",
-                      "version": os.environ["SEMVER"],
-                      "sha256": os.environ["SHA_NV"],
-                      "download_url": f"{os.environ['RAW_BASE']}/shell/nv-linux-{os.environ['SEMVER']}.tar.gz",
-                      "install_command": "curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh",
-                      "file_name": f"nv-linux-{os.environ['SEMVER']}.tar.gz",
-                      "notes": ["Linux package manager for NeuralV releases"],
+                      "notes": ["Portable Linux GUI archive."],
                       "metadata": {}
-                  },
-                  {
-                      "platform": "shell",
-                      "channel": "main",
-                      "version": os.environ["SEMVER"],
-                      "sha256": os.environ["SHA_SHELL"],
-                      "download_url": f"{os.environ['RAW_BASE']}/shell/neuralv-shell-linux-{os.environ['SEMVER']}.tar.gz",
-                      "install_command": "curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh && nv install neuralv@latest",
-                      "file_name": f"neuralv-shell-linux-{os.environ['SEMVER']}.tar.gz",
-                      "notes": ["Bubble Tea shell client"],
-                      "metadata": {
-                          "daemonUrl": f"{os.environ['RAW_BASE']}/shell/neuralvd-linux-{os.environ['SEMVER']}.tar.gz",
-                          "daemonSha256": os.environ["SHA_DAEMON"]
-                      }
                   }
               ]
           }
@@ -310,7 +177,7 @@ jobs:
               )
           PY
 
-      - name: Publish linux-builds branch
+      - name: Publish linux-gui-builds branch
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -318,14 +185,14 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          rm -rf /tmp/linux-builds
-          mkdir -p /tmp/linux-builds
-          cp -R publish-linux/. /tmp/linux-builds/
-          cd /tmp/linux-builds
+          rm -rf /tmp/linux-gui-builds
+          mkdir -p /tmp/linux-gui-builds
+          cp -R publish-linux/. /tmp/linux-gui-builds/
+          cd /tmp/linux-gui-builds
           git init
-          git checkout -b linux-builds
+          git checkout -b linux-gui-builds
           git add .
           semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' "${GITHUB_WORKSPACE}/gradle.properties")"
-          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish Linux payloads ${semver} for ${GITHUB_SHA} [skip ci]"
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish Linux GUI ${semver} for ${GITHUB_SHA} [skip ci]"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force origin linux-builds
+          git push --force origin linux-gui-builds

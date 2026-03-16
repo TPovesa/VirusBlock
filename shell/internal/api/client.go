@@ -35,10 +35,40 @@ type AuthResponse struct {
 	} `json:"user"`
 }
 
-type ScanEnvelope struct {
-	Success bool            `json:"success"`
-	Scan    json.RawMessage `json:"scan"`
-	Error   string          `json:"error"`
+type DesktopScanEnvelope struct {
+	Success bool         `json:"success"`
+	Scan    *DesktopScan `json:"scan"`
+	Error   string       `json:"error"`
+}
+
+type CancelResponse struct {
+	Success     bool   `json:"success"`
+	CancelledAt int64  `json:"cancelled_at"`
+	Error       string `json:"error"`
+}
+
+type DesktopScan struct {
+	ID               int64            `json:"id"`
+	Platform         string           `json:"platform"`
+	Mode             string           `json:"mode"`
+	Status           string           `json:"status"`
+	Verdict          string           `json:"verdict"`
+	RiskScore        int              `json:"risk_score"`
+	SurfacedFindings int              `json:"surfaced_findings"`
+	HiddenFindings   int              `json:"hidden_findings"`
+	StartedAt        int64            `json:"started_at"`
+	CompletedAt      int64            `json:"completed_at"`
+	Message          string           `json:"message"`
+	Timeline         []string         `json:"timeline"`
+	Findings         []DesktopFinding `json:"findings"`
+}
+
+type DesktopFinding struct {
+	ID      string   `json:"id"`
+	Title   string   `json:"title"`
+	Verdict string   `json:"verdict"`
+	Summary string   `json:"summary"`
+	Engines []string `json:"engines"`
 }
 
 type ManifestResponse struct {
@@ -78,37 +108,83 @@ func (c *Client) DeviceID() string {
 }
 
 func (c *Client) StartLogin(email, password string) (*ChallengeResponse, error) {
-	return postJSON[ChallengeResponse](c, "/api/auth/login/start", map[string]any{
-		"email":    email,
-		"password": password,
+	response, err := postJSON[ChallengeResponse](c, "/api/auth/login/start", map[string]any{
+		"email":     email,
+		"password":  password,
 		"device_id": c.DeviceID(),
 	})
+	if err != nil {
+		return nil, err
+	}
+	if response != nil && !response.Success && strings.TrimSpace(response.Error) != "" {
+		return nil, fmt.Errorf(response.Error)
+	}
+	return response, nil
 }
 
 func (c *Client) VerifyLogin(challengeID, email, code string) (*AuthResponse, error) {
-	return postJSON[AuthResponse](c, "/api/auth/login/verify", map[string]any{
+	response, err := postJSON[AuthResponse](c, "/api/auth/login/verify", map[string]any{
 		"challenge_id": challengeID,
 		"email":        email,
 		"code":         code,
 		"device_id":    c.DeviceID(),
 	})
+	if err != nil {
+		return nil, err
+	}
+	if response != nil && !response.Success && strings.TrimSpace(response.Error) != "" {
+		return nil, fmt.Errorf(response.Error)
+	}
+	return response, nil
 }
 
-func (c *Client) StartDesktopScan(token string, platform, mode string, artifact map[string]any) (*ScanEnvelope, error) {
-	return authorizedJSON[ScanEnvelope](c, "POST", "/api/scans/desktop/start", token, map[string]any{
+func (c *Client) StartDesktopScan(token string, platform, mode string, artifact map[string]any) (*DesktopScanEnvelope, error) {
+	response, err := authorizedJSON[DesktopScanEnvelope](c, http.MethodPost, "/api/scans/desktop/start", token, map[string]any{
 		"platform":          platform,
 		"mode":              mode,
 		"artifact_kind":     artifact["artifact_kind"],
 		"artifact_metadata": artifact,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if response != nil && !response.Success && strings.TrimSpace(response.Error) != "" {
+		return nil, fmt.Errorf(response.Error)
+	}
+	return response, nil
 }
 
-func (c *Client) CancelDesktopScan(token string) (*ScanEnvelope, error) {
-	return authorizedJSON[ScanEnvelope](c, "POST", "/api/scans/desktop/cancel-active", token, map[string]any{})
+func (c *Client) GetDesktopScan(token string, id int64) (*DesktopScanEnvelope, error) {
+	response, err := authorizedJSON[DesktopScanEnvelope](c, http.MethodGet, fmt.Sprintf("/api/scans/desktop/%d", id), token, nil)
+	if err != nil {
+		return nil, err
+	}
+	if response != nil && !response.Success && strings.TrimSpace(response.Error) != "" {
+		return nil, fmt.Errorf(response.Error)
+	}
+	return response, nil
+}
+
+func (c *Client) CancelDesktopScan(token string) (*CancelResponse, error) {
+	response, err := authorizedJSON[CancelResponse](c, http.MethodPost, "/api/scans/desktop/cancel-active", token, map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	if response != nil && !response.Success && strings.TrimSpace(response.Error) != "" {
+		return nil, fmt.Errorf(response.Error)
+	}
+	return response, nil
 }
 
 func (c *Client) ReleaseManifest() (*ManifestResponse, error) {
-	return getJSON[ManifestResponse](c, "/api/releases/manifest")
+	response, err := getJSON[ManifestResponse](c, "/api/releases/manifest")
+	if err != nil {
+		return nil, err
+	}
+	if response != nil && !response.Success && strings.TrimSpace(response.Error) != "" {
+		return nil, fmt.Errorf(response.Error)
+	}
+	return response, nil
 }
 
 func (m *ManifestResponse) Artifact(platforms ...string) *ManifestArtifact {
@@ -174,7 +250,7 @@ func doJSON[T any](c *Client, method, route, token string, payload any) (*T, err
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("http %d: %s", resp.StatusCode, string(data))
+		return nil, fmt.Errorf("http %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
 	}
 	var parsed T
 	if err := json.Unmarshal(data, &parsed); err != nil {

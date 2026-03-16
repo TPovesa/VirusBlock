@@ -11,7 +11,7 @@ trap cleanup EXIT INT TERM
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
-    echo "missing command: $1" >&2
+    echo "не найдена команда: $1" >&2
     exit 1
   }
 }
@@ -49,19 +49,19 @@ install_nv() {
   manifest="$(fetch_manifest)"
   nv_url="$(read_manifest_field "$manifest" nv download_url)"
   if [ -z "$nv_url" ]; then
-    echo "nv artifact is missing in manifest" >&2
+    echo "артефакт nv не найден в manifest" >&2
     exit 1
   fi
   curl -fsSL "$nv_url" -o "$TMP_DIR/nv.tar.gz"
   tar -xzf "$TMP_DIR/nv.tar.gz" -C "$TMP_DIR"
   nv_bin="$(find "$TMP_DIR" -maxdepth 2 -type f -name 'nv' | head -n 1)"
   if [ -z "$nv_bin" ]; then
-    echo "nv payload was not found inside archive" >&2
+    echo "payload nv не найден внутри архива" >&2
     exit 1
   fi
   install -m 0755 "$nv_bin" "$TARGET"
-  echo "Installed nv to $TARGET"
-  echo "Next:"
+  echo "Установлен nv в $TARGET"
+  echo "Дальше:"
   echo "  nv install neuralv@latest"
   echo "  nv -v"
 }
@@ -72,10 +72,10 @@ case "${1:-install}" in
     ;;
   uninstall)
     rm -f "$TARGET"
-    echo "Removed nv from $INSTALL_ROOT"
+    echo "Удалён nv из $INSTALL_ROOT"
     ;;
   *)
-    echo "Usage: $0 [install|update|uninstall]" >&2
+    echo "Использование: $0 [install|update|uninstall]" >&2
     exit 1
     ;;
 esac

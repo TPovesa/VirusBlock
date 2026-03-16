@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -21,12 +22,15 @@ const (
 	defaultBinaryDir = ".local/bin"
 )
 
-var nvVersion = "dev"
+var (
+	nvVersion     = "dev"
+	semverPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+)
 
 func main() {
 	client := api.NewClient(resolveBaseURL())
 	if err := handle(os.Args[1:], client); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "nv error:", err)
 		os.Exit(1)
 	}
 }
@@ -54,29 +58,40 @@ func handle(args []string, client *api.Client) error {
 		return nil
 	case "install":
 		if len(args) < 2 {
-			return errors.New("missing package spec: use nv install neuralv@latest")
+			return errors.New("не хватает package spec: используй nv install neuralv@latest")
 		}
 		return installPackage(client, args[1])
 	case "uninstall":
 		if len(args) < 2 {
-			return errors.New("missing package name: use nv uninstall neuralv")
+			return errors.New("не хватает имени пакета: используй nv uninstall neuralv")
 		}
 		return uninstallPackage(args[1])
 	default:
 		printHelp()
-		return fmt.Errorf("unknown command: %s", args[0])
+		return fmt.Errorf("неизвестная команда: %s", args[0])
 	}
 }
 
 func printHelp() {
 	fmt.Println(`nv
 
-Commands:
+Небольшой установщик для Linux-линейки NeuralV.
+
+Команды:
   nv install neuralv@latest
-  nv install neuralv@<version>
+  nv install neuralv@1.3.1
   nv uninstall neuralv
   nv -v | --version
-  nv help`)
+  nv help
+
+Что делает install:
+  1. Читает live release info из /basedata
+  2. Скачивает neuralv-shell и neuralvd
+  3. Кладёт launchers в ~/.local/bin
+
+После установки:
+  neuralv        открыть TUI
+  neuralv -v     показать версию CLI`)
 }
 
 func installPackage(client *api.Client, spec string) error {
@@ -85,20 +100,21 @@ func installPackage(client *api.Client, spec string) error {
 		return err
 	}
 	if name != "neuralv" {
-		return fmt.Errorf("unsupported package: %s", name)
+		return fmt.Errorf("неподдерживаемый пакет: %s", name)
 	}
 
+	step(1, 4, "читаем manifest релизов")
 	manifest, err := client.ReleaseManifest()
 	if err != nil {
-		return fmt.Errorf("manifest unavailable: %w", err)
+		return fmt.Errorf("manifest недоступен: %w", err)
 	}
 
 	artifact := manifest.Artifact("shell", "linux_shell")
 	if artifact == nil || strings.TrimSpace(artifact.DownloadURL) == "" {
-		return errors.New("neuralv shell artifact is not available in manifest yet")
+		return errors.New("артефакт neuralv shell пока не опубликован")
 	}
 	if version != "latest" && artifact.Version != "" && artifact.Version != version {
-		return fmt.Errorf("requested neuralv@%s, but manifest currently exposes %s", version, artifact.Version)
+		return fmt.Errorf("запрошен neuralv@%s, но сейчас опубликована версия %s", version, artifact.Version)
 	}
 
 	installRoot, err := defaultInstallRoot()
@@ -116,17 +132,25 @@ func installPackage(client *api.Client, spec string) error {
 	defer os.RemoveAll(tmpDir)
 
 	shellTarget := filepath.Join(installRoot, "neuralv-shell")
+	step(2, 4, "скачиваем neuralv-shell")
 	if err := downloadArtifactBinary(artifact.DownloadURL, tmpDir, shellTarget, "neuralv-shell"); err != nil {
 		return err
 	}
 
+	hasDaemon := false
 	if daemonURL, ok := metadataString(artifact.Metadata, "daemonUrl"); ok && strings.TrimSpace(daemonURL) != "" {
+		hasDaemon = true
+		step(3, 4, "скачиваем neuralvd")
 		daemonTarget := filepath.Join(installRoot, "neuralvd")
 		if err := downloadArtifactBinary(daemonURL, tmpDir, daemonTarget, "neuralvd"); err != nil {
 			return err
 		}
 	}
+	if !hasDaemon {
+		step(3, 4, "daemon ещё не опубликован, пропускаем")
+	}
 
+	step(4, 4, "создаём launchers")
 	wrapper := filepath.Join(installRoot, "neuralv")
 	wrapperBody := fmt.Sprintf("#!/usr/bin/env sh\nexec %q \"$@\"\n", shellTarget)
 	if err := os.WriteFile(wrapper, []byte(wrapperBody), 0o755); err != nil {
@@ -137,16 +161,13 @@ func installPackage(client *api.Client, spec string) error {
 	if shownVersion == "" {
 		shownVersion = version
 	}
-
-	fmt.Printf("Installed NeuralV %s\n", shownVersion)
-	fmt.Printf("Run: %s\n", wrapper)
-	fmt.Println("Version check: neuralv -v")
+	printInstallSummary(shownVersion, installRoot, hasDaemon)
 	return nil
 }
 
 func uninstallPackage(name string) error {
 	if strings.TrimSpace(name) != "neuralv" {
-		return fmt.Errorf("unsupported package: %s", name)
+		return fmt.Errorf("неподдерживаемый пакет: %s", name)
 	}
 
 	installRoot, err := defaultInstallRoot()
@@ -154,6 +175,7 @@ func uninstallPackage(name string) error {
 		return err
 	}
 
+	step(1, 2, "удаляем launchers")
 	for _, target := range []string{"neuralv", "neuralv-shell", "neuralvd"} {
 		path := filepath.Join(installRoot, target)
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -161,7 +183,8 @@ func uninstallPackage(name string) error {
 		}
 	}
 
-	fmt.Println("Removed NeuralV from ~/.local/bin")
+	step(2, 2, "готово")
+	fmt.Printf("NeuralV удалён из %s\n", installRoot)
 	return nil
 }
 
@@ -175,6 +198,9 @@ func parsePackageSpec(spec string) (string, string, error) {
 	version := "latest"
 	if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
 		version = strings.TrimSpace(parts[1])
+	}
+	if version != "latest" && !semverPattern.MatchString(version) {
+		return "", "", fmt.Errorf("некорректная версия %q: используй latest или semver вроде 1.3.1", version)
 	}
 	return name, version, nil
 }
@@ -214,7 +240,7 @@ func downloadArtifactBinary(url, tmpDir, target, expectedName string) error {
 
 	if response.StatusCode >= 400 {
 		body, _ := io.ReadAll(response.Body)
-		return fmt.Errorf("artifact download failed: http %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+		return fmt.Errorf("ошибка скачивания артефакта: http %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	lowerURL := strings.ToLower(url)
@@ -240,8 +266,6 @@ func extractTarball(reader io.Reader, tmpDir, target, expectedName string) error
 	defer gzipReader.Close()
 
 	tarReader := tar.NewReader(gzipReader)
-	var extracted []string
-
 	for {
 		header, err := tarReader.Next()
 		if errors.Is(err, io.EOF) {
@@ -250,17 +274,14 @@ func extractTarball(reader io.Reader, tmpDir, target, expectedName string) error
 		if err != nil {
 			return err
 		}
-		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+		if header.Typeflag != tar.TypeReg {
 			continue
 		}
-
 		name := path.Base(header.Name)
-		if name == "." || name == "" {
+		if name != expectedName {
 			continue
 		}
-
-		destination := filepath.Join(tmpDir, name)
-		file, err := os.OpenFile(destination, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+		file, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
 		if err != nil {
 			return err
 		}
@@ -271,26 +292,24 @@ func extractTarball(reader io.Reader, tmpDir, target, expectedName string) error
 		if err := file.Close(); err != nil {
 			return err
 		}
-		extracted = append(extracted, destination)
+		return nil
 	}
+	return fmt.Errorf("%s не найден внутри скачанного архива", expectedName)
+}
 
-	candidate := ""
-	for _, item := range extracted {
-		if filepath.Base(item) == expectedName {
-			candidate = item
-			break
-		}
-	}
-	if candidate == "" && len(extracted) > 0 {
-		candidate = extracted[0]
-	}
-	if candidate == "" {
-		return errors.New("artifact archive did not contain an executable payload")
-	}
+func step(index, total int, text string) {
+	fmt.Printf("[%d/%d] %s\n", index, total, text)
+}
 
-	payload, err := os.ReadFile(candidate)
-	if err != nil {
-		return err
+func printInstallSummary(version, installRoot string, hasDaemon bool) {
+	fmt.Printf("\nУстановлен NeuralV %s\n", version)
+	fmt.Printf("Путь: %s\n", installRoot)
+	fmt.Println("Открыть TUI: neuralv")
+	fmt.Println("Проверка версии: neuralv -v")
+	if hasDaemon {
+		fmt.Println("Бинарь daemon: ~/.local/bin/neuralvd")
 	}
-	return os.WriteFile(target, payload, 0o755)
+	if pathEnv := os.Getenv("PATH"); !strings.Contains(pathEnv, installRoot) {
+		fmt.Printf("\nPATH: добавь %s в PATH, если neuralv не находится сразу.\n", installRoot)
+	}
 }

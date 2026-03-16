@@ -1,3 +1,6 @@
+import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.jvm.tasks.Jar
+
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.compose)
@@ -30,4 +33,30 @@ compose.desktop {
             vendor = "NeuralV"
         }
     }
+}
+
+tasks.register<Jar>("portableDesktopJar") {
+    group = "distribution"
+    description = "Builds a portable fat jar for NeuralV desktop."
+    archiveBaseName.set("neuralv-desktop")
+    archiveClassifier.set("portable")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    manifest {
+        attributes["Main-Class"] = "com.neuralv.desktop.app.MainKt"
+    }
+
+    from(sourceSets.main.get().output)
+    dependsOn(tasks.named("compileKotlin"), tasks.named("processResources"))
+    from({
+        configurations.runtimeClasspath.get()
+            .filter { it.exists() }
+            .map { if (it.isDirectory) it else zipTree(it) }
+    })
+
+    exclude(
+        "META-INF/*.RSA",
+        "META-INF/*.SF",
+        "META-INF/*.DSA"
+    )
 }

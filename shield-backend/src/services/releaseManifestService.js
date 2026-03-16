@@ -9,10 +9,11 @@ const BRANCH_SOURCES = [
     { branch: 'site-builds', label: 'site', platforms: ['site'] },
     { branch: 'android-builds', label: 'android', platforms: ['android'] },
     { branch: 'windows-builds', label: 'windows', platforms: ['windows'] },
-    { branch: 'linux-builds', label: 'linux', platforms: ['linux', 'nv', 'shell'] }
+    { branch: 'linux-gui-builds', label: 'linux-gui', platforms: ['linux'] },
+    { branch: 'linux-cli-builds', label: 'linux-cli', platforms: ['shell'] }
 ];
 
-const PLATFORM_ORDER = ['android', 'windows', 'linux', 'nv', 'shell', 'site'];
+const PLATFORM_ORDER = ['android', 'windows', 'linux', 'shell', 'site'];
 
 function rawBase(branch) {
     return `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/${branch}`;
@@ -69,12 +70,6 @@ function fallbackArtifacts() {
                 wingetInstallCommand: 'winget install --id NeuralV.NeuralV -e',
                 wingetUpgradeCommand: 'winget upgrade --id NeuralV.NeuralV -e',
                 wingetUninstallCommand: 'winget uninstall --id NeuralV.NeuralV -e',
-                nvBootstrapUrl: 'https://sosiskibot.ru/neuralv/install/nv.ps1',
-                nvBootstrapCommand: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://sosiskibot.ru/neuralv/install/nv.ps1 | iex"',
-                nvInstallCommand: 'nv install neuralv@latest',
-                nvUpdateCommand: 'nv install neuralv@latest',
-                nvUninstallCommand: 'nv uninstall neuralv',
-                nvDownloadUrl: `${rawBase('windows-builds')}/windows/nv-${DEFAULT_RELEASE_VERSION}.exe`,
                 directDownloadLabel: 'Скачать GUI zip',
                 available: false
             }
@@ -84,29 +79,13 @@ function fallbackArtifacts() {
             channel: 'beta',
             version: DEFAULT_RELEASE_VERSION,
             sha256: '',
-            download_url: `${rawBase('linux-builds')}/linux/neuralv-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`,
+            download_url: `${rawBase('linux-gui-builds')}/linux/neuralv-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`,
             install_command: '',
             file_name: `neuralv-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`,
-            notes: ['Linux GUI будет опубликован в linux-builds.'],
+            notes: ['Linux GUI будет опубликован в linux-gui-builds.'],
             metadata: {
-                source_branch: 'linux-builds',
-                source_label: 'linux',
-                daemonUrl: `${rawBase('linux-builds')}/shell/neuralvd-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`,
-                available: false
-            }
-        },
-        {
-            platform: 'nv',
-            channel: 'beta',
-            version: DEFAULT_RELEASE_VERSION,
-            sha256: '',
-            download_url: `${rawBase('linux-builds')}/shell/nv-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`,
-            install_command: 'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh',
-            file_name: `nv-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`,
-            notes: ['Linux bootstrap manager for NeuralV releases.'],
-            metadata: {
-                source_branch: 'linux-builds',
-                source_label: 'linux',
+                source_branch: 'linux-gui-builds',
+                source_label: 'linux-gui',
                 available: false
             }
         },
@@ -115,14 +94,14 @@ function fallbackArtifacts() {
             channel: 'beta',
             version: DEFAULT_RELEASE_VERSION,
             sha256: '',
-            download_url: `${rawBase('linux-builds')}/shell/neuralv-shell-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`,
+            download_url: `${rawBase('linux-cli-builds')}/shell/neuralv-shell-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`,
             install_command: 'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh && nv install neuralv@latest',
             file_name: `neuralv-shell-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`,
-            notes: ['Bubble Tea shell client.'],
+            notes: ['Linux CLI будет опубликован в linux-cli-builds.'],
             metadata: {
-                source_branch: 'linux-builds',
-                source_label: 'linux',
-                daemonUrl: `${rawBase('linux-builds')}/shell/neuralvd-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`,
+                source_branch: 'linux-cli-builds',
+                source_label: 'linux-cli',
+                daemonUrl: `${rawBase('linux-cli-builds')}/shell/neuralvd-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`,
                 available: false
             }
         },
@@ -254,10 +233,7 @@ async function getReleaseManifest() {
         BRANCH_SOURCES.map(async (source) => ({ source, manifest: await fetchBranchManifest(source) }))
     );
 
-    const sources = settled.map((result, index) => {
-        const source = BRANCH_SOURCES[index];
-        return buildSourceStatus(source, result);
-    });
+    const sources = settled.map((result, index) => buildSourceStatus(BRANCH_SOURCES[index], result));
 
     for (const result of settled) {
         if (result.status !== 'fulfilled') {

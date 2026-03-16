@@ -8,12 +8,10 @@ on:
       - '.github/workflows/windows-build.yml'
       - 'desktop-app/**'
       - 'desktop-core/**'
-      - 'shell/**'
       - 'gradle/**'
       - 'gradle.properties'
       - 'gradlew'
       - 'gradlew.bat'
-      - 'settings.gradle.kts'
       - 'settings-desktop.gradle.kts'
       - 'build.gradle.kts'
       - 'branding/**'
@@ -21,7 +19,7 @@ on:
 
 concurrency:
   group: windows-build-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -43,49 +41,20 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build Windows desktop GUI uber jar
-        continue-on-error: true
+      - name: Build Windows desktop GUI portable jar
         shell: pwsh
         run: |
-          & .\gradlew.bat --settings-file settings-desktop.gradle.kts :desktop-app:packageUberJarForCurrentOS --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
-          "WINDOWS_GUI_BUILD_EXIT=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
-      - name: Explain Windows desktop build failure
-        if: env.WINDOWS_GUI_BUILD_EXIT != '0'
-        shell: pwsh
-        run: |
-          Write-Host "::group::windows-build tail"
-          Get-Content windows-build.log -Tail 240
-          Write-Host "::endgroup::"
-          $summary = Select-String -Path windows-build.log -Pattern '^e: ','^FAILURE:','BUILD FAILED','Unresolved reference','Could not ','No such ','not found','Exception','Execution failed' |
-            Select-Object -Last 20 |
-            ForEach-Object { $_.Line.Trim() }
-          if (-not $summary) {
-            $summary = Get-Content windows-build.log -Tail 60
-          }
-          $text = (($summary -join ' ') -replace '\s+', ' ')
-          if ($text.Length -gt 1800) { $text = $text.Substring(0, 1800) }
-          Write-Host "::error::$text"
-          exit 1
-
-      - name: Inspect Windows compose output
-        shell: pwsh
-        run: |
-          $root = "desktop-app/build/compose/binaries/main"
-          if (Test-Path $root) {
-            Get-ChildItem $root -Recurse | Select-Object FullName
-          } else {
-            Write-Host "Compose output root missing: $root"
+          & .\gradlew.bat --settings-file settings-desktop.gradle.kts :desktop-app:portableDesktopJar --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
           }
 
       - name: Package Windows archive
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
-          $jar = Get-ChildItem -Path "desktop-app/build" -Recurse -Filter "*.jar" |
-            Where-Object { $_.FullName -match "[\\/]compose[\\/]jars[\\/]" } |
-            Select-Object -First 1
-          if (-not $jar) { throw "Desktop uber jar not found under desktop-app/build" }
+          $jar = Get-ChildItem -Path "desktop-app/build/libs" -Recurse -Filter "*portable*.jar" | Select-Object -First 1
+          if (-not $jar) { throw "Desktop portable jar not found under desktop-app/build/libs" }
           New-Item -ItemType Directory -Force -Path dist\windows\gui\bin | Out-Null
           New-Item -ItemType Directory -Force -Path dist\windows\gui\lib | Out-Null
           Copy-Item $jar.FullName dist\windows\gui\lib\neuralv-desktop.jar -Force
@@ -98,19 +67,6 @@ jobs:
           '@ | Set-Content -Path dist\windows\gui\bin\neuralv.bat -NoNewline
           Compress-Archive -Path "dist\windows\gui\*" -DestinationPath dist\windows\neuralv-windows.zip -Force
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-
-      - name: Build Windows nv bootstrap binary
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
-          $semver = ((Get-Content gradle.properties | Where-Object { $_ -match '^neuralv\.version=' } | Select-Object -First 1) -split '=')[1].Trim()
-          if (-not $semver) { throw "neuralv.version is missing in gradle.properties" }
-          go build -trimpath -ldflags="-s -w -X main.nvVersion=$semver" -o dist\windows\nv.exe .\shell\cmd\nv
-
       - name: Upload Windows build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -119,25 +75,21 @@ jobs:
           path: windows-build.log
           if-no-files-found: warn
 
-      - name: Write Windows failure summary
+      - name: Emit Windows GUI failure annotation
         if: always()
         shell: pwsh
         run: |
           if (Test-Path windows-build.log) {
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Windows desktop log tail"
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "```text"
-            Get-Content windows-build.log -Tail 120 | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "```"
+            $tail = (Get-Content windows-build.log -Tail 60) -join "`n"
+            $tail = $tail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Host "::error title=Windows GUI tail::$tail"
           }
-
 
       - name: Upload Windows bundle
         uses: actions/upload-artifact@v4
         with:
           name: neuralv-windows-gui
-          path: |
-            dist/windows/neuralv-windows.zip
-            dist/windows/nv.exe
+          path: dist/windows/neuralv-windows.zip
           if-no-files-found: error
 
   publish-windows:
@@ -170,14 +122,10 @@ jobs:
           mkdir -p publish-windows/windows
           cp stage/windows/neuralv-windows.zip "publish-windows/windows/neuralv-windows-${semver}.zip"
           cp stage/windows/neuralv-windows.zip publish-windows/windows/neuralv-windows.zip
-          cp stage/windows/nv.exe "publish-windows/windows/nv-${semver}.exe"
-          cp stage/windows/nv.exe publish-windows/windows/nv.exe
           sha_windows="$(sha256sum "publish-windows/windows/neuralv-windows-${semver}.zip" | awk '{print $1}')"
-          sha_nv="$(sha256sum "publish-windows/windows/nv-${semver}.exe" | awk '{print $1}')"
           raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/windows-builds"
           export SEMVER="$semver"
           export SHA_WINDOWS="$sha_windows"
-          export SHA_NV="$sha_nv"
           export RAW_BASE="$raw_base"
           python3 - <<'PY'
           import json
@@ -197,19 +145,12 @@ jobs:
                       "download_url": f"{os.environ['RAW_BASE']}/windows/neuralv-windows-{os.environ['SEMVER']}.zip",
                       "install_command": "winget install --id NeuralV.NeuralV -e",
                       "file_name": f"neuralv-windows-{os.environ['SEMVER']}.zip",
-                      "notes": ["Windows GUI with short install flow via winget or nv."],
+                      "notes": ["Windows GUI archive."],
                       "metadata": {
                           "wingetPackageId": "NeuralV.NeuralV",
                           "wingetInstallCommand": "winget install --id NeuralV.NeuralV -e",
                           "wingetUpgradeCommand": "winget upgrade --id NeuralV.NeuralV -e",
                           "wingetUninstallCommand": "winget uninstall --id NeuralV.NeuralV -e",
-                          "nvBootstrapUrl": "https://sosiskibot.ru/neuralv/install/nv.ps1",
-                          "nvBootstrapCommand": "powershell -NoProfile -ExecutionPolicy Bypass -Command \\\"irm https://sosiskibot.ru/neuralv/install/nv.ps1 | iex\\\"",
-                          "nvInstallCommand": "nv install neuralv@latest",
-                          "nvUpdateCommand": "nv install neuralv@latest",
-                          "nvUninstallCommand": "nv uninstall neuralv",
-                          "nvDownloadUrl": f"{os.environ['RAW_BASE']}/windows/nv-{os.environ['SEMVER']}.exe",
-                          "nvSha256": os.environ["SHA_NV"],
                           "directDownloadLabel": "Скачать GUI zip"
                       }
                   }

@@ -1,0 +1,164 @@
+name: Linux CLI Build
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/linux-cli-build.yml'
+      - 'shell/**'
+      - 'gradle.properties'
+  workflow_dispatch:
+
+concurrency:
+  group: linux-cli-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux-cli:
+    name: Build Linux CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Resolve release version
+        id: release_version
+        shell: bash
+        run: |
+          set -euo pipefail
+          semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' gradle.properties)"
+          test -n "$semver"
+          echo "semver=$semver" >> "$GITHUB_OUTPUT"
+
+      - name: Build Linux CLI payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/shell
+          cd shell
+          go mod download
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.cliVersion=${{ steps.release_version.outputs.semver }}" -o ../dist/shell/neuralv-shell ./cmd/neuralv-shell
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.daemonVersion=${{ steps.release_version.outputs.semver }}" -o ../dist/shell/neuralvd ./cmd/neuralvd
+          cd ..
+          tar -C dist/shell -czf dist/shell/neuralv-shell-linux.tar.gz neuralv-shell
+          tar -C dist/shell -czf dist/shell/neuralvd-linux.tar.gz neuralvd
+
+      - name: Upload Linux CLI payloads
+        uses: actions/upload-artifact@v4
+        with:
+          name: neuralv-linux-cli
+          path: |
+            dist/shell/neuralv-shell-linux.tar.gz
+            dist/shell/neuralvd-linux.tar.gz
+            shell/install/linux.sh
+          if-no-files-found: error
+
+  publish-linux-cli:
+    name: Publish Linux CLI Branch
+    needs:
+      - build-linux-cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Linux CLI payloads
+        uses: actions/download-artifact@v4
+        with:
+          name: neuralv-linux-cli
+          path: stage/linux-cli
+
+      - name: Prepare linux-cli-builds payload
+        shell: bash
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' gradle.properties)"
+          test -n "$semver"
+          rm -rf publish-linux-cli
+          mkdir -p publish-linux-cli/shell publish-linux-cli/install
+          cp stage/linux-cli/neuralv-shell-linux.tar.gz "publish-linux-cli/shell/neuralv-shell-linux-${semver}.tar.gz"
+          cp stage/linux-cli/neuralv-shell-linux.tar.gz publish-linux-cli/shell/neuralv-shell-linux.tar.gz
+          cp stage/linux-cli/neuralvd-linux.tar.gz "publish-linux-cli/shell/neuralvd-linux-${semver}.tar.gz"
+          cp stage/linux-cli/neuralvd-linux.tar.gz publish-linux-cli/shell/neuralvd-linux.tar.gz
+          cp stage/linux-cli/linux.sh publish-linux-cli/install/linux.sh
+          sha_shell="$(sha256sum "publish-linux-cli/shell/neuralv-shell-linux-${semver}.tar.gz" | awk '{print $1}')"
+          sha_daemon="$(sha256sum "publish-linux-cli/shell/neuralvd-linux-${semver}.tar.gz" | awk '{print $1}')"
+          raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/linux-cli-builds"
+          export SEMVER="$semver"
+          export SHA_SHELL="$sha_shell"
+          export SHA_DAEMON="$sha_daemon"
+          export RAW_BASE="$raw_base"
+          python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+          manifest = {
+              "success": True,
+              "generated_at": generated_at,
+              "release_channel": "main",
+              "artifacts": [
+                  {
+                      "platform": "shell",
+                      "channel": "main",
+                      "version": os.environ["SEMVER"],
+                      "sha256": os.environ["SHA_SHELL"],
+                      "download_url": f"{os.environ['RAW_BASE']}/shell/neuralv-shell-linux-{os.environ['SEMVER']}.tar.gz",
+                      "install_command": "curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh && nv install neuralv@latest",
+                      "file_name": f"neuralv-shell-linux-{os.environ['SEMVER']}.tar.gz",
+                      "notes": ["Linux CLI bundle."],
+                      "metadata": {
+                          "daemonUrl": f"{os.environ['RAW_BASE']}/shell/neuralvd-linux-{os.environ['SEMVER']}.tar.gz",
+                          "daemonSha256": os.environ["SHA_DAEMON"],
+                          "installScript": f"{os.environ['RAW_BASE']}/install/linux.sh"
+                      }
+                  }
+              ]
+          }
+          with open("publish-linux-cli/manifest.json", "w", encoding="utf-8") as f:
+              json.dump(manifest, f, ensure_ascii=False, indent=2)
+          with open("publish-linux-cli/BUILD_INFO.txt", "w", encoding="utf-8") as f:
+              f.write(
+                  f"Repository: {os.environ['GITHUB_REPOSITORY']}\n"
+                  f"Version: {os.environ['SEMVER']}\n"
+                  f"Commit: {os.environ['GITHUB_SHA']}\n"
+                  f"Workflow Run: {os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\n"
+                  f"Built At: {generated_at}\n"
+              )
+          PY
+
+      - name: Publish linux-cli-builds branch
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/linux-cli-builds
+          mkdir -p /tmp/linux-cli-builds
+          cp -R publish-linux-cli/. /tmp/linux-cli-builds/
+          cd /tmp/linux-cli-builds
+          git init
+          git checkout -b linux-cli-builds
+          git add .
+          semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' "${GITHUB_WORKSPACE}/gradle.properties")"
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish Linux CLI ${semver} for ${GITHUB_SHA} [skip ci]"
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin linux-cli-builds
