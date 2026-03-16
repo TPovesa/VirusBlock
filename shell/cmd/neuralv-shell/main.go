@@ -323,7 +323,7 @@ func (m *authModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *authModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "ctrl+c", "q":
+	case "ctrl+c":
 		return m, tea.Quit
 	}
 
