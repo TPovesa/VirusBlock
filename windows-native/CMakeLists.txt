@@ -21,7 +21,6 @@ configure_file(
 )
 
 set(NEURALV_COMMON_SOURCES
-  src/ApiClient.cpp
   src/SessionStore.cpp
   src/Theme.cpp
 )
@@ -41,7 +40,6 @@ target_link_libraries(NeuralV PRIVATE winhttp dwmapi shlwapi shell32 comctl32 ur
 
 add_executable(NeuralVSetup WIN32
   setup/SetupMain.cpp
-  ${NEURALV_COMMON_SOURCES}
 )
 
 target_include_directories(NeuralVSetup PRIVATE
