@@ -1,39 +1,29 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fallbackRegistry, fetchPackageRegistry, PackageRegistry } from '../lib/packages';
+import { fetchPackageCatalog, PackageCatalog } from '../lib/packages';
 
-export type PackageRegistryState = {
-  registry: PackageRegistry;
-  loading: boolean;
-  source: 'remote' | 'fallback';
-  error: string | null;
+const fallbackCatalog: PackageCatalog = {
+  packages: []
 };
 
-export function usePackageRegistry(): PackageRegistryState {
-  const [state, setState] = useState<PackageRegistryState>({
-    registry: fallbackRegistry,
+export function usePackageRegistry() {
+  const [state, setState] = useState({
+    catalog: fallbackCatalog,
     loading: true,
-    source: 'fallback',
-    error: null
+    error: null as string | null
   });
 
   useEffect(() => {
     const controller = new AbortController();
 
-    fetchPackageRegistry(controller.signal)
-      .then((registry) => {
-        setState({
-          registry: registry.packages.length > 0 ? registry : fallbackRegistry,
-          loading: false,
-          source: registry.packages.length > 0 ? 'remote' : 'fallback',
-          error: registry.packages.length > 0 ? null : 'Registry пустой, используется fallback.'
-        });
+    fetchPackageCatalog(controller.signal)
+      .then((catalog) => {
+        setState({ catalog, loading: false, error: null });
       })
       .catch((error: unknown) => {
         setState({
-          registry: fallbackRegistry,
+          catalog: fallbackCatalog,
           loading: false,
-          source: 'fallback',
-          error: error instanceof Error ? error.message : 'Не удалось загрузить package registry.'
+          error: error instanceof Error ? error.message : 'Не удалось загрузить registry пакетов.'
         });
       });
 

@@ -1,35 +1,52 @@
 const fs = require('fs');
 const path = require('path');
-const { getReleaseManifest } = require('./releaseManifestService');
 
-const REGISTRY_FILE = path.resolve(__dirname, '../data/package-registry.json');
-const REGISTRY_TIMEOUT_MS = parseInt(process.env.PACKAGE_REGISTRY_TIMEOUT_MS || '10000', 10);
-const SEMVER_PATTERN = /^\d+\.\d+\.\d+$/;
+const PACKAGE_REGISTRY_PATH = path.resolve(__dirname, '../data/package-registry.json');
+const PACKAGE_REGISTRY_TIMEOUT_MS = parseInt(process.env.PACKAGE_REGISTRY_TIMEOUT_MS || '10000', 10);
 
-function loadRegistryFile() {
-    const raw = fs.readFileSync(REGISTRY_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    const packages = Array.isArray(parsed?.packages) ? parsed.packages : [];
-    return { packages };
+function loadRegistryConfig() {
+    const content = fs.readFileSync(PACKAGE_REGISTRY_PATH, 'utf8');
+    const parsed = JSON.parse(content);
+    return Array.isArray(parsed?.packages) ? parsed.packages : [];
 }
 
-function normalizeVersion(version) {
-    const normalized = String(version || '').trim().toLowerCase();
-    if (!normalized || normalized === 'latest') {
-        return 'latest';
-    }
-    if (!SEMVER_PATTERN.test(normalized)) {
-        throw new Error(`Неверная версия пакета: ${version}`);
-    }
+function normalizeText(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function normalizeOs(value) {
+    const normalized = normalizeText(value);
+    if (normalized === 'win32') return 'windows';
     return normalized;
+}
+
+function semverParts(raw) {
+    const matched = String(raw || '').trim().match(/^(\d+)\.(\d+)\.(\d+)$/);
+    if (!matched) return null;
+    return matched.slice(1).map((value) => Number(value));
+}
+
+function compareSemver(left, right) {
+    const a = semverParts(left);
+    const b = semverParts(right);
+    if (!a || !b) return 0;
+    for (let index = 0; index < 3; index += 1) {
+        if (a[index] !== b[index]) return a[index] > b[index] ? 1 : -1;
+    }
+    return 0;
+}
+
+function manifestUrl(source) {
+    return `https://raw.githubusercontent.com/${source.repo}/${source.branch}/manifest.json`;
 }
 
 async function fetchJson(url) {
     const response = await fetch(url, {
         method: 'GET',
         headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS)
+        signal: AbortSignal.timeout(PACKAGE_REGISTRY_TIMEOUT_MS)
     });
+
     if (!response.ok) {
         throw new Error(`${url} responded with ${response.status}`);
     }
@@ -37,13 +54,9 @@ async function fetchJson(url) {
 }
 
 function normalizeArtifact(item) {
-    if (!item || typeof item !== 'object') {
-        return null;
-    }
-    const platform = String(item.platform || '').trim().toLowerCase();
-    if (!platform) {
-        return null;
-    }
+    if (!item || typeof item !== 'object') return null;
+    const platform = normalizeText(item.platform || item.platform_id || item.id);
+    if (!platform) return null;
     return {
         platform,
         channel: String(item.channel || '').trim() || 'main',
@@ -52,184 +65,152 @@ function normalizeArtifact(item) {
         download_url: String(item.download_url || item.downloadUrl || '').trim(),
         install_command: String(item.install_command || item.installCommand || '').trim(),
         file_name: String(item.file_name || item.fileName || '').trim(),
-        notes: Array.isArray(item.notes) ? item.notes.map((entry) => String(entry)) : [],
-        metadata: item.metadata && typeof item.metadata === 'object' ? item.metadata : {}
+        notes: Array.isArray(item.notes) ? item.notes.map((entry) => String(entry).trim()).filter(Boolean) : [],
+        metadata: item.metadata && typeof item.metadata === 'object' ? { ...item.metadata } : {}
     };
 }
 
-function normalizeArtifacts(manifest) {
-    const rawArtifacts = Array.isArray(manifest?.artifacts)
-        ? manifest.artifacts
-        : Object.values(manifest?.artifacts || {});
-    return rawArtifacts.map(normalizeArtifact).filter(Boolean);
-}
-
-function rawManifestUrl(source) {
-    const repo = String(source.repo || '').trim();
-    const branch = String(source.branch || '').trim();
-    if (!repo || !branch) {
+async function fetchSourceArtifact(source) {
+    if (!source || source.type !== 'github-branch-manifest') {
         return null;
     }
-    return `https://raw.githubusercontent.com/${repo}/${branch}/manifest.json`;
+    const manifest = await fetchJson(manifestUrl(source));
+    const artifacts = Array.isArray(manifest?.artifacts) ? manifest.artifacts : [];
+    const platform = normalizeText(source.platform);
+    const matching = artifacts
+        .map(normalizeArtifact)
+        .filter(Boolean)
+        .filter((artifact) => artifact.platform === platform)
+        .sort((left, right) => compareSemver(right.version, left.version));
+    return matching[0] || null;
 }
 
-async function loadArtifactsForSource(source, cache) {
-    const sourceType = String(source?.type || '').trim().toLowerCase();
-    if (sourceType === 'release_manifest') {
-        if (!cache.releaseManifest) {
-            cache.releaseManifest = normalizeArtifacts(await getReleaseManifest());
+function buildVariantRecord(definition, artifact) {
+    return {
+        id: String(definition.id || '').trim(),
+        label: String(definition.label || definition.id || '').trim(),
+        os: normalizeOs(definition.os),
+        is_default: Boolean(definition.default),
+        version: artifact?.version || '',
+        channel: artifact?.channel || 'main',
+        file_name: artifact?.file_name || '',
+        download_url: artifact?.download_url || '',
+        install_command: artifact?.install_command || '',
+        sha256: artifact?.sha256 || '',
+        install_strategy: String(definition.install_strategy || '').trim(),
+        uninstall_strategy: String(definition.uninstall_strategy || '').trim(),
+        install_root: String(definition.install_root || '').trim(),
+        binary_name: String(definition.binary_name || '').trim(),
+        wrapper_name: String(definition.wrapper_name || '').trim(),
+        launcher_path: String(definition.launcher_path || '').trim(),
+        notes: artifact?.notes?.length ? artifact.notes : [],
+        metadata: {
+            ...(artifact?.metadata || {}),
+            source: definition.source || null
         }
-        return cache.releaseManifest;
-    }
-
-    let url = null;
-    if (sourceType === 'manifest_url') {
-        url = String(source.url || '').trim();
-    } else if (sourceType === 'github-branch-manifest') {
-        url = rawManifestUrl(source);
-    }
-
-    if (!url) {
-        return [];
-    }
-    if (!cache.byUrl.has(url)) {
-        cache.byUrl.set(url, normalizeArtifacts(await fetchJson(url)));
-    }
-    return cache.byUrl.get(url) || [];
+    };
 }
 
-function versionWeight(version) {
-    const match = String(version || '').trim().match(/^(\d+)\.(\d+)\.(\d+)$/);
-    if (!match) return -1;
-    return Number(match[1]) * 1_000_000 + Number(match[2]) * 1_000 + Number(match[3]);
+async function materializePackage(packageDef, os = '') {
+    const requestedOs = normalizeOs(os);
+    const variantDefs = Array.isArray(packageDef?.variants) ? packageDef.variants : [];
+    const chosenDefs = requestedOs
+        ? variantDefs.filter((variant) => normalizeOs(variant.os) === requestedOs)
+        : variantDefs;
+
+    const variants = [];
+    for (const definition of chosenDefs) {
+        const artifact = await fetchSourceArtifact(definition.source || {});
+        variants.push(buildVariantRecord(definition, artifact));
+    }
+
+    const latestVersion = variants
+        .map((variant) => variant.version)
+        .filter(Boolean)
+        .sort((left, right) => compareSemver(right, left))[0] || '';
+
+    return {
+        name: String(packageDef.name || '').trim(),
+        title: String(packageDef.title || packageDef.name || '').trim(),
+        description: String(packageDef.description || '').trim(),
+        homepage: String(packageDef.homepage || '').trim(),
+        latest_version: latestVersion,
+        variants
+    };
 }
 
-async function buildPackageResolution(definition, cache) {
-    const targets = Array.isArray(definition.targets) ? definition.targets : [];
-    const packageSources = Array.isArray(definition.sources) ? definition.sources : [];
-    const resolvedTargets = [];
-    let latest = 'pending';
+async function getPackageRegistry({ os = '' } = {}) {
+    const packages = loadRegistryConfig();
+    const materialized = [];
+    for (const packageDef of packages) {
+        materialized.push(await materializePackage(packageDef, os));
+    }
+    return {
+        success: true,
+        packages: materialized
+    };
+}
 
-    for (const target of targets) {
-        const targetSources = target.source ? [target.source] : packageSources;
-        let matchedArtifact = null;
+async function getPackageDetails(name, { os = '' } = {}) {
+    const packageDef = loadRegistryConfig().find((entry) => normalizeText(entry.name) === normalizeText(name));
+    if (!packageDef) {
+        return null;
+    }
+    return {
+        success: true,
+        package: await materializePackage(packageDef, os)
+    };
+}
 
-        for (const source of targetSources) {
-            const artifacts = await loadArtifactsForSource(source, cache);
-            const artifactPlatform = String(target.artifact_platform || source.platform || '').trim().toLowerCase();
-            matchedArtifact = artifacts.find((artifact) => artifact.platform === artifactPlatform) || null;
-            if (matchedArtifact) {
-                break;
+function pickVariant(pkg, variantId, requestedVersion) {
+    const normalizedVariant = normalizeText(variantId);
+    let variants = pkg.variants || [];
+    if (normalizedVariant) {
+        variants = variants.filter((variant) => normalizeText(variant.id) === normalizedVariant);
+    }
+    if (!variants.length) {
+        return null;
+    }
+    if (requestedVersion && requestedVersion !== 'latest') {
+        return variants.find((variant) => variant.version === requestedVersion) || null;
+    }
+    return variants.find((variant) => variant.is_default && variant.version)
+        || variants.find((variant) => variant.version)
+        || variants[0];
+}
+
+async function resolvePackage(name, { os = '', version = 'latest', variant = '' } = {}) {
+    const details = await getPackageDetails(name, { os });
+    if (!details) {
+        return {
+            status: 404,
+            payload: { error: `Пакет ${name} не найден` }
+        };
+    }
+
+    const selectedVariant = pickVariant(details.package, variant, version);
+    if (!selectedVariant) {
+        return {
+            status: 404,
+            payload: { error: `Для пакета ${name} не найден подходящий вариант` }
+        };
+    }
+
+    return {
+        status: 200,
+        payload: {
+            success: true,
+            package: {
+                ...details.package,
+                resolved_version: selectedVariant.version,
+                variant: selectedVariant
             }
         }
-
-        const resolvedTarget = {
-            id: String(target.id || ''),
-            os: String(target.host_os || target.os || ''),
-            arch: String(target.arch || 'amd64'),
-            variant: String(target.client_kind || target.variant || ''),
-            install_hint: String(target.install_hint || ''),
-            artifact: matchedArtifact
-        };
-
-        if (matchedArtifact && versionWeight(matchedArtifact.version) > versionWeight(latest)) {
-            latest = matchedArtifact.version;
-        }
-
-        resolvedTargets.push(resolvedTarget);
-    }
-
-    return {
-        name: String(definition.name || '').trim().toLowerCase(),
-        display_name: String(definition.display_name || definition.title || definition.name || ''),
-        summary: String(definition.summary || definition.description || ''),
-        homepage_path: String(definition.homepage_path || definition.homepage || ''),
-        latest,
-        targets: resolvedTargets
-    };
-}
-
-async function buildResolvedRegistry() {
-    const registry = loadRegistryFile();
-    const cache = {
-        releaseManifest: null,
-        byUrl: new Map()
-    };
-
-    const packages = [];
-    for (const definition of registry.packages) {
-        packages.push(await buildPackageResolution(definition, cache));
-    }
-    return packages;
-}
-
-async function getPackageRegistry() {
-    return {
-        success: true,
-        generated_at: new Date().toISOString(),
-        packages: await buildResolvedRegistry()
-    };
-}
-
-async function getPackageDescriptor(name) {
-    const packages = await buildResolvedRegistry();
-    const match = packages.find((item) => item.name === String(name || '').trim().toLowerCase());
-    if (!match) {
-        return null;
-    }
-    return {
-        success: true,
-        package: match
-    };
-}
-
-async function resolvePackage(name, options = {}) {
-    const packages = await buildResolvedRegistry();
-    const normalizedName = String(name || '').trim().toLowerCase();
-    const requestedVersion = normalizeVersion(options.version);
-    const os = String(options.os || '').trim().toLowerCase();
-    const arch = String(options.arch || '').trim().toLowerCase();
-    const variant = String(options.variant || '').trim().toLowerCase();
-
-    const pkg = packages.find((item) => item.name === normalizedName);
-    if (!pkg) {
-        return null;
-    }
-
-    const matchedTarget = pkg.targets.find((target) => {
-        if (os && String(target.os || '').toLowerCase() !== os) return false;
-        if (arch && String(target.arch || '').toLowerCase() !== arch) return false;
-        if (variant && String(target.variant || '').toLowerCase() !== variant) return false;
-        return true;
-    });
-
-    if (!matchedTarget) {
-        throw new Error(`Не найден target для пакета ${normalizedName}`);
-    }
-    if (!matchedTarget.artifact) {
-        throw new Error(`Для ${normalizedName} пока нет опубликованного артефакта`);
-    }
-    if (requestedVersion !== 'latest' && matchedTarget.artifact.version !== requestedVersion) {
-        throw new Error(`На сервере нет ${normalizedName}@${requestedVersion}`);
-    }
-
-    return {
-        success: true,
-        package: normalizedName,
-        version: matchedTarget.artifact.version,
-        target: {
-            id: matchedTarget.id,
-            os: matchedTarget.os,
-            arch: matchedTarget.arch,
-            variant: matchedTarget.variant,
-            install_hint: matchedTarget.install_hint
-        },
-        artifact: matchedTarget.artifact
     };
 }
 
 module.exports = {
     getPackageRegistry,
-    getPackageDescriptor,
+    getPackageDetails,
     resolvePackage
 };
