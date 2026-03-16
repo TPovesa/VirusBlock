@@ -32,6 +32,10 @@ jobs:
       - name: Prepare MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
       - name: Cache native windows build tree
         uses: actions/cache@v4
         with:
@@ -43,7 +47,7 @@ jobs:
       - name: Configure CMake
         shell: pwsh
         run: |
-          cmake -S windows-native -B build/windows-native -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S windows-native -B build/windows-native -G Ninja -DCMAKE_BUILD_TYPE=Release -DNEURALV_BUILD_LEGACY_SETUP=OFF
 
       - name: Build native Windows client
         shell: pwsh
@@ -60,8 +64,22 @@ jobs:
           Remove-Item -Recurse -Force dist\windows -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path dist\windows\NeuralV | Out-Null
           Copy-Item build\windows-native\NeuralV.exe dist\windows\NeuralV\NeuralV.exe -Force
-          Copy-Item build\windows-native\NeuralVSetup.exe dist\windows\neuralv-setup.exe -Force
           Compress-Archive -Path dist\windows\NeuralV -DestinationPath dist\windows\neuralv-windows.zip -Force
+
+      - name: Build Windows setup with Inno Setup
+        shell: pwsh
+        env:
+          NEURALV_VERSION: ${{ vars.NEURALV_VERSION }}
+        run: |
+          $semver = (Get-Content gradle.properties | Select-String '^neuralv.version=' | ForEach-Object { $_.ToString().Split('=')[1].Trim() } | Select-Object -First 1)
+          if (-not $semver) { throw 'neuralv.version is missing' }
+          $env:NEURALV_VERSION = $semver
+          $env:NEURALV_STAGE_DIR = (Resolve-Path 'dist/windows').Path
+          $env:NEURALV_OUTPUT_DIR = (Resolve-Path 'dist/windows').Path
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' '/Qp' 'windows-native/setup/NeuralV.iss'
+          if (-not (Test-Path 'dist/windows/neuralv-setup.exe')) {
+            throw 'Inno Setup did not produce neuralv-setup.exe'
+          }
 
       - name: Upload Windows build log
         if: always()

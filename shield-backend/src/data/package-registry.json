@@ -14,7 +14,7 @@
           "install_strategy": "windows-portable-zip",
           "uninstall_strategy": "windows-remove-dir",
           "install_root": "%LOCALAPPDATA%/NeuralV",
-          "launcher_path": "bin/NeuralV.exe",
+          "launcher_path": "NeuralV.exe",
           "install_command": "winget install --id NeuralV.NeuralV -e",
           "update_command": "%LOCALAPPDATA%\\NV\\nv.exe install neuralv@latest",
           "update_policy": "startup-auto",

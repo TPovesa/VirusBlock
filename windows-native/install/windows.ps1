@@ -1,5 +1,12 @@
 $ErrorActionPreference = 'Stop'
-$setupUrl = 'https://raw.githubusercontent.com/Perdonus/fatalerror/windows-builds/windows/neuralv-setup.exe'
-$tempPath = Join-Path $env:TEMP 'NeuralVSetup.exe'
-Invoke-WebRequest -Uri $setupUrl -OutFile $tempPath
-Start-Process -FilePath $tempPath -Wait
+$nvScript = 'https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1'
+$nvCmdWrapper = Join-Path $env:LOCALAPPDATA 'NV\nv.cmd'
+$nvExe = Join-Path $env:LOCALAPPDATA 'NV\nv.exe'
+Invoke-RestMethod $nvScript | Invoke-Expression
+if (Test-Path $nvCmdWrapper) {
+  & $nvCmdWrapper install neuralv@latest
+} elseif (Test-Path $nvExe) {
+  & $nvExe install neuralv@latest
+} else {
+  throw 'NV установлен некорректно: nv.exe не найден'
+}

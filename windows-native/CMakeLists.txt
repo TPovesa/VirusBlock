@@ -39,14 +39,18 @@ target_include_directories(NeuralV PRIVATE
 target_compile_definitions(NeuralV PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_link_libraries(NeuralV PRIVATE winhttp dwmapi shlwapi shell32 comctl32 urlmon ole32 uxtheme windowscodecs)
 
-add_executable(NeuralVSetup WIN32
-  setup/SetupMain.cpp
-)
+option(NEURALV_BUILD_LEGACY_SETUP "Build deprecated custom setup stub" OFF)
 
-target_include_directories(NeuralVSetup PRIVATE
-  "${CMAKE_SOURCE_DIR}/include"
-  "${CMAKE_BINARY_DIR}/generated"
-)
+if(NEURALV_BUILD_LEGACY_SETUP)
+  add_executable(NeuralVSetup WIN32
+    setup/SetupMain.cpp
+  )
 
-target_compile_definitions(NeuralVSetup PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
-target_link_libraries(NeuralVSetup PRIVATE winhttp shlwapi shell32 comctl32 urlmon ole32)
+  target_include_directories(NeuralVSetup PRIVATE
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_BINARY_DIR}/generated"
+  )
+
+  target_compile_definitions(NeuralVSetup PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(NeuralVSetup PRIVATE winhttp shlwapi shell32 comctl32 urlmon ole32)
+endif()
