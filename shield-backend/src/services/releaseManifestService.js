@@ -23,8 +23,12 @@ function rawBaseForSource(source) {
     return `https://raw.githubusercontent.com/${source.repo}/${source.branch}`;
 }
 
-function branchManifestUrl(source) {
-    return `${rawBaseForSource(source)}/manifest.json`;
+function branchManifestUrl(source, { bust = false } = {}) {
+    const base = `${rawBaseForSource(source)}/manifest.json`;
+    if (!bust) {
+        return base;
+    }
+    return `${base}?ts=${Date.now()}`;
 }
 
 function loadConfiguredReleaseVersion() {
@@ -243,7 +247,7 @@ function mergeArtifact(baseArtifact, incomingArtifact) {
 }
 
 async function fetchBranchManifest(source) {
-    const response = await fetch(branchManifestUrl(source), {
+    const response = await fetch(branchManifestUrl(source, { bust: true }), {
         method: 'GET',
         headers: { Accept: 'application/json' },
         signal: AbortSignal.timeout(RELEASE_BRANCH_TIMEOUT_MS)
