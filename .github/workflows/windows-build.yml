@@ -44,6 +44,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build Windows desktop GUI uber jar
+        continue-on-error: true
         shell: pwsh
         run: |
           & .\gradlew.bat --settings-file settings-desktop.gradle.kts :desktop-app:packageUberJarForCurrentOS --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log

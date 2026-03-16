@@ -80,11 +80,14 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build Linux desktop GUI uber jar
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          set +e
           ./gradlew --settings-file settings-desktop.gradle.kts :desktop-app:packageUberJarForCurrentOS --stacktrace --no-daemon --console=plain 2>&1 | tee linux-gui-build.log
           status=${PIPESTATUS[0]}
+          set -e
           echo "LINUX_GUI_BUILD_EXIT=$status" >> "$GITHUB_ENV"
 
       - name: Explain Linux desktop build failure
