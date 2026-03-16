@@ -32,7 +32,7 @@ std::wstring GenerateGuidString() {
     GUID guid{};
     CoCreateGuid(&guid);
     wchar_t buffer[64]{};
-    StringFromGUID2(guid, buffer, static_cast<int>(std::size(buffer)));
+    StringFromGUID2(guid, buffer, static_cast<int>(sizeof(buffer) / sizeof(buffer[0])));
     return buffer;
 }
 
