@@ -37,7 +37,7 @@ target_include_directories(NeuralV PRIVATE
 )
 
 target_compile_definitions(NeuralV PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
-target_link_libraries(NeuralV PRIVATE winhttp dwmapi shlwapi shell32 comctl32 urlmon ole32 uxtheme)
+target_link_libraries(NeuralV PRIVATE winhttp dwmapi shlwapi shell32 comctl32 urlmon ole32 uxtheme windowscodecs)
 
 add_executable(NeuralVSetup WIN32
   setup/SetupMain.cpp

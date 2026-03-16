@@ -1,12 +1,162 @@
 #include "NeuralV/Theme.h"
 
 #include <algorithm>
+#include <filesystem>
+#include <vector>
 #include <dwmapi.h>
+#include <wincodec.h>
 #include <winreg.h>
 
 namespace neuralv {
 
 namespace {
+
+struct ComScope {
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    ~ComScope() {
+        if (SUCCEEDED(hr)) {
+            CoUninitialize();
+        }
+    }
+
+    bool ok() const {
+        return SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE;
+    }
+};
+
+std::wstring ReadWallpaperPath() {
+    wchar_t buffer[MAX_PATH]{};
+    if (SystemParametersInfoW(SPI_GETDESKWALLPAPER, MAX_PATH, buffer, 0) && buffer[0] != L'\0') {
+        return buffer;
+    }
+    return {};
+}
+
+COLORREF AverageWallpaperColor(const std::wstring& wallpaperPath) {
+    if (wallpaperPath.empty() || !std::filesystem::exists(wallpaperPath)) {
+        return CLR_INVALID;
+    }
+
+    ComScope com;
+    if (!com.ok()) {
+        return CLR_INVALID;
+    }
+
+    IWICImagingFactory* factory = nullptr;
+    HRESULT hr = CoCreateInstance(
+        CLSID_WICImagingFactory,
+        nullptr,
+        CLSCTX_INPROC_SERVER,
+        IID_PPV_ARGS(&factory)
+    );
+    if (FAILED(hr) || !factory) {
+        return CLR_INVALID;
+    }
+
+    IWICBitmapDecoder* decoder = nullptr;
+    hr = factory->CreateDecoderFromFilename(wallpaperPath.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder);
+    if (FAILED(hr) || !decoder) {
+        factory->Release();
+        return CLR_INVALID;
+    }
+
+    IWICBitmapFrameDecode* frame = nullptr;
+    hr = decoder->GetFrame(0, &frame);
+    if (FAILED(hr) || !frame) {
+        decoder->Release();
+        factory->Release();
+        return CLR_INVALID;
+    }
+
+    IWICFormatConverter* converter = nullptr;
+    hr = factory->CreateFormatConverter(&converter);
+    if (FAILED(hr) || !converter) {
+        frame->Release();
+        decoder->Release();
+        factory->Release();
+        return CLR_INVALID;
+    }
+
+    hr = converter->Initialize(
+        frame,
+        GUID_WICPixelFormat32bppBGRA,
+        WICBitmapDitherTypeNone,
+        nullptr,
+        0.0,
+        WICBitmapPaletteTypeCustom
+    );
+    if (FAILED(hr)) {
+        converter->Release();
+        frame->Release();
+        decoder->Release();
+        factory->Release();
+        return CLR_INVALID;
+    }
+
+    UINT width = 0;
+    UINT height = 0;
+    hr = converter->GetSize(&width, &height);
+    if (FAILED(hr) || width == 0 || height == 0) {
+        converter->Release();
+        frame->Release();
+        decoder->Release();
+        factory->Release();
+        return CLR_INVALID;
+    }
+
+    const UINT sampleWidth = std::min<UINT>(width, 96);
+    const UINT sampleHeight = std::min<UINT>(height, 96);
+    const UINT stride = sampleWidth * 4;
+    std::vector<BYTE> pixels(stride * sampleHeight);
+
+    hr = converter->CopyPixels(nullptr, stride, static_cast<UINT>(pixels.size()), pixels.data());
+    if (FAILED(hr)) {
+        converter->Release();
+        frame->Release();
+        decoder->Release();
+        factory->Release();
+        return CLR_INVALID;
+    }
+
+    unsigned long long sumR = 0;
+    unsigned long long sumG = 0;
+    unsigned long long sumB = 0;
+    unsigned long long count = 0;
+    const UINT stepX = std::max<UINT>(1, sampleWidth / 24);
+    const UINT stepY = std::max<UINT>(1, sampleHeight / 24);
+
+    for (UINT y = 0; y < sampleHeight; y += stepY) {
+        for (UINT x = 0; x < sampleWidth; x += stepX) {
+            const size_t offset = static_cast<size_t>(y) * stride + static_cast<size_t>(x) * 4;
+            const BYTE b = pixels[offset + 0];
+            const BYTE g = pixels[offset + 1];
+            const BYTE r = pixels[offset + 2];
+            const int brightness = static_cast<int>(r) + static_cast<int>(g) + static_cast<int>(b);
+            if (brightness < 36 || brightness > 735) {
+                continue;
+            }
+            sumR += r;
+            sumG += g;
+            sumB += b;
+            ++count;
+        }
+    }
+
+    converter->Release();
+    frame->Release();
+    decoder->Release();
+    factory->Release();
+
+    if (count == 0) {
+        return CLR_INVALID;
+    }
+
+    return RGB(
+        static_cast<BYTE>(sumR / count),
+        static_cast<BYTE>(sumG / count),
+        static_cast<BYTE>(sumB / count)
+    );
+}
 
 COLORREF ReadAccentColor() {
     DWORD value = 0;
@@ -49,7 +199,8 @@ COLORREF BlendColor(COLORREF from, COLORREF to, double ratio) {
 ThemePalette LoadThemePalette() {
     ThemePalette palette;
     palette.dark = IsDarkMode();
-    palette.accent = ReadAccentColor();
+    const COLORREF wallpaperAccent = AverageWallpaperColor(ReadWallpaperPath());
+    palette.accent = wallpaperAccent == CLR_INVALID ? ReadAccentColor() : wallpaperAccent;
 
     if (palette.dark) {
         palette.background = RGB(18, 19, 24);
