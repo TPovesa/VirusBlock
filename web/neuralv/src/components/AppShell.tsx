@@ -104,6 +104,7 @@ export function AppShell() {
 
   const nextTheme = resolvedTheme === 'dark' ? 'light' : 'dark';
   const themeLabel = resolvedTheme === 'dark' ? 'Тёмная тема' : 'Светлая тема';
+  const currentYear = new Date().getFullYear();
 
   return (
     <div className="app-shell">
@@ -134,15 +135,19 @@ export function AppShell() {
           <button
             type="button"
             className="theme-toggle"
+            data-mode={resolvedTheme}
+            aria-pressed={resolvedTheme === 'dark'}
             aria-label={`${themeLabel}. Переключить на ${nextTheme === 'dark' ? 'тёмную' : 'светлую'}.`}
             title={`${themeLabel}. Переключить.`}
             onClick={() => setThemePreference(nextTheme)}
           >
-            <span className={`theme-icon-sun${resolvedTheme === 'light' ? ' is-active' : ''}`}>
-              <SunIcon />
-            </span>
-            <span className={`theme-icon-moon${resolvedTheme === 'dark' ? ' is-active' : ''}`}>
-              <MoonIcon />
+            <span className="theme-toggle-icons" aria-hidden="true">
+              <span className={`theme-icon theme-icon-sun${resolvedTheme === 'light' ? ' is-active' : ''}`}>
+                <SunIcon />
+              </span>
+              <span className={`theme-icon theme-icon-moon${resolvedTheme === 'dark' ? ' is-active' : ''}`}>
+                <MoonIcon />
+              </span>
             </span>
           </button>
         </div>
@@ -154,12 +159,13 @@ export function AppShell() {
 
       <footer className="site-footer">
         <nav className="site-footer-links" aria-label="Навигация внизу сайта">
-          <a href="/neuralv/">Главная</a>
-          <a href="/neuralv/android">Android</a>
-          <a href="/neuralv/windows">Windows</a>
-          <a href="/neuralv/linux">Linux</a>
+          {navItems.map((item) => (
+            <a key={item.to} href={`/neuralv${item.to === '/' ? '/' : item.to}`}>
+              {item.label}
+            </a>
+          ))}
         </nav>
-        <p className="site-footer-copy">NeuralV © 2026</p>
+        <p className="site-footer-copy">NeuralV © {currentYear}</p>
       </footer>
     </div>
   );

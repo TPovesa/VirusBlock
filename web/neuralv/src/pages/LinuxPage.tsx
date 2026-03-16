@@ -12,10 +12,6 @@ type DistroOption = {
   note: string;
 };
 
-type ArtifactMetadataShape = {
-  packages?: Partial<Record<DistroKey, PackageMetadata>>;
-};
-
 type PackageMetadata = {
   downloadUrl?: string;
   url?: string;
@@ -27,40 +23,46 @@ type PackageMetadata = {
   note?: string;
 };
 
-type GuiVariant = {
-  packageLabel: string;
-  buttonLabel: string;
-  downloadUrl?: string;
+type ArtifactMetadataShape = {
+  packages?: Partial<Record<DistroKey, PackageMetadata>>;
+};
+
+type InstallVariant = {
+  title: string;
+  lead: string;
   note: string;
-  commands: string;
+  commandText: string;
+  downloadUrl?: string;
+  buttonLabel: string;
 };
 
 const NV_INSTALL_URL = 'https://sosiskibot.ru/neuralv/install/nv.sh';
+const REPO_ROOT = 'https://sosiskibot.ru/neuralv/repo';
 
 const distroOptions: DistroOption[] = [
   {
     key: 'ubuntu',
     label: 'Ubuntu / Debian',
     title: 'Ubuntu, Debian, Pop!_OS, Mint',
-    note: 'Через .deb и установку в привычном apt-сценарии.'
+    note: 'Добавляем apt-репозиторий и ставим GUI как обычный пакет.'
   },
   {
     key: 'fedora',
     label: 'Fedora / RHEL',
     title: 'Fedora, Nobara, RHEL-совместимые',
-    note: 'Через .rpm и стандартный dnf-поток.'
+    note: 'Подключаем RPM-репозиторий и ставим GUI через dnf.'
   },
   {
     key: 'arch',
     label: 'Arch / Manjaro',
     title: 'Arch, EndeavourOS, Manjaro',
-    note: 'Через AppImage, без лишней ручной сборки.'
+    note: 'Подключаем pacman-репозиторий NeuralV и ставим пакет одной командой.'
   },
   {
     key: 'generic',
     label: 'Другой Linux',
     title: 'Любой совместимый x64 Linux',
-    note: 'Если нужен универсальный вариант, бери AppImage.'
+    note: 'Если у тебя другой дистрибутив, бери portable GUI-файл.'
   }
 ];
 
@@ -71,112 +73,156 @@ function getMetadata(artifact?: ReleaseArtifact): ArtifactMetadataShape | undefi
 }
 
 function getGuiPackage(distro: DistroKey, artifact?: ReleaseArtifact): PackageMetadata | undefined {
-  const packages = getMetadata(artifact)?.packages;
-  return packages?.[distro];
+  return getMetadata(artifact)?.packages?.[distro];
 }
 
-function buildGuiCommands(distro: DistroOption, artifact?: ReleaseArtifact): GuiVariant {
+function getPackageDownloadUrl(packageMeta?: PackageMetadata, artifact?: ReleaseArtifact) {
+  return packageMeta?.downloadUrl ?? packageMeta?.url ?? artifact?.downloadUrl;
+}
+
+function buildUbuntuCommands(packageUrl?: string) {
+  return [
+    '# 1) Подключи репозиторий NeuralV',
+    `curl -fsSL ${REPO_ROOT}/debian/neuralv.gpg | sudo gpg --dearmor -o /usr/share/keyrings/neuralv-archive-keyring.gpg`,
+    `echo "deb [signed-by=/usr/share/keyrings/neuralv-archive-keyring.gpg] ${REPO_ROOT}/debian stable main" | sudo tee /etc/apt/sources.list.d/neuralv.list >/dev/null`,
+    'sudo apt update',
+    '',
+    '# 2) Установи GUI',
+    'sudo apt install neuralv',
+    '',
+    '# 3) Если нужен локальный пакет',
+    `# ${packageUrl ?? '<deb-url>'}`
+  ].join('\n');
+}
+
+function buildFedoraCommands(packageUrl?: string) {
+  return [
+    '# 1) Подключи репозиторий NeuralV',
+    `sudo rpm --import ${REPO_ROOT}/rpm/RPM-GPG-KEY-neuralv`,
+    'sudo tee /etc/yum.repos.d/neuralv.repo >/dev/null <<\'EOF\'',
+    '[neuralv]',
+    'name=NeuralV',
+    `baseurl=${REPO_ROOT}/rpm`,
+    'enabled=1',
+    'gpgcheck=1',
+    `gpgkey=${REPO_ROOT}/rpm/RPM-GPG-KEY-neuralv`,
+    'EOF',
+    '',
+    '# 2) Установи GUI',
+    'sudo dnf install neuralv',
+    '',
+    '# 3) Если нужен локальный пакет',
+    `# ${packageUrl ?? '<rpm-url>'}`
+  ].join('\n');
+}
+
+function buildArchCommands(packageUrl?: string) {
+  return [
+    '# 1) Подключи репозиторий NeuralV',
+    'sudo install -d /etc/pacman.d',
+    `echo "[neuralv]\nServer = ${REPO_ROOT}/arch/$arch" | sudo tee /etc/pacman.d/neuralv-mirrorlist >/dev/null`,
+    'if ! grep -q "^\[neuralv\]" /etc/pacman.conf; then',
+    '  printf "\n[neuralv]\nInclude = /etc/pacman.d/neuralv-mirrorlist\n" | sudo tee -a /etc/pacman.conf >/dev/null',
+    'fi',
+    'sudo pacman -Sy',
+    '',
+    '# 2) Установи GUI',
+    'sudo pacman -S neuralv',
+    '',
+    '# 3) Если нужен portable-файл',
+    `# ${packageUrl ?? '<appimage-url>'}`
+  ].join('\n');
+}
+
+function buildGenericCommands(packageUrl?: string) {
+  return [
+    '# 1) Скачай portable GUI',
+    `curl -L "${packageUrl ?? '<gui-url>'}" -o NeuralV.AppImage`,
+    '',
+    '# 2) Дай права на запуск',
+    'chmod +x NeuralV.AppImage',
+    '',
+    '# 3) Запусти GUI',
+    './NeuralV.AppImage'
+  ].join('\n');
+}
+
+function buildGuiVariant(distro: DistroOption, artifact?: ReleaseArtifact): InstallVariant {
   const packageMeta = getGuiPackage(distro.key, artifact);
-  const rawPackageType = packageMeta?.packageType ?? packageMeta?.format;
-  const packageType = typeof rawPackageType === 'string'
-    ? rawPackageType.toLowerCase()
-    : (distro.key === 'ubuntu' ? 'deb' : distro.key === 'fedora' ? 'rpm' : 'appimage');
-  const downloadUrl = packageMeta?.downloadUrl ?? packageMeta?.url ?? artifact?.downloadUrl;
+  const downloadUrl = getPackageDownloadUrl(packageMeta, artifact);
+  const packageType = String(packageMeta?.packageType ?? packageMeta?.format ?? '').toLowerCase();
   const repoCommands = Array.isArray(packageMeta?.repoCommands)
-    ? packageMeta?.repoCommands.filter((item): item is string => typeof item === 'string' && item.length > 0)
+    ? packageMeta.repoCommands.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
     : [];
   const installCommands = Array.isArray(packageMeta?.installCommands)
-    ? packageMeta?.installCommands.filter((item): item is string => typeof item === 'string' && item.length > 0)
+    ? packageMeta.installCommands.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
     : [];
 
+  let commandText = '';
   if (repoCommands.length > 0 || installCommands.length > 0) {
-    return {
-      packageLabel: packageType.startsWith('.') ? packageType : `.${packageType}`,
-      buttonLabel: `Скачать ${packageType.startsWith('.') ? packageType : `.${packageType}`}`,
-      downloadUrl,
-      note: packageMeta?.note ?? distro.note,
-      commands: [
-        `# ${distro.title}`,
-        '# 1) Подключи репозиторий NeuralV',
-        ...repoCommands,
-        '',
-        '# 2) Установи GUI через системный менеджер пакетов',
-        ...installCommands
-      ].join('\n')
-    };
+    commandText = [
+      '# 1) Подключи репозиторий NeuralV',
+      ...repoCommands,
+      '',
+      '# 2) Установи GUI через системный менеджер пакетов',
+      ...installCommands
+    ].join('\n');
+  } else {
+    switch (distro.key) {
+      case 'ubuntu':
+        commandText = buildUbuntuCommands(downloadUrl);
+        break;
+      case 'fedora':
+        commandText = buildFedoraCommands(downloadUrl);
+        break;
+      case 'arch':
+        commandText = buildArchCommands(downloadUrl);
+        break;
+      default:
+        commandText = buildGenericCommands(downloadUrl);
+        break;
+    }
   }
 
-  if (packageType === 'deb') {
-    return {
-      packageLabel: '.deb',
-      buttonLabel: 'Скачать .deb',
-      downloadUrl,
-      note: packageMeta?.note ?? distro.note,
-      commands: [
-        `# ${distro.title}`,
-        '# 1) Скачай GUI-пакет',
-        `curl -L "${downloadUrl ?? '<gui-deb-url>'}" -o neuralv.deb`,
-        '',
-        '# 2) Установи его через apt',
-        'sudo apt install ./neuralv.deb',
-        '',
-        '# 3) Запусти NeuralV',
-        'neuralv'
-      ].join('\n')
-    };
-  }
-
-  if (packageType === 'rpm') {
-    return {
-      packageLabel: '.rpm',
-      buttonLabel: 'Скачать .rpm',
-      downloadUrl,
-      note: packageMeta?.note ?? distro.note,
-      commands: [
-        `# ${distro.title}`,
-        '# 1) Скачай GUI-пакет',
-        `curl -L "${downloadUrl ?? '<gui-rpm-url>'}" -o neuralv.rpm`,
-        '',
-        '# 2) Установи его через dnf',
-        'sudo dnf install ./neuralv.rpm',
-        '',
-        '# 3) Запусти NeuralV',
-        'neuralv'
-      ].join('\n')
-    };
-  }
+  const buttonLabel = distro.key === 'ubuntu'
+    ? 'Скачать .deb'
+    : distro.key === 'fedora'
+      ? 'Скачать .rpm'
+      : distro.key === 'arch'
+        ? (packageType.includes('pkg') ? 'Скачать пакет' : 'Скачать AppImage')
+        : 'Скачать GUI';
 
   return {
-    packageLabel: 'AppImage',
-    buttonLabel: 'Скачать AppImage',
-    downloadUrl,
+    title: 'GUI для Linux',
+    lead: distro.title,
     note: packageMeta?.note ?? distro.note,
-    commands: [
-      `# ${distro.title}`,
-      '# 1) Скачай GUI-файл',
-      `curl -L "${downloadUrl ?? '<gui-appimage-url>'}" -o NeuralV.AppImage`,
-      '',
-      '# 2) Дай права на запуск',
-      'chmod +x NeuralV.AppImage',
-      '',
-      '# 3) Запусти GUI',
-      './NeuralV.AppImage'
-    ].join('\n')
+    commandText,
+    downloadUrl,
+    buttonLabel
   };
 }
 
-function buildCliCommands(): string {
-  return [
-    '# 1) Установи nv',
-    `curl -fsSL ${NV_INSTALL_URL} | sh`,
-    '',
-    '# 2) Поставь NeuralV CLI',
-    'nv install neuralv@latest',
-    '',
-    '# 3) Проверь версии',
-    'nv -v',
-    'neuralv -v'
-  ].join('\n');
+function buildCliVariant(shellArtifact?: ReleaseArtifact, nvArtifact?: ReleaseArtifact): InstallVariant {
+  const preferredDownload = nvArtifact?.downloadUrl ?? shellArtifact?.downloadUrl ?? NV_INSTALL_URL;
+  const buttonLabel = nvArtifact?.downloadUrl ? 'Скачать nv' : 'Скачать nv.sh';
+
+  return {
+    title: 'CLI через nv',
+    lead: 'Без выбора дистрибутива',
+    note: 'CLI ставится одинаково: сначала nv, потом сама утилита. Подходит для терминала, SSH и headless-машин.',
+    commandText: [
+      '# 1) Установи nv',
+      `curl -fsSL ${NV_INSTALL_URL} | sh`,
+      '',
+      '# 2) Поставь NeuralV CLI',
+      'nv install neuralv@latest',
+      '',
+      '# 3) Запусти клиент',
+      'neuralv'
+    ].join('\n'),
+    downloadUrl: preferredDownload,
+    buttonLabel
+  };
 }
 
 export function LinuxPage() {
@@ -198,15 +244,9 @@ export function LinuxPage() {
   }, [guiReady, installMode]);
 
   const selectedDistro = distroOptions.find((item) => item.key === distro) ?? distroOptions[0];
-  const guiVariant = useMemo(() => buildGuiCommands(selectedDistro, guiArtifact), [guiArtifact, selectedDistro]);
-  const commandText = installMode === 'gui' ? guiVariant.commands : buildCliCommands();
-  const actionUrl = installMode === 'gui'
-    ? guiVariant.downloadUrl
-    : (shellArtifact?.downloadUrl ?? nvArtifact?.downloadUrl);
-  const actionLabel = installMode === 'gui' ? guiVariant.buttonLabel : 'Скачать CLI';
-  const installLead = installMode === 'gui'
-    ? `${selectedDistro.title}. ${guiVariant.note}`
-    : 'CLI ставится через nv. Подходит для терминала, SSH и машин без тяжёлого интерфейса.';
+  const guiVariant = useMemo(() => buildGuiVariant(selectedDistro, guiArtifact), [guiArtifact, selectedDistro]);
+  const cliVariant = useMemo(() => buildCliVariant(shellArtifact, nvArtifact), [nvArtifact, shellArtifact]);
+  const activeVariant = installMode === 'gui' ? guiVariant : cliVariant;
 
   const handleCopy = async () => {
     if (typeof navigator === 'undefined' || !navigator.clipboard) {
@@ -214,7 +254,7 @@ export function LinuxPage() {
     }
 
     try {
-      await navigator.clipboard.writeText(commandText);
+      await navigator.clipboard.writeText(activeVariant.commandText);
       setCopyState('done');
       window.setTimeout(() => setCopyState('idle'), 1600);
     } catch {
@@ -226,16 +266,16 @@ export function LinuxPage() {
     <div className="page-stack">
       <section className="hero-card platform-hero linux-hero">
         <div className="hero-copy">
-          <h1>Linux без длинных мануалов.</h1>
-          <p>
-            Если нужен рабочий стол, бери GUI. Если нужен терминал и быстрый старт, ставь CLI через nv.
-          </p>
+          <h1>NeuralV для Linux</h1>
+          <p>Выбираешь GUI или CLI и сразу получаешь готовую установку без длинной инструкции.</p>
           <div className="hero-actions">
-            <a className="nv-button" href="#linux-install">Как установить</a>
+            <a className="nv-button" href="#linux-install">Установка</a>
             {guiReady && guiArtifact?.downloadUrl ? (
               <a className="nv-button tonal" href={guiArtifact.downloadUrl} target="_blank" rel="noreferrer">Скачать GUI</a>
+            ) : cliReady && activeVariant.downloadUrl ? (
+              <a className="nv-button tonal" href={activeVariant.downloadUrl} target="_blank" rel="noreferrer">{activeVariant.buttonLabel}</a>
             ) : (
-              <button className="nv-button tonal is-disabled" type="button" disabled>GUI скоро</button>
+              <button className="nv-button tonal is-disabled" type="button" disabled>Файлы скоро</button>
             )}
           </div>
         </div>
@@ -247,7 +287,7 @@ export function LinuxPage() {
           </div>
           <div className="mini-stat">
             <strong>{cliReady ? 'CLI готов' : 'CLI скоро'}</strong>
-            <span className="hero-support-text">Терминал, SSH и серверные сценарии.</span>
+            <span className="hero-support-text">Терминал и серверные сценарии.</span>
           </div>
         </div>
       </section>
@@ -297,18 +337,23 @@ export function LinuxPage() {
                 </div>
                 <p className="chooser-note">{selectedDistro.note}</p>
               </div>
-            ) : null}
+            ) : (
+              <div className="chooser-section">
+                <span className="chooser-label">CLI</span>
+                <p className="chooser-note">Один install-flow для всех Linux-систем. Без выбора дистрибутива и без лишних шагов.</p>
+              </div>
+            )}
           </aside>
 
           <div className="content-card install-card">
             <div className="install-card-head">
               <div>
-                <h3>{installMode === 'gui' ? 'GUI для Linux' : 'CLI через nv'}</h3>
-                <p>{installLead}</p>
+                <h3>{activeVariant.title}</h3>
+                <p>{activeVariant.lead}</p>
               </div>
               <div className="install-card-head-actions">
-                {actionUrl ? (
-                  <a className="nv-button tonal" href={actionUrl} target="_blank" rel="noreferrer">{actionLabel}</a>
+                {activeVariant.downloadUrl ? (
+                  <a className="nv-button tonal" href={activeVariant.downloadUrl} target="_blank" rel="noreferrer">{activeVariant.buttonLabel}</a>
                 ) : (
                   <button className="nv-button tonal is-disabled" type="button" disabled>
                     {installMode === 'gui' ? 'Пакет скоро' : 'CLI скоро'}
@@ -320,8 +365,10 @@ export function LinuxPage() {
               </div>
             </div>
 
+            <p>{activeVariant.note}</p>
+
             <div className="command-shell">
-              <pre>{commandText}</pre>
+              <pre>{activeVariant.commandText}</pre>
             </div>
           </div>
         </div>

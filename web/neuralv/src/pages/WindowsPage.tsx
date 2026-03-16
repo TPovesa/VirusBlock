@@ -1,25 +1,10 @@
 import { getArtifact, isArtifactReady } from '../lib/manifest';
 import { useReleaseManifest } from '../hooks/useReleaseManifest';
 
-const features = [
-  {
-    title: 'Проверка файлов',
-    text: 'Для EXE, DLL и обычных пользовательских сценариев.'
-  },
-  {
-    title: 'Фоновый режим',
-    text: 'Контроль важных зон без перегруженного интерфейса.'
-  },
-  {
-    title: 'Один аккаунт',
-    text: 'Тот же вход, что на Android и Linux.'
-  }
-];
-
 const installSteps = [
-  'Скачай архив или установщик.',
-  'Открой приложение и войди в аккаунт.',
-  'Запусти первую проверку или включи фоновой режим.'
+  '1. Скачай сборку для Windows.',
+  '2. Открой приложение и войди в аккаунт.',
+  '3. Запусти проверку или включи фоновый режим.'
 ];
 
 export function WindowsPage() {
@@ -33,55 +18,49 @@ export function WindowsPage() {
         <div className="hero-copy">
           <h1>NeuralV для Windows.</h1>
           <p>
-            Обычное настольное приложение для проверки файлов и фонового контроля на ПК.
+            Обычное настольное приложение для проверки файлов и фонового контроля на ПК без
+            перегруженного интерфейса.
           </p>
           <div className="hero-actions">
             {ready && artifact?.downloadUrl ? (
-              <a className="nv-button" href={artifact.downloadUrl} target="_blank" rel="noreferrer">Скачать Windows</a>
+              <a className="nv-button" href={artifact.downloadUrl} target="_blank" rel="noreferrer">
+                Скачать Windows
+              </a>
             ) : (
-              <button className="nv-button is-disabled" type="button" disabled>Сборка скоро</button>
+              <button className="nv-button is-disabled" type="button" disabled>
+                Сборка скоро
+              </button>
             )}
+            <a className="nv-button tonal" href="#windows-install">
+              Установка
+            </a>
           </div>
         </div>
 
         <div className="hero-panel compact-panel">
-          <div className="mini-stat">
+          <article className="mini-stat">
             <strong>Windows 10 / 11</strong>
-            <span className="hero-support-text">GUI-клиент для обычного рабочего стола.</span>
-          </div>
+            <span className="hero-support-text">
+              GUI-клиент для обычного рабочего стола: проверка файлов, история и тот же аккаунт,
+              что на Android и Linux.
+            </span>
+          </article>
         </div>
       </section>
 
-      <section className="section-block">
-        <div className="card-grid three-up compact-grid">
-          {features.map((feature) => (
-            <article key={feature.title} className="content-card compact-card">
-              <h3>{feature.title}</h3>
-              <p>{feature.text}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="section-block">
-        <div className="section-head section-head-tight">
-          <h2>Установка</h2>
-        </div>
-
+      <section id="windows-install" className="section-block">
         <div className="install-layout install-layout-static">
           <article className="content-card chooser-card">
-            <h3>Что внутри</h3>
-            <p>Скачиваешь сборку, входишь в аккаунт и сразу переходишь к проверке.</p>
+            <h3>Установка</h3>
+            <p>Скачай сборку, войди в аккаунт и сразу переходи к проверке.</p>
           </article>
 
           <article className="content-card install-card">
             <div className="install-card-head simple-head">
-              <div>
-                <h3>Три шага</h3>
-              </div>
+              <h3>Как поставить</h3>
             </div>
             <div className="command-shell light-shell">
-              <pre>{installSteps.map((step, index) => `${index + 1}. ${step}`).join('\n')}</pre>
+              <pre>{installSteps.join('\n')}</pre>
             </div>
           </article>
         </div>

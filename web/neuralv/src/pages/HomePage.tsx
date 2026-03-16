@@ -2,9 +2,9 @@ import { getArtifact, isArtifactReady, ReleaseArtifact } from '../lib/manifest';
 import { useReleaseManifest } from '../hooks/useReleaseManifest';
 
 const productPoints = [
-  'Один аккаунт для телефона, ноутбука и рабочего ПК.',
-  'Понятные проверки без перегруженного интерфейса.',
-  'Отдельные версии для Android, Windows и Linux.'
+  'Один вход для всех версий.',
+  'Проверки для телефона, ПК и Linux.',
+  'Быстрый старт без лишней возни.'
 ];
 
 const baseUrl = import.meta.env.BASE_URL;
@@ -14,8 +14,8 @@ const deviceShowcaseUrl = `${baseUrl}media/neuralv-devices.svg`;
 // и пропиши src в формате `${baseUrl}media/screenshots/android-home.png`.
 // Если src пустой, на сайте останется аккуратная заглушка.
 const screenshotSlots = [
-  { title: 'Android', caption: 'Главный экран', src: '' },
-  { title: 'Windows', caption: 'Проверка файлов', src: '' },
+  { title: 'Android', caption: 'Телефон', src: '' },
+  { title: 'Windows', caption: 'Рабочий стол', src: '' },
   { title: 'Linux', caption: 'GUI и CLI', src: '' }
 ];
 
@@ -48,13 +48,10 @@ export function HomePage() {
     <div className="page-stack">
       <section className="hero-card home-hero">
         <div className="hero-copy hero-copy-wide">
-          <h1>NeuralV для телефона, ноутбука и рабочего ПК.</h1>
-          <p>
-            Выбираешь свою платформу, скачиваешь нужную версию и сразу переходишь к проверке.
-          </p>
+          <h1>NeuralV для Android, Windows и Linux.</h1>
+          <p>Скачай свою версию и переходи к проверке без длинных инструкций.</p>
           <div className="hero-actions">
             <a className="nv-button" href="#downloads">Скачать</a>
-            <a className="nv-button tonal" href="#overview">О продукте</a>
           </div>
         </div>
       </section>
@@ -62,10 +59,8 @@ export function HomePage() {
       <section id="overview" className="showcase-band">
         <article className="content-card showcase-card">
           <div className="showcase-copy">
-            <h2>Одна система, несколько устройств.</h2>
-            <p>
-              NeuralV собирает под одной крышей телефон, настольный клиент и Linux-инструменты. Всё коротко, понятно и без перегруженных инструкций.
-            </p>
+            <h2>Один продукт для всех устройств.</h2>
+            <p>Телефон, настольный клиент и Linux-инструменты работают как одна система.</p>
             <ul className="showcase-points">
               {productPoints.map((point) => (
                 <li key={point}>{point}</li>
@@ -82,8 +77,8 @@ export function HomePage() {
 
         <article className="content-card screenshot-card">
           <div className="screenshot-head">
-            <h3>Скриншоты интерфейса</h3>
-            <p>Здесь можно показать Android, Windows и Linux рядом, без отдельной галереи.</p>
+            <h3>Скриншоты продукта</h3>
+            <p>Здесь можно показать Android, Windows и Linux рядом в одном аккуратном блоке.</p>
           </div>
 
           <div className="screenshot-grid">
@@ -108,7 +103,7 @@ export function HomePage() {
 
       <section id="downloads" className="section-block">
         <div className="section-head section-head-tight">
-          <h2>Скачать свою версию</h2>
+          <h2>Скачать</h2>
         </div>
 
         <div className="card-grid three-up">
@@ -116,12 +111,12 @@ export function HomePage() {
             <div className="platform-card-head">
               <div>
                 <h3>Android</h3>
-                <p>Проверка приложений и фоновые сценарии на телефоне.</p>
+                <p>Телефон и планшет.</p>
               </div>
             </div>
             <div className="platform-meta">Android 10 и новее</div>
             <div className="card-actions">
-              <DownloadButton artifact={androidArtifact} label="Скачать" disabledLabel="APK скоро" />
+              <DownloadButton artifact={androidArtifact} label="Скачать APK" disabledLabel="APK скоро" />
             </div>
           </article>
 
@@ -129,12 +124,12 @@ export function HomePage() {
             <div className="platform-card-head">
               <div>
                 <h3>Windows</h3>
-                <p>Настольный клиент для файлов, автозапуска и фоновой защиты.</p>
+                <p>Настольный клиент для ПК.</p>
               </div>
             </div>
             <div className="platform-meta">Windows 10 и 11</div>
             <div className="card-actions">
-              <DownloadButton artifact={windowsArtifact} label="Скачать" disabledLabel="Сборка скоро" />
+              <DownloadButton artifact={windowsArtifact} label="Скачать Windows" disabledLabel="Сборка скоро" />
             </div>
           </article>
 

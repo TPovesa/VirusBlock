@@ -217,28 +217,48 @@ ul {
   place-items: center;
   cursor: pointer;
   color: var(--nv-text-soft);
-  transition: background-color 180ms ease, color 180ms ease, transform 180ms ease;
+  transition: color 180ms ease, transform 180ms ease;
 }
 
 .theme-toggle:hover {
-  background: var(--nv-primary-soft);
   color: var(--nv-text);
   transform: translateY(-1px);
 }
 
-.theme-toggle span {
+.theme-toggle:focus-visible {
+  outline: none;
+}
+
+.theme-toggle-icons {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
+.theme-icon {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
   opacity: 0;
-  transform: scale(0.72) rotate(-16deg);
-  transition: opacity 220ms ease, transform 220ms ease;
+  transform: scale(0.68) rotate(-28deg);
+  transition:
+    opacity 260ms ease,
+    transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.theme-toggle span.is-active {
+.theme-icon.is-active {
   opacity: 1;
   transform: scale(1) rotate(0deg);
+}
+
+.theme-toggle[data-mode='dark'] .theme-icon-sun {
+  transform: scale(0.62) rotate(48deg);
+}
+
+.theme-toggle[data-mode='light'] .theme-icon-moon {
+  transform: scale(0.62) rotate(-48deg);
 }
 
 .theme-toggle svg {
@@ -689,39 +709,39 @@ ul {
 
 .site-footer {
   margin-top: 24px;
-  padding: 18px 0 4px;
+  padding: 14px 0 4px;
   display: grid;
   justify-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .site-footer-links {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 18px;
   flex-wrap: wrap;
 }
 
 .site-footer-links a {
-  min-height: 40px;
+  min-height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 16px;
+  padding: 0 8px;
   border-radius: 999px;
   color: var(--nv-text-soft);
-  transition: background-color 180ms ease, color 180ms ease, transform 180ms ease;
+  transition: color 180ms ease, transform 180ms ease;
 }
 
 .site-footer-links a:hover {
-  background: var(--nv-primary-soft);
   color: var(--nv-text);
   transform: translateY(-1px);
 }
 
 .site-footer-copy {
   font-size: 0.94rem;
+  text-align: center;
 }
 
 @keyframes deviceFloat {
