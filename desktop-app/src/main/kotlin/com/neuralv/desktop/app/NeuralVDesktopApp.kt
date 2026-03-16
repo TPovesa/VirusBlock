@@ -2,11 +2,10 @@ package com.neuralv.desktop.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,41 +14,30 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Api
-import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.DarkMode
-import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.UploadFile
-import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -62,17 +50,14 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.FrameWindowScope
 import com.neuralv.desktop.app.theme.NeuralVDesktopTheme
 import com.neuralv.desktop.core.api.NeuralVApiClient
 import com.neuralv.desktop.core.model.AuthChallengeMode
@@ -81,15 +66,14 @@ import com.neuralv.desktop.core.model.DesktopArtifactKind
 import com.neuralv.desktop.core.model.DesktopPlatform
 import com.neuralv.desktop.core.model.DesktopScanMode
 import com.neuralv.desktop.core.model.DesktopScanResult
+import com.neuralv.desktop.core.model.DesktopStartScanRequest
 import com.neuralv.desktop.core.model.ReleaseArtifact
 import com.neuralv.desktop.core.model.SessionState
 import com.neuralv.desktop.core.repository.AuthRepository
 import com.neuralv.desktop.core.repository.DesktopScanRepository
 import com.neuralv.desktop.core.service.SessionStore
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
@@ -106,40 +90,46 @@ private enum class DesktopScreen {
     SETTINGS
 }
 
-private enum class ThemeChoice { SYSTEM, LIGHT, DARK }
+private enum class ThemeMode {
+    SYSTEM,
+    LIGHT,
+    DARK
+}
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FrameWindowScope.NeuralVDesktopApp() {
-    var backendUrl by rememberSaveable { mutableStateOf("https://sosiskibot.ru/basedata") }
-    var themeChoice by rememberSaveable { mutableStateOf(ThemeChoice.SYSTEM) }
-    var dynamicAccentEnabled by rememberSaveable { mutableStateOf(true) }
-    var screen by rememberSaveable { mutableStateOf(DesktopScreen.WELCOME) }
-    var authMode by rememberSaveable { mutableStateOf(AuthChallengeMode.LOGIN) }
-    var authName by rememberSaveable { mutableStateOf("") }
-    var authEmail by rememberSaveable { mutableStateOf("") }
-    var authPassword by rememberSaveable { mutableStateOf("") }
-    var authCode by rememberSaveable { mutableStateOf("") }
+fun NeuralVDesktopApp() {
+    var backendUrl by remember { mutableStateOf("https://sosiskibot.ru/basedata") }
+    var themeMode by remember { mutableStateOf(ThemeMode.SYSTEM) }
+    var screen by remember { mutableStateOf(DesktopScreen.WELCOME) }
+    var authMode by remember { mutableStateOf(AuthChallengeMode.LOGIN) }
+    var authName by remember { mutableStateOf("") }
+    var authEmail by remember { mutableStateOf("") }
+    var authPassword by remember { mutableStateOf("") }
+    var authCode by remember { mutableStateOf("") }
     var challengeTicket by remember { mutableStateOf<ChallengeTicket?>(null) }
     var session by remember { mutableStateOf<SessionState?>(null) }
     var activeScan by remember { mutableStateOf<DesktopScanResult?>(null) }
+    var selectedMode by remember { mutableStateOf(DesktopScanMode.FULL) }
     var selectedArtifact by remember { mutableStateOf<File?>(null) }
-    var selectedMode by rememberSaveable { mutableStateOf(DesktopScanMode.FULL) }
-    var statusMessage by remember { mutableStateOf<String?>(null) }
+    var isBusy by remember { mutableStateOf(false) }
+    var infoMessage by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showThemeDialog by remember { mutableStateOf(false) }
-    var isBusy by remember { mutableStateOf(false) }
     val history = remember { mutableStateListOf<DesktopScanResult>() }
     val manifestArtifacts = remember { mutableStateListOf<ReleaseArtifact>() }
+    val sessionStore = remember { SessionStore() }
     val scope = rememberCoroutineScope()
 
-    val apiClient = remember(backendUrl) { NeuralVApiClient(baseUrl = backendUrl) }
-    val sessionStore = remember { SessionStore() }
+    val apiClient = remember(backendUrl) { NeuralVApiClient(backendUrl) }
     val authRepository = remember(backendUrl) { AuthRepository(apiClient, sessionStore, backendUrl) }
     val scanRepository = remember(backendUrl) { DesktopScanRepository(apiClient) }
 
     LaunchedEffect(backendUrl) {
         session = authRepository.readCachedSession()
+        if (session != null && screen == DesktopScreen.WELCOME) {
+            screen = DesktopScreen.HOME
+        }
         runCatching { scanRepository.releaseManifest() }
             .onSuccess {
                 manifestArtifacts.clear()
@@ -148,22 +138,22 @@ fun FrameWindowScope.NeuralVDesktopApp() {
     }
 
     NeuralVDesktopTheme(
-        darkTheme = when (themeChoice) {
-            ThemeChoice.SYSTEM -> isSystemInDarkTheme()
-            ThemeChoice.LIGHT -> false
-            ThemeChoice.DARK -> true
+        darkTheme = when (themeMode) {
+            ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            ThemeMode.LIGHT -> false
+            ThemeMode.DARK -> true
         },
-        dynamicAccentEnabled = dynamicAccentEnabled
+        dynamicAccentEnabled = true
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.surfaceContainerHighest,
-                            MaterialTheme.colorScheme.surface,
-                            MaterialTheme.colorScheme.background
+                        listOf(
+                            MaterialTheme.colorScheme.background,
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            MaterialTheme.colorScheme.surface
                         )
                     )
                 )
@@ -176,27 +166,22 @@ fun FrameWindowScope.NeuralVDesktopApp() {
                             Column {
                                 Text("NeuralV", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                                 Text(
-                                    text = when (screen) {
-                                        DesktopScreen.WELCOME -> "Windows и Linux GUI"
-                                        DesktopScreen.AUTH -> if (challengeTicket == null) "Единая авторизация" else "Подтверждение по коду"
-                                        DesktopScreen.HOME -> "Панель управления"
-                                        DesktopScreen.SCAN -> "Server-driven desktop scan"
-                                        DesktopScreen.RESULTS -> "Результаты проверки"
-                                        DesktopScreen.HISTORY -> "История"
-                                        DesktopScreen.SETTINGS -> "Настройки"
-                                    },
+                                    screenTitle(screen),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         },
                         actions = {
+                            IconButton(onClick = { showThemeDialog = true }) {
+                                Icon(
+                                    imageVector = if (themeMode == ThemeMode.DARK) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                                    contentDescription = "Тема"
+                                )
+                            }
                             if (session != null) {
                                 IconButton(onClick = { screen = DesktopScreen.HISTORY }) {
                                     Icon(Icons.Rounded.History, contentDescription = "История")
-                                }
-                                IconButton(onClick = { showThemeDialog = true }) {
-                                    Icon(Icons.Rounded.DarkMode, contentDescription = "Тема")
                                 }
                                 IconButton(onClick = { screen = DesktopScreen.SETTINGS }) {
                                     Icon(Icons.Rounded.Settings, contentDescription = "Настройки")
@@ -205,31 +190,38 @@ fun FrameWindowScope.NeuralVDesktopApp() {
                         }
                     )
                 }
-            ) { padding ->
+            ) { paddingValues ->
                 when (screen) {
-                    DesktopScreen.WELCOME -> WelcomeView(
-                        modifier = Modifier.padding(padding),
-                        releaseArtifacts = manifestArtifacts,
-                        onContinue = {
-                            screen = if (session == null) DesktopScreen.AUTH else DesktopScreen.HOME
-                        }
+                    DesktopScreen.WELCOME -> WelcomeScreen(
+                        modifier = Modifier.padding(paddingValues),
+                        artifacts = manifestArtifacts,
+                        onEnter = { screen = if (session == null) DesktopScreen.AUTH else DesktopScreen.HOME }
                     )
-                    DesktopScreen.AUTH -> AuthView(
-                        modifier = Modifier.padding(padding),
+                    DesktopScreen.AUTH -> AuthScreen(
+                        modifier = Modifier.padding(paddingValues),
                         authMode = authMode,
+                        challengePending = challengeTicket != null,
                         name = authName,
                         email = authEmail,
                         password = authPassword,
                         code = authCode,
-                        challengePending = challengeTicket != null,
-                        isBusy = isBusy,
+                        infoMessage = infoMessage,
                         errorMessage = errorMessage,
-                        infoMessage = statusMessage,
+                        isBusy = isBusy,
                         onModeChange = { authMode = it },
                         onNameChange = { authName = it },
                         onEmailChange = { authEmail = it },
                         onPasswordChange = { authPassword = it },
                         onCodeChange = { authCode = it },
+                        onBack = {
+                            if (challengeTicket != null) {
+                                challengeTicket = null
+                                authCode = ""
+                                infoMessage = null
+                            } else {
+                                screen = DesktopScreen.WELCOME
+                            }
+                        },
                         onSubmit = {
                             scope.launch {
                                 isBusy = true
@@ -240,75 +232,68 @@ fun FrameWindowScope.NeuralVDesktopApp() {
                                             AuthChallengeMode.LOGIN -> authRepository.startLogin(authEmail, authPassword)
                                             AuthChallengeMode.REGISTER -> authRepository.startRegister(authName, authEmail, authPassword)
                                         }
-                                        statusMessage = "Код отправлен на почту."
+                                        infoMessage = "Код отправлен на почту"
                                     } else {
                                         session = authRepository.verifyChallenge(requireNotNull(challengeTicket), authCode)
                                         challengeTicket = null
                                         authCode = ""
+                                        infoMessage = "Сессия сохранена"
                                         screen = DesktopScreen.HOME
-                                        statusMessage = "Сессия восстановлена."
                                     }
-                                }.onFailure { errorMessage = it.message ?: "Не удалось завершить авторизацию" }
+                                }.onFailure {
+                                    errorMessage = it.message ?: "Не удалось завершить авторизацию"
+                                }
                                 isBusy = false
                             }
-                        },
-                        onBack = {
-                            challengeTicket = null
-                            authCode = ""
-                            screen = DesktopScreen.WELCOME
                         }
                     )
-                    DesktopScreen.HOME -> HomeView(
-                        modifier = Modifier.padding(padding),
+                    DesktopScreen.HOME -> HomeScreen(
+                        modifier = Modifier.padding(paddingValues),
                         session = session,
-                        releaseArtifacts = manifestArtifacts,
                         activeScan = activeScan,
                         history = history,
-                        onOpenScan = { screen = DesktopScreen.SCAN },
-                        onOpenHistory = { screen = DesktopScreen.HISTORY },
-                        onOpenSettings = { screen = DesktopScreen.SETTINGS },
-                        onResumeActive = { screen = DesktopScreen.RESULTS },
+                        onScan = { screen = DesktopScreen.SCAN },
+                        onHistory = { screen = DesktopScreen.HISTORY },
+                        onSettings = { screen = DesktopScreen.SETTINGS },
                         onOpenResult = {
                             activeScan = it
                             screen = DesktopScreen.RESULTS
                         }
                     )
-                    DesktopScreen.SCAN -> ScanView(
-                        modifier = Modifier.padding(padding),
+                    DesktopScreen.SCAN -> ScanScreen(
+                        modifier = Modifier.padding(paddingValues),
                         selectedMode = selectedMode,
                         selectedArtifact = selectedArtifact,
                         activeScan = activeScan,
                         isBusy = isBusy,
+                        infoMessage = infoMessage,
+                        errorMessage = errorMessage,
                         onModeChange = { selectedMode = it },
-                        onChooseArtifact = {
-                            selectedArtifact = chooseFile(this@NeuralVDesktopApp.window)
-                        },
+                        onChooseArtifact = { selectedArtifact = chooseFile() },
                         onStart = {
-                            val currentSession = session ?: return@ScanView
+                            val currentSession = session ?: return@ScanScreen
                             scope.launch {
                                 isBusy = true
                                 errorMessage = null
-                                statusMessage = "Отправляем задачу на сервер"
+                                infoMessage = "Отправляем задачу на сервер"
                                 runCatching {
-                                    val platform = currentPlatform()
                                     val artifact = selectedArtifact
-                                    val request = com.neuralv.desktop.core.model.DesktopStartScanRequest(
-                                        platform = platform,
+                                    val request = DesktopStartScanRequest(
+                                        platform = currentPlatform(),
                                         mode = selectedMode,
                                         artifactKind = artifact?.toArtifactKind() ?: DesktopArtifactKind.UNKNOWN,
-                                        sha256 = null,
-                                        localFindings = emptyList(),
-                                        artifactMetadata = buildMap {
-                                            put("target_name", artifact?.name ?: platform.name.lowercase())
-                                            put("target_path", artifact?.absolutePath ?: System.getProperty("user.home"))
-                                            put("file_size_bytes", artifact?.length())
-                                            put("upload_required", selectedMode == DesktopScanMode.ARTIFACT || selectedMode == DesktopScanMode.SELECTIVE)
-                                            put("package_manager", guessPackageManager())
-                                            put("origin_path", artifact?.parent)
-                                        }
+                                        artifactMetadata = mapOf(
+                                            "target_name" to (artifact?.name ?: currentPlatform().name.lowercase()),
+                                            "target_path" to (artifact?.absolutePath ?: System.getProperty("user.home")),
+                                            "file_size_bytes" to artifact?.length(),
+                                            "upload_required" to (selectedMode == DesktopScanMode.SELECTIVE || selectedMode == DesktopScanMode.ARTIFACT),
+                                            "origin_path" to artifact?.parent
+                                        )
                                     )
                                     var result = scanRepository.startScan(currentSession, request)
-                                    if ((selectedMode == DesktopScanMode.ARTIFACT || selectedMode == DesktopScanMode.SELECTIVE) && artifact != null && result.summary.status == "AWAITING_UPLOAD") {
+                                    if ((selectedMode == DesktopScanMode.SELECTIVE || selectedMode == DesktopScanMode.ARTIFACT) &&
+                                        artifact != null && result.summary.status == "AWAITING_UPLOAD"
+                                    ) {
                                         result = scanRepository.uploadArtifact(currentSession, result.summary.scanId, artifact)
                                     }
                                     activeScan = result
@@ -318,7 +303,7 @@ fun FrameWindowScope.NeuralVDesktopApp() {
                                             if (polled.summary.status == "COMPLETED") {
                                                 history.removeAll { it.summary.scanId == polled.summary.scanId }
                                                 history.add(0, polled)
-                                                statusMessage = "Проверка завершена"
+                                                infoMessage = "Проверка завершена"
                                                 screen = DesktopScreen.RESULTS
                                             }
                                         }
@@ -327,66 +312,67 @@ fun FrameWindowScope.NeuralVDesktopApp() {
                                         history.add(0, result)
                                         screen = DesktopScreen.RESULTS
                                     }
-                                }.onFailure { errorMessage = it.message ?: "Не удалось запустить проверку" }
+                                }.onFailure {
+                                    errorMessage = it.message ?: "Не удалось запустить проверку"
+                                }
                                 isBusy = false
                             }
                         },
                         onCancel = {
-                            val currentSession = session ?: return@ScanView
+                            val currentSession = session ?: return@ScanScreen
                             scope.launch {
                                 runCatching { scanRepository.cancelActive(currentSession) }
                                     .onSuccess {
                                         activeScan = it
-                                        statusMessage = "Активная серверная проверка отменена"
+                                        infoMessage = "Активная проверка отменена"
                                     }
-                                    .onFailure { errorMessage = it.message ?: "Не удалось отменить проверку" }
+                                    .onFailure {
+                                        errorMessage = it.message ?: "Не удалось отменить проверку"
+                                    }
                             }
                         }
                     )
-                    DesktopScreen.RESULTS -> ResultsView(
-                        modifier = Modifier.padding(padding),
+                    DesktopScreen.RESULTS -> ResultsScreen(
+                        modifier = Modifier.padding(paddingValues),
                         result = activeScan,
                         onBack = { screen = DesktopScreen.HOME },
-                        onFullReport = {
-                            val currentSession = session ?: return@ResultsView
-                            val result = activeScan ?: return@ResultsView
+                        onSyncFullReport = {
+                            val currentSession = session ?: return@ResultsScreen
+                            val currentScan = activeScan ?: return@ResultsScreen
                             scope.launch {
-                                runCatching { scanRepository.fullReport(currentSession, listOf(result.summary.scanId)) }
+                                runCatching { scanRepository.fullReport(currentSession, listOf(currentScan.summary.scanId)) }
                                     .onSuccess { reports ->
-                                        if (reports.isNotEmpty()) {
-                                            activeScan = reports.first()
-                                            history.removeAll { it.summary.scanId == reports.first().summary.scanId }
-                                            history.add(0, reports.first())
-                                            statusMessage = "Полный отчёт синхронизирован"
-                                        }
+                                        val report = reports.firstOrNull() ?: return@onSuccess
+                                        activeScan = report
+                                        history.removeAll { it.summary.scanId == report.summary.scanId }
+                                        history.add(0, report)
+                                        infoMessage = "Полный отчёт синхронизирован"
                                     }
-                                    .onFailure { errorMessage = it.message ?: "Не удалось загрузить полный отчёт" }
+                                    .onFailure {
+                                        errorMessage = it.message ?: "Не удалось загрузить полный отчёт"
+                                    }
                             }
                         }
                     )
-                    DesktopScreen.HISTORY -> HistoryView(
-                        modifier = Modifier.padding(padding),
+                    DesktopScreen.HISTORY -> HistoryScreen(
+                        modifier = Modifier.padding(paddingValues),
                         history = history,
                         onOpen = {
                             activeScan = it
                             screen = DesktopScreen.RESULTS
                         }
                     )
-                    DesktopScreen.SETTINGS -> SettingsView(
-                        modifier = Modifier.padding(padding),
+                    DesktopScreen.SETTINGS -> SettingsScreen(
+                        modifier = Modifier.padding(paddingValues),
                         backendUrl = backendUrl,
-                        themeChoice = themeChoice,
-                        dynamicAccentEnabled = dynamicAccentEnabled,
                         session = session,
-                        onBackendUrlChange = { backendUrl = it },
-                        onThemeDialog = { showThemeDialog = true },
-                        onDynamicAccentChange = { dynamicAccentEnabled = it },
+                        onBackendUrlChange = { backendUrl = it.trim().removeSuffix("/") },
                         onLogout = {
                             scope.launch {
                                 authRepository.logout()
                                 session = null
-                                history.clear()
                                 activeScan = null
+                                history.clear()
                                 screen = DesktopScreen.AUTH
                             }
                         }
@@ -395,20 +381,13 @@ fun FrameWindowScope.NeuralVDesktopApp() {
             }
 
             if (isBusy) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background.copy(alpha = 0.60f)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                }
+                BusyOverlay()
             }
             if (showThemeDialog) {
                 ThemeDialog(
-                    choice = themeChoice,
-                    onChoice = {
-                        themeChoice = it
+                    current = themeMode,
+                    onSelect = {
+                        themeMode = it
                         showThemeDialog = false
                     },
                     onDismiss = { showThemeDialog = false }
@@ -419,7 +398,7 @@ fun FrameWindowScope.NeuralVDesktopApp() {
                     onDismissRequest = { errorMessage = null },
                     confirmButton = { TextButton(onClick = { errorMessage = null }) { Text("Ок") } },
                     title = { Text("NeuralV") },
-                    text = { Text(errorMessage!!) }
+                    text = { Text(errorMessage.orEmpty()) }
                 )
             }
         }
@@ -427,63 +406,24 @@ fun FrameWindowScope.NeuralVDesktopApp() {
 }
 
 @Composable
-private fun WelcomeView(modifier: Modifier, releaseArtifacts: List<ReleaseArtifact>, onContinue: () -> Unit) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize().padding(horizontal = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
-    ) {
-        item {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = Color.Transparent
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Spacer(Modifier.height(12.dp))
-                    Surface(
-                        modifier = Modifier.size(112.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.size(52.dp))
-                        }
-                    }
-                    Text("NeuralV", style = MaterialTheme.typography.displayLarge, maxLines = 1)
-                    Text(
-                        "Один backend /basedata для Android, Windows GUI, Linux GUI и Linux shell. Desktop-ветка уже подготовлена под server-driven проверки, unified auth и release manifest.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    ElevatedButton(onClick = onContinue) {
-                        Icon(Icons.Rounded.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(10.dp))
-                        Text("Открыть NeuralV")
-                    }
-                }
-            }
-        }
-        item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-                Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("Release manifest", style = MaterialTheme.typography.titleLarge)
-                    if (releaseArtifacts.isEmpty()) {
-                        Text("Манифест пока не опубликован. После первого CI desktop/site артефакты подтянутся автоматически.")
-                    } else {
-                        releaseArtifacts.forEach { artifact ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.Download, contentDescription = null)
-                                Column {
-                                    Text(artifact.platform.uppercase(), fontWeight = FontWeight.SemiBold)
-                                    Text(
-                                        artifact.downloadUrl?.takeUnless { it.isBlank() } ?: artifact.installCommand.orEmpty(),
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                }
-                            }
-                        }
-                    }
+private fun WelcomeScreen(
+    modifier: Modifier,
+    artifacts: List<ReleaseArtifact>,
+    onEnter: () -> Unit
+) {
+    ScrollColumn(modifier) {
+        HeroCard(
+            title = "NeuralV для рабочего стола",
+            text = "Windows и Linux используют тот же backend, что и Android: единая авторизация, серверные проверки и общая история.",
+            primaryLabel = "Открыть",
+            onPrimary = onEnter
+        )
+        SectionCard(title = "Артефакты") {
+            if (artifacts.isEmpty()) {
+                Text("Публикация ещё не завершена. После зелёных GitHub builder’ов здесь появятся актуальные загрузки.")
+            } else {
+                artifacts.forEach { artifact ->
+                    ArtifactRow(artifact)
                 }
             }
         }
@@ -491,131 +431,93 @@ private fun WelcomeView(modifier: Modifier, releaseArtifacts: List<ReleaseArtifa
 }
 
 @Composable
-private fun AuthView(
+private fun AuthScreen(
     modifier: Modifier,
     authMode: AuthChallengeMode,
+    challengePending: Boolean,
     name: String,
     email: String,
     password: String,
     code: String,
-    challengePending: Boolean,
-    isBusy: Boolean,
-    errorMessage: String?,
     infoMessage: String?,
+    errorMessage: String?,
+    isBusy: Boolean,
     onModeChange: (AuthChallengeMode) -> Unit,
     onNameChange: (String) -> Unit,
     onEmailChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onCodeChange: (String) -> Unit,
-    onSubmit: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onSubmit: () -> Unit
 ) {
-    Box(modifier.fillMaxSize().padding(28.dp), contentAlignment = Alignment.Center) {
-        Card(modifier = Modifier.width(620.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-            Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(if (challengePending) "Код подтверждения" else "Единая авторизация", style = MaterialTheme.typography.headlineLarge)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    FilterChip(selected = authMode == AuthChallengeMode.LOGIN, onClick = { onModeChange(AuthChallengeMode.LOGIN) }, label = { Text("Вход") })
-                    FilterChip(selected = authMode == AuthChallengeMode.REGISTER, onClick = { onModeChange(AuthChallengeMode.REGISTER) }, label = { Text("Регистрация") })
-                }
-                if (!challengePending && authMode == AuthChallengeMode.REGISTER) {
-                    OutlinedTextField(value = name, onValueChange = onNameChange, label = { Text("Имя") }, modifier = Modifier.fillMaxWidth())
-                }
-                OutlinedTextField(value = email, onValueChange = onEmailChange, label = { Text("Email") }, modifier = Modifier.fillMaxWidth())
-                if (!challengePending) {
-                    OutlinedTextField(value = password, onValueChange = onPasswordChange, label = { Text("Пароль") }, modifier = Modifier.fillMaxWidth())
-                } else {
-                    OutlinedTextField(value = code, onValueChange = onCodeChange, label = { Text("Код из письма") }, modifier = Modifier.fillMaxWidth())
-                }
-                if (!infoMessage.isNullOrBlank()) {
-                    Text(infoMessage, color = MaterialTheme.colorScheme.primary)
-                }
-                if (!errorMessage.isNullOrBlank()) {
-                    Text(errorMessage, color = MaterialTheme.colorScheme.error)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(onClick = onBack) { Text("Назад") }
-                    Button(onClick = onSubmit, enabled = !isBusy) {
-                        Icon(Icons.Rounded.VerifiedUser, contentDescription = null)
-                        Spacer(Modifier.width(10.dp))
-                        Text(if (challengePending) "Подтвердить" else "Продолжить")
-                    }
-                }
+    ScrollColumn(modifier, centered = true) {
+        SectionCard(title = if (challengePending) "Код подтверждения" else "Авторизация") {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ModeButton("Вход", authMode == AuthChallengeMode.LOGIN && !challengePending) { onModeChange(AuthChallengeMode.LOGIN) }
+                ModeButton("Регистрация", authMode == AuthChallengeMode.REGISTER && !challengePending) { onModeChange(AuthChallengeMode.REGISTER) }
+            }
+            if (!challengePending && authMode == AuthChallengeMode.REGISTER) {
+                OutlinedTextField(value = name, onValueChange = onNameChange, label = { Text("Имя") }, modifier = Modifier.fillMaxWidth())
+            }
+            OutlinedTextField(value = email, onValueChange = onEmailChange, label = { Text("Email") }, modifier = Modifier.fillMaxWidth())
+            if (challengePending) {
+                OutlinedTextField(value = code, onValueChange = onCodeChange, label = { Text("Код из письма") }, modifier = Modifier.fillMaxWidth())
+            } else {
+                OutlinedTextField(value = password, onValueChange = onPasswordChange, label = { Text("Пароль") }, modifier = Modifier.fillMaxWidth())
+            }
+            infoMessage?.takeIf { it.isNotBlank() }?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+            errorMessage?.takeIf { it.isNotBlank() }?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = onBack) { Text("Назад") }
+                Button(onClick = onSubmit, enabled = !isBusy) { Text(if (challengePending) "Подтвердить" else "Продолжить") }
             }
         }
     }
 }
 
 @Composable
-private fun HomeView(
+private fun HomeScreen(
     modifier: Modifier,
     session: SessionState?,
-    releaseArtifacts: List<ReleaseArtifact>,
     activeScan: DesktopScanResult?,
     history: List<DesktopScanResult>,
-    onOpenScan: () -> Unit,
-    onOpenHistory: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onResumeActive: () -> Unit,
+    onScan: () -> Unit,
+    onHistory: () -> Unit,
+    onSettings: () -> Unit,
     onOpenResult: (DesktopScanResult) -> Unit
 ) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize().padding(horizontal = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
-    ) {
-        item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("${session?.user?.name ?: "Офлайн"}, рабочая станция готова", style = MaterialTheme.typography.headlineLarge)
-                    Text("Desktop GUI использует единый backend `/basedata`, release manifest и server-side фильтрацию false positive перед выдачей пользователю.")
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        ElevatedButton(onClick = onOpenScan) {
-                            Icon(Icons.Rounded.Security, contentDescription = null)
-                            Spacer(Modifier.width(10.dp))
-                            Text("Проверка")
-                        }
-                        OutlinedButton(onClick = onOpenHistory) {
-                            Icon(Icons.Rounded.History, contentDescription = null)
-                            Spacer(Modifier.width(10.dp))
-                            Text("История")
-                        }
-                        OutlinedButton(onClick = onOpenSettings) {
-                            Icon(Icons.Rounded.Settings, contentDescription = null)
-                            Spacer(Modifier.width(10.dp))
-                            Text("Настройки")
-                        }
+    ScrollColumn(modifier) {
+        HeroCard(
+            title = session?.user?.name ?: "NeuralV",
+            text = session?.user?.email ?: "Сессия ещё не активна",
+            primaryLabel = "Проверка",
+            onPrimary = onScan,
+            secondary = {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = onHistory) {
+                        Icon(Icons.Rounded.History, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("История")
+                    }
+                    OutlinedButton(onClick = onSettings) {
+                        Icon(Icons.Rounded.Settings, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Настройки")
                     }
                 }
             }
-        }
-        if (activeScan != null) {
-            item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                    Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Активная серверная проверка", style = MaterialTheme.typography.titleLarge)
-                        Text(activeScan.summary.message ?: activeScan.summary.status)
-                        ElevatedButton(onClick = onResumeActive) {
-                            Icon(Icons.Rounded.Bolt, contentDescription = null)
-                            Spacer(Modifier.width(10.dp))
-                            Text("Открыть результат")
-                        }
-                    }
-                }
+        )
+        activeScan?.let {
+            SectionCard(title = "Текущая проверка") {
+                Text("${modeLabel(it.summary.mode)} • ${it.summary.status}")
+                it.summary.message?.let { message -> Text(message) }
+                Button(onClick = { onOpenResult(it) }) { Text("Открыть") }
             }
         }
-        item {
-            Text("Последние результаты", style = MaterialTheme.typography.titleLarge)
-        }
-        items(history.take(4)) { result ->
-            HistoryItem(result = result, onOpen = { onOpenResult(result) })
-        }
-        item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Доступные артефакты", style = MaterialTheme.typography.titleLarge)
-                    releaseArtifacts.forEach { artifact ->
-                        Text("${artifact.platform}: ${artifact.version}")
-                    }
+        if (history.isNotEmpty()) {
+            SectionCard(title = "Последние результаты") {
+                history.take(5).forEach { item ->
+                    HistoryRow(item, onOpen = { onOpenResult(item) })
                 }
             }
         }
@@ -623,106 +525,95 @@ private fun HomeView(
 }
 
 @Composable
-private fun ScanView(
+private fun ScanScreen(
     modifier: Modifier,
     selectedMode: DesktopScanMode,
     selectedArtifact: File?,
     activeScan: DesktopScanResult?,
     isBusy: Boolean,
+    infoMessage: String?,
+    errorMessage: String?,
     onModeChange: (DesktopScanMode) -> Unit,
     onChooseArtifact: () -> Unit,
     onStart: () -> Unit,
     onCancel: () -> Unit
 ) {
-    Column(
-        modifier = modifier.fillMaxSize().padding(28.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
-    ) {
-        Text("Режимы", style = MaterialTheme.typography.headlineLarge)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            listOf(DesktopScanMode.FULL, DesktopScanMode.SELECTIVE, DesktopScanMode.ARTIFACT).forEach { mode ->
-                FilterChip(selected = selectedMode == mode, onClick = { onModeChange(mode) }, label = { Text(modeLabel(mode)) })
+    ScrollColumn(modifier) {
+        SectionCard(title = "Режим проверки") {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                listOf(DesktopScanMode.FULL, DesktopScanMode.SELECTIVE, DesktopScanMode.ARTIFACT).forEach { mode ->
+                    ModeButton(modeLabel(mode), selectedMode == mode) { onModeChange(mode) }
+                }
             }
-        }
-        if (selectedMode == DesktopScanMode.SELECTIVE || selectedMode == DesktopScanMode.ARTIFACT) {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Артефакт", style = MaterialTheme.typography.titleLarge)
-                    Text(selectedArtifact?.absolutePath ?: "Файл ещё не выбран")
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(onClick = onChooseArtifact) {
-                            Icon(Icons.Rounded.UploadFile, contentDescription = null)
-                            Spacer(Modifier.width(10.dp))
-                            Text("Выбрать")
-                        }
-                        if (selectedArtifact != null) {
-                            Text("${selectedArtifact.length()} bytes", style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
+            if (selectedMode == DesktopScanMode.SELECTIVE || selectedMode == DesktopScanMode.ARTIFACT) {
+                OutlinedButton(onClick = onChooseArtifact) {
+                    Icon(Icons.Rounded.UploadFile, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(selectedArtifact?.name ?: "Выбрать файл")
+                }
+                selectedArtifact?.let { Text(it.absolutePath, style = MaterialTheme.typography.bodySmall) }
+            }
+            infoMessage?.takeIf { it.isNotBlank() }?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+            errorMessage?.takeIf { it.isNotBlank() }?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = onStart, enabled = !isBusy) {
+                    Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Запустить")
+                }
+                if (activeScan != null) {
+                    OutlinedButton(onClick = onCancel) { Text("Отменить") }
                 }
             }
         }
-        if (activeScan != null) {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Текущий job", style = MaterialTheme.typography.titleLarge)
-                    Text("${activeScan.summary.scanId} · ${activeScan.summary.status}")
-                    if (!activeScan.summary.message.isNullOrBlank()) Text(activeScan.summary.message!!)
-                    OutlinedButton(onClick = onCancel) {
-                        Text("Отменить проверку")
-                    }
-                }
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ElevatedButton(onClick = onStart, enabled = !isBusy) {
-                Icon(Icons.Rounded.PlayArrow, contentDescription = null)
-                Spacer(Modifier.width(10.dp))
-                Text("Запустить серверную проверку")
+        activeScan?.let {
+            SectionCard(title = "Серверный job") {
+                Text(it.summary.scanId)
+                Text(it.summary.status)
+                it.summary.message?.let { message -> Text(message) }
             }
         }
     }
 }
 
 @Composable
-private fun ResultsView(modifier: Modifier, result: DesktopScanResult?, onBack: () -> Unit, onFullReport: () -> Unit) {
+private fun ResultsScreen(
+    modifier: Modifier,
+    result: DesktopScanResult?,
+    onBack: () -> Unit,
+    onSyncFullReport: () -> Unit
+) {
     if (result == null) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("Результат ещё не загружен")
         }
         return
     }
-    LazyColumn(
-        modifier = modifier.fillMaxSize().padding(horizontal = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-                Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("${modeLabel(result.summary.mode)} · ${result.summary.platform.name}", style = MaterialTheme.typography.titleLarge)
-                    Text(result.summary.message ?: result.summary.status)
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(onClick = onBack) { Text("Назад") }
-                        ElevatedButton(onClick = onFullReport) {
-                            Icon(Icons.Rounded.Description, contentDescription = null)
-                            Spacer(Modifier.width(10.dp))
-                            Text("Синхронизировать полный отчёт")
-                        }
-                    }
+    ScrollColumn(modifier) {
+        SectionCard(title = "${modeLabel(result.summary.mode)} • ${result.summary.platform.name}") {
+            Text(result.summary.message ?: result.summary.status)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = onBack) { Text("Назад") }
+                Button(onClick = onSyncFullReport) {
+                    Icon(Icons.Rounded.Download, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Полный отчёт")
                 }
             }
         }
-        items(result.findings) { finding ->
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(finding.title, style = MaterialTheme.typography.titleMedium)
-                    Text(finding.summary)
-                    finding.artifact?.let { artifact ->
-                        Text("${artifact.displayName} · ${artifact.path}", style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (finding.evidence.isNotEmpty()) {
-                        Text(finding.evidence.joinToString(separator = "\n• ", prefix = "• "), style = MaterialTheme.typography.bodySmall)
-                    }
+        result.findings.forEach { finding ->
+            SectionCard(title = finding.title) {
+                Text(finding.summary)
+                if (finding.evidence.isNotEmpty()) {
+                    Text(finding.evidence.joinToString(separator = "\n• ", prefix = "• "), style = MaterialTheme.typography.bodySmall)
+                }
+                finding.artifact?.let { artifact ->
+                    Text(
+                        "${artifact.displayName} • ${artifact.path}",
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }
@@ -730,103 +621,199 @@ private fun ResultsView(modifier: Modifier, result: DesktopScanResult?, onBack: 
 }
 
 @Composable
-private fun HistoryView(modifier: Modifier, history: List<DesktopScanResult>, onOpen: (DesktopScanResult) -> Unit) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize().padding(horizontal = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
+private fun HistoryScreen(
+    modifier: Modifier,
+    history: List<DesktopScanResult>,
+    onOpen: (DesktopScanResult) -> Unit
+) {
+    ScrollColumn(modifier) {
         if (history.isEmpty()) {
-            item {
-                Box(Modifier.fillMaxSize().height(260.dp), contentAlignment = Alignment.Center) {
-                    Text("История пуста")
-                }
+            SectionCard(title = "История") {
+                Text("История пока пуста")
             }
         } else {
-            items(history) { result ->
-                HistoryItem(result = result, onOpen = { onOpen(result) })
+            SectionCard(title = "История") {
+                history.forEach { item ->
+                    HistoryRow(item, onOpen = { onOpen(item) })
+                }
             }
         }
     }
 }
 
 @Composable
-private fun HistoryItem(result: DesktopScanResult, onOpen: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(18.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("${modeLabel(result.summary.mode)} · ${result.summary.platform.name}", fontWeight = FontWeight.SemiBold)
-                Text(result.summary.message ?: result.summary.status)
-                Text(DateFormat.getDateTimeInstance().format(Date(result.summary.startedAt)), style = MaterialTheme.typography.bodySmall)
-            }
-            ElevatedButton(onClick = onOpen) {
-                Text("Открыть")
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsView(
+private fun SettingsScreen(
     modifier: Modifier,
     backendUrl: String,
-    themeChoice: ThemeChoice,
-    dynamicAccentEnabled: Boolean,
     session: SessionState?,
     onBackendUrlChange: (String) -> Unit,
-    onThemeDialog: () -> Unit,
-    onDynamicAccentChange: (Boolean) -> Unit,
     onLogout: () -> Unit
 ) {
-    Column(
-        modifier = modifier.fillMaxSize().padding(28.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
-    ) {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Подключение", style = MaterialTheme.typography.titleLarge)
-                OutlinedTextField(value = backendUrl, onValueChange = onBackendUrlChange, modifier = Modifier.fillMaxWidth(), label = { Text("Backend URL") })
-                Text("Desktop-клиент использует единый backend `/basedata` и file-backed session store в ~/.config/neuralv/session.json")
-            }
-        }
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Оформление", style = MaterialTheme.typography.titleLarge)
-                OutlinedButton(onClick = onThemeDialog) {
-                    Text("Тема: ${themeLabel(themeChoice)}")
-                }
-                FilterChip(selected = dynamicAccentEnabled, onClick = { onDynamicAccentChange(!dynamicAccentEnabled) }, label = { Text(if (dynamicAccentEnabled) "Dynamic palette включена" else "Dynamic palette выключена") })
-            }
+    ScrollColumn(modifier) {
+        SectionCard(title = "Подключение") {
+            OutlinedTextField(
+                value = backendUrl,
+                onValueChange = onBackendUrlChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Backend URL") }
+            )
+            Text("Desktop клиент работает через тот же /basedata backend.")
         }
         session?.let {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-                Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Сессия", style = MaterialTheme.typography.titleLarge)
-                    Text(it.user.email)
-                    Text(if (it.user.isDeveloperMode) "Режим разработчика активен" else "Обычный доступ")
-                    OutlinedButton(onClick = onLogout) { Text("Выйти") }
-                }
+            SectionCard(title = "Сессия") {
+                Text(it.user.email)
+                Text(if (it.user.isDeveloperMode) "Режим разработчика активен" else "Обычный доступ")
+                OutlinedButton(onClick = onLogout) { Text("Выйти") }
             }
         }
     }
 }
 
 @Composable
-private fun ThemeDialog(choice: ThemeChoice, onChoice: (ThemeChoice) -> Unit, onDismiss: () -> Unit) {
+private fun ScrollColumn(
+    modifier: Modifier,
+    centered: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start,
+        content = content
+    )
+}
+
+@Composable
+private fun HeroCard(
+    title: String,
+    text: String,
+    primaryLabel: String,
+    onPrimary: () -> Unit,
+    secondary: @Composable (() -> Unit)? = null
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(30.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Surface(
+                modifier = Modifier.size(84.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
+                }
+            }
+            Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = onPrimary) { Text(primaryLabel) }
+                secondary?.invoke()
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(26.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = {
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                content()
+            }
+        )
+    }
+}
+
+@Composable
+private fun ArtifactRow(artifact: ReleaseArtifact) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Rounded.Download, contentDescription = null)
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("${artifact.platform.uppercase()} • ${artifact.version}", fontWeight = FontWeight.SemiBold)
+            Text(
+                artifact.downloadUrl ?: artifact.installCommand.orEmpty(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun HistoryRow(result: DesktopScanResult, onOpen: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("${modeLabel(result.summary.mode)} • ${result.summary.status}", fontWeight = FontWeight.SemiBold)
+            Text(DateFormat.getDateTimeInstance().format(Date(result.summary.startedAt)), style = MaterialTheme.typography.bodySmall)
+        }
+        OutlinedButton(onClick = onOpen) { Text("Открыть") }
+    }
+}
+
+@Composable
+private fun ModeButton(label: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = if (selected) {
+        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    } else {
+        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+    }
+    Card(colors = colors, modifier = Modifier, shape = RoundedCornerShape(999.dp)) {
+        TextButton(onClick = onClick) { Text(label) }
+    }
+}
+
+@Composable
+private fun BusyOverlay() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.20f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                LinearProgressIndicator(modifier = Modifier.width(220.dp))
+                Text("NeuralV выполняет операцию")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeDialog(current: ThemeMode, onSelect: (ThemeMode) -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {},
-        title = { Text("Тема NeuralV") },
+        title = { Text("Тема") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                ThemeChoice.entries.forEach { item ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = choice == item, onClick = { onChoice(item) })
-                        Spacer(Modifier.width(8.dp))
-                        Text(themeLabel(item))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ThemeMode.entries.forEach { mode ->
+                    TextButton(onClick = { onSelect(mode) }) {
+                        Text(if (mode == current) "• ${themeLabel(mode)}" else themeLabel(mode))
                     }
                 }
             }
@@ -840,7 +827,7 @@ private suspend fun pollDesktopScan(
     scanId: String,
     onResult: (DesktopScanResult) -> Unit
 ) {
-    repeat(120) {
+    repeat(300) {
         val result = repository.pollScan(session, scanId)
         onResult(result)
         if (result.summary.status == "COMPLETED" || result.summary.status == "FAILED" || result.summary.status == "CANCELLED") {
@@ -850,31 +837,39 @@ private suspend fun pollDesktopScan(
     }
 }
 
-private fun currentPlatform(): DesktopPlatform = if (System.getProperty("os.name", "").lowercase().contains("win")) {
-    DesktopPlatform.WINDOWS
-} else {
-    DesktopPlatform.LINUX
+private fun currentPlatform(): DesktopPlatform {
+    return if (System.getProperty("os.name", "").lowercase().contains("win")) DesktopPlatform.WINDOWS else DesktopPlatform.LINUX
+}
+
+private fun screenTitle(screen: DesktopScreen): String = when (screen) {
+    DesktopScreen.WELCOME -> "Windows и Linux GUI"
+    DesktopScreen.AUTH -> "Единая авторизация"
+    DesktopScreen.HOME -> "Панель управления"
+    DesktopScreen.SCAN -> "Серверная проверка"
+    DesktopScreen.RESULTS -> "Результаты"
+    DesktopScreen.HISTORY -> "История"
+    DesktopScreen.SETTINGS -> "Настройки"
 }
 
 private fun modeLabel(mode: DesktopScanMode): String = when (mode) {
     DesktopScanMode.QUICK -> "Быстрая"
     DesktopScanMode.FULL -> "Глубокая"
     DesktopScanMode.SELECTIVE -> "Выборочная"
-    DesktopScanMode.ARTIFACT -> "Проверка файла"
+    DesktopScanMode.ARTIFACT -> "Файл"
 }
 
-private fun themeLabel(choice: ThemeChoice): String = when (choice) {
-    ThemeChoice.SYSTEM -> "Как в системе"
-    ThemeChoice.LIGHT -> "Светлая"
-    ThemeChoice.DARK -> "Тёмная"
+private fun themeLabel(mode: ThemeMode): String = when (mode) {
+    ThemeMode.SYSTEM -> "Как в системе"
+    ThemeMode.LIGHT -> "Светлая"
+    ThemeMode.DARK -> "Тёмная"
 }
 
-private fun chooseFile(frame: java.awt.Window?): File? {
-    val dialog = FileDialog(frame as? Frame, "Выберите файл", FileDialog.LOAD)
+private fun chooseFile(): File? {
+    val dialog = FileDialog(null as Frame?, "Выберите файл", FileDialog.LOAD)
     dialog.isVisible = true
     val directory = dialog.directory ?: return null
-    val fileName = dialog.file ?: return null
-    return File(directory, fileName)
+    val name = dialog.file ?: return null
+    return File(directory, name)
 }
 
 private fun File.toArtifactKind(): DesktopArtifactKind {
@@ -887,13 +882,4 @@ private fun File.toArtifactKind(): DesktopArtifactKind {
         lower.endsWith(".zip") || lower.endsWith(".tar") || lower.endsWith(".gz") || lower.endsWith(".7z") -> DesktopArtifactKind.ARCHIVE
         else -> DesktopArtifactKind.UNKNOWN
     }
-}
-
-private fun guessPackageManager(): String = when {
-    File("/usr/bin/dpkg").exists() -> "dpkg"
-    File("/usr/bin/rpm").exists() -> "rpm"
-    File("/usr/bin/pacman").exists() -> "pacman"
-    File("/usr/bin/flatpak").exists() -> "flatpak"
-    File("/usr/bin/snap").exists() -> "snap"
-    else -> "unknown"
 }
