@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NV</title>
-    <meta name="description" content="NV — отдельный пакетный менеджер для установки и обновления NeuralV и других пакетов." />
+    <meta name="description" content="NV — пакетный менеджер для установки, обновления и удаления NeuralV и других пакетов." />
     <link rel="icon" href="/neuralv/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/nv/app.css" />
   </head>
@@ -14,7 +14,7 @@
         <div class="hero-copy">
           <p class="eyebrow">Package manager</p>
           <h1>NV</h1>
-          <p class="hero-text">Отдельный пакетный менеджер. Ставь, обновляй и удаляй пакеты одной командой.</p>
+          <p class="hero-text">Отдельный пакетный менеджер. Сначала ставишь NV, потом через него ставишь и обновляешь пакеты.</p>
           <div class="hero-actions">
             <a class="primary-button" href="#install">Установить</a>
             <a class="ghost-button" href="#packages">Пакеты</a>
@@ -25,7 +25,8 @@
             <div class="console-bar">
               <span></span><span></span><span></span>
             </div>
-            <pre>$ nv install neuralv@latest
+            <pre>$ nv -v
+$ nv install neuralv@latest
 $ nv install nv@latest
 $ nv uninstall neuralv</pre>
           </div>
@@ -36,7 +37,7 @@ $ nv uninstall neuralv</pre>
         <section id="install" class="panel two-column">
           <div class="panel-copy">
             <h2>Установка NV</h2>
-            <p>Выбери свою систему и сразу получи рабочую команду или прямую загрузку.</p>
+            <p>Выбери систему и получи готовый install flow.</p>
             <div class="platform-tabs" role="tablist" aria-label="Платформа NV">
               <button class="tab-button is-active" type="button" data-platform="linux">Linux</button>
               <button class="tab-button" type="button" data-platform="windows">Windows</button>
@@ -54,16 +55,20 @@ $ nv uninstall neuralv</pre>
                   <span>Команда</span>
                   <button id="copy-command" type="button">Копировать</button>
                 </div>
-                <pre id="install-command">curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh</pre>
+                <pre id="install-command">curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+nv -v</pre>
               </div>
             </article>
 
             <article class="install-card install-card-compact">
               <div class="install-head">
-                <h3>Загрузка</h3>
+                <h3>Дальше</h3>
               </div>
-              <a id="download-link" class="download-button" href="https://raw.githubusercontent.com/Perdonus/NV/linux-builds/linux/nv-linux-1.1.0.tar.gz">Скачать текущую сборку</a>
-              <p class="muted" id="download-note">Linux build branch: Perdonus/NV/linux-builds</p>
+              <p class="muted" id="download-note">После установки NV можно сразу поставить NeuralV:</p>
+              <div class="command-block">
+                <pre>nv install neuralv@latest</pre>
+              </div>
             </article>
           </div>
         </section>
@@ -71,12 +76,12 @@ $ nv uninstall neuralv</pre>
         <section id="packages" class="panel">
           <div class="panel-head">
             <h2>Пакеты</h2>
-            <p>NV не захардкожен только под NeuralV. Сервер отдаёт версии и артефакты по имени пакета.</p>
+            <p>NV ищет пакет по имени и берёт актуальные версии с сервера.</p>
           </div>
           <div class="package-grid">
             <article class="package-card">
               <h3>neuralv</h3>
-              <p>GUI и CLI версии клиента.</p>
+              <p>Графическая версия приложения.</p>
               <pre>nv install neuralv@latest</pre>
             </article>
             <article class="package-card">
@@ -86,8 +91,8 @@ $ nv uninstall neuralv</pre>
             </article>
             <article class="package-card package-card-muted">
               <h3>Версии</h3>
-              <p>Используется обычный semver: `0.21.1`, `1.2.1` и так далее.</p>
-              <pre>nv install neuralv@1.3.1</pre>
+              <p>Используется обычный semver.</p>
+              <pre>nv install neuralv@1.4.0</pre>
             </article>
           </div>
         </section>
@@ -98,7 +103,7 @@ $ nv uninstall neuralv</pre>
           </div>
           <div class="command-grid">
             <div class="command-tile">
-              <span>Установка пакета</span>
+              <span>Установка или обновление</span>
               <pre>nv install &lt;package&gt;@latest</pre>
             </div>
             <div class="command-tile">
@@ -110,7 +115,7 @@ $ nv uninstall neuralv</pre>
               <pre>nv uninstall &lt;package&gt;</pre>
             </div>
             <div class="command-tile">
-              <span>Текущая версия NV</span>
+              <span>Версия NV</span>
               <pre>nv -v</pre>
             </div>
           </div>

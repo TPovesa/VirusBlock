@@ -28,7 +28,7 @@ const WINDOWS_HIGHLIGHTS = [
 
 function getPowershellCommand() {
   return [
-    '# 1. Установить NV',
+    '# 1. Установить NV, PATH и проверить nv -v',
     'irm https://sosiskibot.ru/neuralv/install/nv.ps1 | iex',
     '',
     '# 2. Установить NeuralV',
@@ -38,7 +38,7 @@ function getPowershellCommand() {
 
 function getCmdCommand() {
   return [
-    'REM 1. Установить NV',
+    'REM 1. Установить NV, PATH и проверить nv -v',
     'curl.exe -fsSL https://sosiskibot.ru/neuralv/install/nv.cmd -o "%TEMP%\\nv-install.cmd" && call "%TEMP%\\nv-install.cmd"',
     '',
     'REM 2. Установить NeuralV',
