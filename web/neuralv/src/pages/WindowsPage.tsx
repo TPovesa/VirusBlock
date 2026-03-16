@@ -7,15 +7,17 @@ import { usePackageRegistry } from '../hooks/usePackageRegistry';
 type WindowsInstallMode = 'setup' | 'portable' | 'powershell' | 'cmd';
 
 type WindowsMetadata = {
+  setupUrl?: string;
+  portableUrl?: string;
+  setupDownloadLabel?: string;
   wingetPackageId?: string;
   wingetInstallCommand?: string;
   wingetUpgradeCommand?: string;
   wingetUninstallCommand?: string;
   directDownloadLabel?: string;
+  powershellInstallCommand?: string;
+  cmdInstallCommand?: string;
 };
-
-const windowsPowerShellUrl = 'https://sosiskibot.ru/neuralv/install/neuralv.ps1';
-const windowsCmdUrl = 'https://sosiskibot.ru/neuralv/install/neuralv.cmd';
 
 function getWindowsMetadata(value: unknown): WindowsMetadata | undefined {
   return value && typeof value === 'object' ? (value as WindowsMetadata) : undefined;
@@ -27,15 +29,17 @@ function getWindowsInstallContent(mode: WindowsInstallMode, options: {
   metadata?: WindowsMetadata;
 }) {
   const powershellCommand =
-    `powershell -NoProfile -ExecutionPolicy Bypass -Command "irm ${windowsPowerShellUrl} | iex"`;
+    options.metadata?.powershellInstallCommand ||
+    'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://sosiskibot.ru/neuralv/install/neuralv.ps1 | iex"';
   const cmdCommand =
-    `curl.exe -fsSL ${windowsCmdUrl} -o "%TEMP%\\neuralv-install.cmd" && cmd /c "%TEMP%\\neuralv-install.cmd"`;
+    options.metadata?.cmdInstallCommand ||
+    'curl.exe -fsSL https://sosiskibot.ru/neuralv/install/neuralv.cmd -o "%TEMP%\\neuralv-install.cmd" && cmd /c "%TEMP%\\neuralv-install.cmd"';
 
   switch (mode) {
     case 'setup':
       return {
         title: 'Setup',
-        buttonLabel: 'Скачать setup',
+        buttonLabel: options.metadata?.setupDownloadLabel || 'Скачать setup',
         downloadUrl: options.setupUrl,
         command: ''
       };
@@ -75,8 +79,12 @@ export function WindowsPage() {
   );
 
   const version = manifestState.manifest.version || manifestArtifact?.version || packageVariant?.version || '';
-  const portableUrl = manifestState.manifest.downloadUrl || manifestArtifact?.downloadUrl || packageVariant?.download_url;
-  const setupUrl = manifestState.manifest.setupUrl || portableUrl;
+  const portableUrl =
+    manifestState.manifest.portableUrl ||
+    metadata?.portableUrl ||
+    manifestArtifact?.downloadUrl ||
+    packageVariant?.download_url;
+  const setupUrl = manifestState.manifest.setupUrl || metadata?.setupUrl || portableUrl;
   const ready = Boolean(portableUrl || setupUrl);
   const [mode, setMode] = useState<WindowsInstallMode>('setup');
   const [copyState, setCopyState] = useState<'idle' | 'done'>('idle');

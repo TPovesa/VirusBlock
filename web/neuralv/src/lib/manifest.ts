@@ -24,6 +24,7 @@ export type ReleaseManifest = {
   version?: string;
   downloadUrl?: string;
   setupUrl?: string;
+  portableUrl?: string;
   installCommand?: string;
   artifacts: ReleaseArtifact[];
 };
@@ -146,6 +147,7 @@ export async function fetchReleaseManifest(signal?: AbortSignal, platform?: stri
     version: typeof data.version === 'string' ? data.version : undefined,
     downloadUrl: typeof data.download_url === 'string' ? data.download_url : undefined,
     setupUrl: typeof data.setupUrl === 'string' ? data.setupUrl : undefined,
+    portableUrl: typeof data.portableUrl === 'string' ? data.portableUrl : undefined,
     installCommand:
       typeof data.install_command === 'string'
         ? data.install_command
