@@ -23,6 +23,31 @@ export type ReleaseManifest = {
   artifacts: ReleaseArtifact[];
 };
 
+function stableArtifactDownloadUrl(
+  platform: string,
+  metadata: ArtifactMetadata | undefined,
+  fallbackUrl: string | undefined
+): string | undefined {
+  const branch = typeof metadata?.source_branch === 'string' ? metadata.source_branch : '';
+  if (!branch) {
+    return fallbackUrl;
+  }
+
+  const base = `https://raw.githubusercontent.com/Perdonus/fatalerror/${branch}`;
+  switch (platform) {
+    case 'windows':
+      return `${base}/windows/neuralv-windows.zip`;
+    case 'linux':
+      return `${base}/linux/neuralv-linux.tar.gz`;
+    case 'shell':
+      return `${base}/shell/neuralv-shell-linux.tar.gz`;
+    case 'android':
+      return `${base}/android/neuralv-android-release.apk`;
+    default:
+      return fallbackUrl;
+  }
+}
+
 export const fallbackManifest: ReleaseManifest = {
   generatedAt: 'pending',
   releaseChannel: 'main',
@@ -72,16 +97,18 @@ export async function fetchReleaseManifest(signal?: AbortSignal): Promise<Releas
       const metadata = item.metadata && typeof item.metadata === 'object'
         ? (item.metadata as ArtifactMetadata)
         : undefined;
+      const versionedDownloadUrl =
+        typeof item.downloadUrl === 'string'
+          ? item.downloadUrl
+          : (typeof item.download_url === 'string' ? item.download_url : undefined);
+      const downloadUrl = stableArtifactDownloadUrl(platform, metadata, versionedDownloadUrl);
 
       return {
         platform,
         channel: typeof item.channel === 'string' ? item.channel : undefined,
         version: typeof item.version === 'string' ? item.version : undefined,
         sha256: typeof item.sha256 === 'string' ? item.sha256 : undefined,
-        downloadUrl:
-          typeof item.downloadUrl === 'string'
-            ? item.downloadUrl
-            : (typeof item.download_url === 'string' ? item.download_url : undefined),
+        downloadUrl,
         fileName:
           typeof item.fileName === 'string'
             ? item.fileName
@@ -95,7 +122,12 @@ export async function fetchReleaseManifest(signal?: AbortSignal): Promise<Releas
         notes: Array.isArray(item.notes)
           ? item.notes.filter((note): note is string => typeof note === 'string')
           : undefined,
-        metadata
+        metadata: metadata
+          ? {
+              ...metadata,
+              versioned_download_url: versionedDownloadUrl
+            }
+          : undefined
       } satisfies ReleaseArtifact;
     });
 

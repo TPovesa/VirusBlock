@@ -86,7 +86,6 @@ app.use('/api/packages', packagesRoutes);
 app.use('/api/scans', scansRoutes);
 app.use('/api/purchases', purchasesRoutes);
 app.use('/api/logs', logsRoutes);
-app.use('/api/packages', packagesRoutes);
 app.use('/api/releases', releasesRoutes);
 
 function buildHealthPayload() {
