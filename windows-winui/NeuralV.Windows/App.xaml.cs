@@ -79,7 +79,7 @@ public partial class App : Application
         WindowsLog.Error("UI unhandled exception", e.Exception);
     }
 
-    private static void OnCurrentDomainUnhandledException(object? sender, UnhandledExceptionEventArgs e)
+    private static void OnCurrentDomainUnhandledException(object? sender, System.UnhandledExceptionEventArgs e)
     {
         WindowsLog.Error("AppDomain unhandled exception", e.ExceptionObject as Exception);
     }
