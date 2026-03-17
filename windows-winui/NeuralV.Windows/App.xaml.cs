@@ -1,7 +1,9 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Controls;
 using NeuralV.Windows.Services;
 using Windows.UI;
+using System.Diagnostics;
 
 namespace NeuralV.Windows;
 
@@ -9,6 +11,7 @@ public partial class App : Application
 {
     public static ThemePalette Palette { get; private set; } = ThemePalette.DefaultDark();
     public static bool IsSmokeTest { get; private set; }
+    private Window? _window;
 
     public App()
     {
@@ -46,33 +49,26 @@ public partial class App : Application
 
         ApplyPalette(Resources, Palette);
 
-        if (IsSmokeTest)
+        try
         {
-            try
+            _window = new MainWindow();
+
+            if (IsSmokeTest && _window is MainWindow smokeWindow)
             {
+                smokeWindow.RunSmokeValidation();
                 WindowsSmokeVerifier.Run();
                 WindowsLog.Info("Smoke verifier completed");
                 Environment.ExitCode = 0;
+                Current.Exit();
+                return;
             }
-            catch (Exception ex)
-            {
-                WindowsLog.Error("Smoke verifier failed", ex);
-                Environment.ExitCode = 1;
-            }
-            Current.Exit();
-            return;
-        }
 
-        try
-        {
-            var window = new MainWindow();
-            window.Activate();
+            _window.Activate();
         }
         catch (Exception ex)
         {
             WindowsLog.Error("Window activation failed", ex);
-            Environment.ExitCode = 1;
-            Current.Exit();
+            ShowStartupFailureWindow(ex);
         }
     }
 
@@ -107,8 +103,8 @@ public partial class App : Application
         resources["AppOverlayScrimBrush"] = Brush(ThemePalette.WithAlpha(palette.Background, 0.68));
         resources["AppSurfaceGradientBrush"] = new LinearGradientBrush
         {
-            StartPoint = new Windows.Foundation.Point(0, 0),
-            EndPoint = new Windows.Foundation.Point(1, 1),
+            StartPoint = new global::Windows.Foundation.Point(0, 0),
+            EndPoint = new global::Windows.Foundation.Point(1, 1),
             GradientStops =
             {
                 new GradientStop { Color = ThemePalette.Blend(palette.SurfaceHigh, palette.Accent, 0.10), Offset = 0.0 },
@@ -117,8 +113,8 @@ public partial class App : Application
         };
         resources["AppSurfaceStrongGradientBrush"] = new LinearGradientBrush
         {
-            StartPoint = new Windows.Foundation.Point(0, 0),
-            EndPoint = new Windows.Foundation.Point(1, 1),
+            StartPoint = new global::Windows.Foundation.Point(0, 0),
+            EndPoint = new global::Windows.Foundation.Point(1, 1),
             GradientStops =
             {
                 new GradientStop { Color = ThemePalette.Blend(palette.SurfaceStrong, palette.AccentSecondary, 0.22), Offset = 0.0 },
@@ -127,8 +123,8 @@ public partial class App : Application
         };
         resources["AppAccentGradientBrush"] = new LinearGradientBrush
         {
-            StartPoint = new Windows.Foundation.Point(0, 0),
-            EndPoint = new Windows.Foundation.Point(1, 1),
+            StartPoint = new global::Windows.Foundation.Point(0, 0),
+            EndPoint = new global::Windows.Foundation.Point(1, 1),
             GradientStops =
             {
                 new GradientStop { Color = palette.Accent, Offset = 0.0 },
@@ -137,8 +133,8 @@ public partial class App : Application
         };
         resources["AppAccentSoftGradientBrush"] = new LinearGradientBrush
         {
-            StartPoint = new Windows.Foundation.Point(0, 0),
-            EndPoint = new Windows.Foundation.Point(1, 1),
+            StartPoint = new global::Windows.Foundation.Point(0, 0),
+            EndPoint = new global::Windows.Foundation.Point(1, 1),
             GradientStops =
             {
                 new GradientStop { Color = ThemePalette.Blend(palette.PrimaryContainer, palette.Accent, 0.22), Offset = 0.0 },
@@ -147,8 +143,8 @@ public partial class App : Application
         };
         resources["AppSecondaryGradientBrush"] = new LinearGradientBrush
         {
-            StartPoint = new Windows.Foundation.Point(0, 0),
-            EndPoint = new Windows.Foundation.Point(1, 1),
+            StartPoint = new global::Windows.Foundation.Point(0, 0),
+            EndPoint = new global::Windows.Foundation.Point(1, 1),
             GradientStops =
             {
                 new GradientStop { Color = ThemePalette.Blend(palette.SurfaceRaised, palette.AccentSecondary, 0.14), Offset = 0.0 },
@@ -157,8 +153,8 @@ public partial class App : Application
         };
         resources["AppFieldGradientBrush"] = new LinearGradientBrush
         {
-            StartPoint = new Windows.Foundation.Point(0, 0),
-            EndPoint = new Windows.Foundation.Point(1, 1),
+            StartPoint = new global::Windows.Foundation.Point(0, 0),
+            EndPoint = new global::Windows.Foundation.Point(1, 1),
             GradientStops =
             {
                 new GradientStop { Color = ThemePalette.Blend(palette.Surface, palette.Accent, 0.05), Offset = 0.0 },
@@ -183,5 +179,127 @@ public partial class App : Application
     {
         WindowsLog.Error("TaskScheduler unobserved exception", e.Exception);
         e.SetObserved();
+    }
+
+    private void ShowStartupFailureWindow(Exception exception)
+    {
+        try
+        {
+            var window = new Window
+            {
+                Title = "NeuralV"
+            };
+
+            var outer = new Grid
+            {
+                Background = Brush(Palette.Background)
+            };
+
+            var card = new Border
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Background = Brush(Palette.SurfaceStrong),
+                BorderBrush = Brush(Palette.OutlineStrong),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(28),
+                Padding = new Thickness(28),
+                MaxWidth = 720
+            };
+
+            var stack = new StackPanel
+            {
+                Spacing = 18
+            };
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = "NeuralV не смог открыть основной интерфейс",
+                Foreground = Brush(Palette.Text),
+                FontSize = 30,
+                FontWeight = global::Windows.UI.Text.FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap
+            });
+            stack.Children.Add(new TextBlock
+            {
+                Text = "Клиент записал подробности в log.txt. Это аварийное окно запускается специально, чтобы программа не закрывалась молча.",
+                Foreground = Brush(Palette.MutedText),
+                FontSize = 15,
+                TextWrapping = TextWrapping.Wrap
+            });
+            stack.Children.Add(new TextBlock
+            {
+                Text = $"log.txt: {WindowsLog.LogFilePath}",
+                Foreground = Brush(Palette.Text),
+                FontSize = 14,
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            var details = new ScrollViewer
+            {
+                MaxHeight = 220,
+                Content = new TextBlock
+                {
+                    Text = exception.ToString(),
+                    Foreground = Brush(Palette.SubtleText),
+                    FontSize = 13,
+                    TextWrapping = TextWrapping.Wrap
+                }
+            };
+            stack.Children.Add(details);
+
+            var actions = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 12
+            };
+
+            var openLogFolder = new Button
+            {
+                Content = "Открыть папку логов"
+            };
+            openLogFolder.Click += (_, _) =>
+            {
+                try
+                {
+                    var folder = Path.GetDirectoryName(WindowsLog.LogFilePath);
+                    if (!string.IsNullOrWhiteSpace(folder))
+                    {
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = folder,
+                            UseShellExecute = true
+                        });
+                    }
+                }
+                catch (Exception openEx)
+                {
+                    WindowsLog.Error("Open log folder failed", openEx);
+                }
+            };
+
+            var closeButton = new Button
+            {
+                Content = "Закрыть"
+            };
+            closeButton.Click += (_, _) => Current.Exit();
+
+            actions.Children.Add(openLogFolder);
+            actions.Children.Add(closeButton);
+            stack.Children.Add(actions);
+
+            card.Child = stack;
+            outer.Children.Add(card);
+
+            window.Content = outer;
+            _window = window;
+            _window.Activate();
+        }
+        catch (Exception fallbackEx)
+        {
+            WindowsLog.Error("Startup fallback window failed", fallbackEx);
+            Environment.ExitCode = 1;
+            Current.Exit();
+        }
     }
 }

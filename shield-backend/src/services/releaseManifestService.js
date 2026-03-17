@@ -2,8 +2,17 @@ const fs = require('fs');
 const path = require('path');
 const { loadRegistryConfig, listPackageVariantSourceMappings } = require('./packageRegistryService');
 
-const RELEASE_BRANCH_TIMEOUT_MS = parseInt(process.env.RELEASE_BRANCH_TIMEOUT_MS || '10000', 10);
-const RELEASE_MANIFEST_CACHE_TTL_MS = parseInt(process.env.RELEASE_MANIFEST_CACHE_TTL_MS || '600000', 10);
+const RELEASE_BRANCH_TIMEOUT_MS = parseInt(process.env.RELEASE_BRANCH_TIMEOUT_MS || '6000', 10);
+const RELEASE_MANIFEST_CACHE_TTL_MS = parseInt(process.env.RELEASE_MANIFEST_CACHE_TTL_MS || '60000', 10);
+const RELEASE_PARTIAL_CACHE_TTL_MS = parseInt(process.env.RELEASE_PARTIAL_CACHE_TTL_MS || '15000', 10);
+const RELEASE_RAW_BRANCH_TIMEOUT_MS = parseInt(
+    process.env.RELEASE_RAW_BRANCH_TIMEOUT_MS || String(Math.max(2500, Math.min(RELEASE_BRANCH_TIMEOUT_MS, 4500))),
+    10
+);
+const RELEASE_API_BRANCH_TIMEOUT_MS = parseInt(
+    process.env.RELEASE_API_BRANCH_TIMEOUT_MS || String(Math.max(2000, Math.min(RELEASE_BRANCH_TIMEOUT_MS, 3500))),
+    10
+);
 const PUBLIC_REPOSITORY = String(process.env.PUBLIC_REPOSITORY || 'Perdonus/fatalerror').trim();
 const ANDROID_FALLBACK_VERSION = loadConfiguredProductVersion();
 const PLATFORM_FALLBACK_VERSIONS = Object.freeze({
@@ -25,6 +34,16 @@ const STATIC_BRANCH_SOURCES = [
 const PLATFORM_ORDER = ['android', 'windows', 'linux', 'shell', 'nv-windows', 'nv-linux', 'site'];
 let manifestCache = null;
 let manifestCacheExpiresAt = 0;
+
+const PLATFORM_SOURCE_OF_TRUTH = Object.freeze({
+    android: { repo: PUBLIC_REPOSITORY, branch: 'android-builds' },
+    windows: { repo: PUBLIC_REPOSITORY, branch: 'windows-builds' },
+    linux: { repo: PUBLIC_REPOSITORY, branch: 'linux-gui-builds' },
+    shell: { repo: PUBLIC_REPOSITORY, branch: 'linux-cli-builds' },
+    'nv-windows': { repo: 'Perdonus/NV', branch: 'windows-builds' },
+    'nv-linux': { repo: 'Perdonus/NV', branch: 'linux-builds' },
+    site: { repo: PUBLIC_REPOSITORY, branch: 'site-builds' }
+});
 
 function rawBaseForSource(source) {
     return `https://raw.githubusercontent.com/${source.repo}/${source.branch}`;
@@ -59,6 +78,23 @@ function branchManifestUrl(source, { bust = false } = {}) {
 
 function branchManifestApiUrl(source) {
     return `https://api.github.com/repos/${source.repo}/contents/manifest.json?ref=${encodeURIComponent(source.branch)}`;
+}
+
+function getPlatformSourceOfTruth(platform) {
+    return PLATFORM_SOURCE_OF_TRUTH[String(platform || '').trim().toLowerCase()] || null;
+}
+
+function sourceMatches(left, right) {
+    if (!left || !right) {
+        return false;
+    }
+    return String(left.repo || '').trim() === String(right.repo || '').trim()
+        && String(left.branch || '').trim() === String(right.branch || '').trim();
+}
+
+function isSourceOfTruthForPlatform(platform, source) {
+    const sourceOfTruth = getPlatformSourceOfTruth(platform);
+    return Boolean(sourceOfTruth && sourceMatches(sourceOfTruth, source));
 }
 
 function loadConfiguredProductVersion() {
@@ -146,6 +182,7 @@ function fallbackArtifacts() {
                 source_repo: PUBLIC_REPOSITORY,
                 source_branch: 'android-builds',
                 source_label: 'android',
+                source_of_truth: true,
                 available: false
             }
         },
@@ -165,6 +202,7 @@ function fallbackArtifacts() {
                 source_repo: PUBLIC_REPOSITORY,
                 source_branch: 'windows-builds',
                 source_label: 'windows',
+                source_of_truth: true,
                 available: false,
                 artifactPlatform: 'windows',
                 desktopTrack: 'windows',
@@ -194,6 +232,7 @@ function fallbackArtifacts() {
                 source_repo: PUBLIC_REPOSITORY,
                 source_branch: 'linux-gui-builds',
                 source_label: 'linux-gui',
+                source_of_truth: true,
                 available: false,
                 artifactPlatform: 'linux',
                 desktopTrack: 'linux-gui',
@@ -217,6 +256,7 @@ function fallbackArtifacts() {
                 source_repo: PUBLIC_REPOSITORY,
                 source_branch: 'linux-cli-builds',
                 source_label: 'linux-cli',
+                source_of_truth: true,
                 available: false,
                 artifactPlatform: 'shell',
                 desktopTrack: 'linux-cli',
@@ -242,6 +282,7 @@ function fallbackArtifacts() {
                 source_repo: 'Perdonus/NV',
                 source_branch: 'windows-builds',
                 source_label: 'nv-windows',
+                source_of_truth: true,
                 available: false,
                 artifactPlatform: 'nv-windows',
                 packageTrack: 'nv-windows'
@@ -263,6 +304,7 @@ function fallbackArtifacts() {
                 source_repo: 'Perdonus/NV',
                 source_branch: 'linux-builds',
                 source_label: 'nv-linux',
+                source_of_truth: true,
                 available: false,
                 artifactPlatform: 'nv-linux',
                 packageTrack: 'nv-linux'
@@ -284,6 +326,7 @@ function fallbackArtifacts() {
                 source_repo: PUBLIC_REPOSITORY,
                 source_branch: 'site-builds',
                 source_label: 'site',
+                source_of_truth: true,
                 available: false
             }
         }
@@ -323,6 +366,7 @@ function normalizeArtifact(item, source) {
             source_repo: metadata.source_repo || source.repo,
             source_branch: metadata.source_branch || source.branch,
             source_label: metadata.source_label || source.label,
+            source_of_truth: isSourceOfTruthForPlatform(platform, source),
             available: true
         }
     };
@@ -355,8 +399,11 @@ function mergeArtifact(baseArtifact, incomingArtifact) {
 async function fetchBranchManifest(source) {
     const response = await fetch(branchManifestApiUrl(source), {
         method: 'GET',
-        headers: GITHUB_API_HEADERS,
-        signal: AbortSignal.timeout(RELEASE_BRANCH_TIMEOUT_MS)
+        headers: {
+            ...GITHUB_API_HEADERS,
+            'Cache-Control': 'no-cache'
+        },
+        signal: AbortSignal.timeout(RELEASE_API_BRANCH_TIMEOUT_MS)
     });
 
     if (!response.ok) {
@@ -368,7 +415,10 @@ async function fetchBranchManifest(source) {
         throw new Error(`${source.repo}@${source.branch} manifest is invalid`);
     }
 
-    return manifest;
+    return {
+        manifest,
+        transport: 'github-api'
+    };
 }
 
 async function fetchRawBranchManifest(source) {
@@ -376,9 +426,10 @@ async function fetchRawBranchManifest(source) {
         method: 'GET',
         headers: {
             'User-Agent': GITHUB_API_HEADERS['User-Agent'],
-            Accept: 'application/json'
+            Accept: 'application/json',
+            'Cache-Control': 'no-cache'
         },
-        signal: AbortSignal.timeout(RELEASE_BRANCH_TIMEOUT_MS)
+        signal: AbortSignal.timeout(RELEASE_RAW_BRANCH_TIMEOUT_MS)
     });
 
     if (!response.ok) {
@@ -390,7 +441,10 @@ async function fetchRawBranchManifest(source) {
         throw new Error(`${source.repo}@${source.branch} raw manifest is invalid`);
     }
 
-    return manifest;
+    return {
+        manifest,
+        transport: 'raw-branch'
+    };
 }
 
 async function fetchBranchManifestWithFallback(source) {
@@ -419,7 +473,9 @@ function buildSourceStatus(source, result) {
             generated_at: manifest.generated_at || null,
             release_channel: manifest.release_channel || 'main',
             platforms: source.platforms,
+            source_of_truth_for: source.platforms.filter((platform) => isSourceOfTruthForPlatform(platform, source)),
             artifact_count: Array.isArray(manifest.artifacts) ? manifest.artifacts.length : 0,
+            transport: result.value.transport || 'unknown',
             error: null
         };
     }
@@ -433,9 +489,42 @@ function buildSourceStatus(source, result) {
         generated_at: null,
         release_channel: null,
         platforms: source.platforms,
+        source_of_truth_for: source.platforms.filter((platform) => isSourceOfTruthForPlatform(platform, source)),
         artifact_count: 0,
+        transport: null,
         error: result.reason instanceof Error ? result.reason.message : String(result.reason)
     };
+}
+
+function shouldAcceptArtifactForSource(platform, source) {
+    const sourceOfTruth = getPlatformSourceOfTruth(platform);
+    if (!sourceOfTruth) {
+        return true;
+    }
+    return sourceMatches(sourceOfTruth, source);
+}
+
+function computeManifestCacheTtlMs(manifest) {
+    const sources = Array.isArray(manifest?.sources) ? manifest.sources : [];
+    const artifacts = Array.isArray(manifest?.artifacts) ? manifest.artifacts : [];
+    const criticalSourceUnavailable = sources.some((source) => {
+        if (source.available) {
+            return false;
+        }
+        return Array.isArray(source.source_of_truth_for) && source.source_of_truth_for.length > 0;
+    });
+    const fallbackArtifactsOnly = artifacts.some((artifact) => {
+        const metadata = artifact?.metadata || {};
+        if (!metadata.source_of_truth) {
+            return true;
+        }
+        return metadata.available !== true;
+    });
+
+    if (criticalSourceUnavailable || fallbackArtifactsOnly || manifest?.partial) {
+        return RELEASE_PARTIAL_CACHE_TTL_MS;
+    }
+    return RELEASE_MANIFEST_CACHE_TTL_MS;
 }
 
 function indexRegistryVariants(registryPackages) {
@@ -537,7 +626,14 @@ async function getReleaseManifest() {
     const branchSources = buildBranchSources(registry.packages);
 
     const settled = await Promise.allSettled(
-        branchSources.map(async (source) => ({ source, manifest: await fetchBranchManifestWithFallback(source) }))
+        branchSources.map(async (source) => {
+            const fetched = await fetchBranchManifestWithFallback(source);
+            return {
+                source,
+                manifest: fetched.manifest,
+                transport: fetched.transport
+            };
+        })
     );
 
     const sources = settled.map((result, index) => buildSourceStatus(branchSources[index], result));
@@ -559,6 +655,9 @@ async function getReleaseManifest() {
         for (const rawArtifact of manifest.artifacts) {
             const normalized = normalizeArtifact(rawArtifact, source);
             if (!normalized) {
+                continue;
+            }
+            if (!shouldAcceptArtifactForSource(normalized.platform, source)) {
                 continue;
             }
             const registryMatch = registryIndex.get(`${source.repo}::${source.branch}::${normalized.platform}`);
@@ -590,7 +689,7 @@ async function getReleaseManifest() {
     };
 
     manifestCache = manifest;
-    manifestCacheExpiresAt = Date.now() + RELEASE_MANIFEST_CACHE_TTL_MS;
+    manifestCacheExpiresAt = Date.now() + computeManifestCacheTtlMs(manifest);
     return manifest;
 }
 

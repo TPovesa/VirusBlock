@@ -107,6 +107,10 @@ public sealed partial class MainWindow : Window
     public void RunSmokeValidation()
     {
         WindowsLog.Info("Running WinUI smoke validation");
+        TryConfigureWindowFrame();
+        TryInitializeChrome();
+        UpdateStatusHomeFallback();
+        ApplyUpdateState();
     }
 
     private void TryConfigureWindowFrame()
