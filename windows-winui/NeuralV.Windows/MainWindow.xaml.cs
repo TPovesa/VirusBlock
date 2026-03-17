@@ -33,34 +33,33 @@ public sealed partial class MainWindow : Window
 
     public MainWindow()
     {
-        InitializeComponent();
-
-        HomeTimelineList.ItemsSource = _homeTimeline;
-        ScanTimelineList.ItemsSource = _scanTimeline;
-        HistoryList.ItemsSource = _historyItems;
-
-        ExtendsContentIntoTitleBar = false;
-        Title = "NeuralV";
-
-        var hwnd = WindowNative.GetWindowHandle(this);
-        var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
-        var appWindow = AppWindow.GetFromWindowId(windowId);
-        appWindow.Resize(new SizeInt32(1440, 920));
-
-        ApplyAmbientPalette();
-        ApplyChromeCopy();
-        ApplySessionState();
-        UpdateNavigationState(AppScreen.Splash);
-        UpdateScreenContext(AppScreen.Splash);
-        UpdateStatusHomeFallback();
-
-        UpdateStatusText.Text = "Проверяем актуальную сборку...";
-
-        Closed += (_, _) =>
+        try
         {
-            _scanPollCts?.Cancel();
-            _apiClient.Dispose();
-        };
+            InitializeComponent();
+
+            HomeTimelineList.ItemsSource = _homeTimeline;
+            ScanTimelineList.ItemsSource = _scanTimeline;
+            HistoryList.ItemsSource = _historyItems;
+
+            ExtendsContentIntoTitleBar = false;
+            Title = "NeuralV";
+
+            TryConfigureWindowFrame();
+            TryInitializeChrome();
+
+            UpdateStatusText.Text = "Проверяем актуальную сборку...";
+
+            Closed += (_, _) =>
+            {
+                _scanPollCts?.Cancel();
+                _apiClient.Dispose();
+            };
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("MainWindow ctor failed", ex);
+            throw;
+        }
     }
 
     private async void OnRootLoaded(object sender, RoutedEventArgs e)
@@ -71,21 +70,69 @@ public sealed partial class MainWindow : Window
         }
 
         _initialized = true;
+        WindowsLog.Info("Window root loaded");
 
-        if (WindowRoot.Resources["AmbientMotionStoryboard"] is Storyboard ambientStoryboard)
+        try
         {
-            ambientStoryboard.Begin();
-        }
-        if (WindowRoot.Resources["DotLoadingStoryboard"] is Storyboard dotStoryboard)
-        {
-            dotStoryboard.Begin();
-        }
-        if (WindowRoot.Resources["SplashOrbitStoryboard"] is Storyboard orbitStoryboard)
-        {
-            orbitStoryboard.Begin();
-        }
+            if (WindowRoot.Resources["AmbientMotionStoryboard"] is Storyboard ambientStoryboard)
+            {
+                ambientStoryboard.Begin();
+            }
+            if (WindowRoot.Resources["DotLoadingStoryboard"] is Storyboard dotStoryboard)
+            {
+                dotStoryboard.Begin();
+            }
+            if (WindowRoot.Resources["SplashOrbitStoryboard"] is Storyboard orbitStoryboard)
+            {
+                orbitStoryboard.Begin();
+            }
 
-        await InitializeAsync();
+            await InitializeAsync();
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("OnRootLoaded failed", ex);
+            SetBusy(false);
+            SetStatus("Не удалось подготовить интерфейс. Подробности в log.txt.");
+            ShowScreen(AppScreen.Welcome);
+        }
+    }
+
+    private void TryConfigureWindowFrame()
+    {
+        try
+        {
+            var hwnd = WindowNative.GetWindowHandle(this);
+            if (hwnd == IntPtr.Zero)
+            {
+                return;
+            }
+
+            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
+            var appWindow = AppWindow.GetFromWindowId(windowId);
+            appWindow?.Resize(new SizeInt32(1440, 920));
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("Window frame configuration failed", ex);
+        }
+    }
+
+    private void TryInitializeChrome()
+    {
+        try
+        {
+            ApplyAmbientPalette();
+            ApplyChromeCopy();
+            ApplySessionState();
+            UpdateNavigationState(AppScreen.Splash);
+            UpdateScreenContext(AppScreen.Splash);
+            UpdateStatusHomeFallback();
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("Window chrome initialization failed", ex);
+        }
     }
 
     private void ApplyAmbientPalette()
