@@ -23,6 +23,7 @@ public sealed partial class MainWindow : Window
     private readonly ObservableCollection<string> _homeTimeline = new();
     private readonly ObservableCollection<string> _scanTimeline = new();
     private readonly ObservableCollection<string> _historyItems = new();
+    private readonly Grid WindowRoot = new();
 
     private SessionData? _session;
     private ChallengeTicket? _challenge;
@@ -107,7 +108,7 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            InitializeComponent();
+            Content = WindowRoot;
             WindowRoot.Loaded += OnRootLoaded;
             WindowRoot.Background = ThemeBrush("AppBackgroundBrush");
             BuildLayout();
