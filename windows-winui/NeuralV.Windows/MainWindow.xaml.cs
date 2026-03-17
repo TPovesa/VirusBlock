@@ -108,6 +108,8 @@ public sealed partial class MainWindow : Window
         try
         {
             InitializeComponent();
+            WindowRoot.Loaded += OnRootLoaded;
+            WindowRoot.Background = ThemeBrush("AppBackgroundBrush");
             BuildLayout();
 
             HomeTimelineList.ItemsSource = _homeTimeline;

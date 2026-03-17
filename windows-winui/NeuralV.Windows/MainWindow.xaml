@@ -6,5 +6,5 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
     Title="NeuralV">
-    <Grid x:Name="WindowRoot" Background="{ThemeResource AppBackgroundBrush}" Loaded="OnRootLoaded" />
+    <Grid x:Name="WindowRoot" />
 </Window>
