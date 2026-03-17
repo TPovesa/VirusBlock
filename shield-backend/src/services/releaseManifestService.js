@@ -371,6 +371,42 @@ async function fetchBranchManifest(source) {
     return manifest;
 }
 
+async function fetchRawBranchManifest(source) {
+    const response = await fetch(branchManifestUrl(source, { bust: true }), {
+        method: 'GET',
+        headers: {
+            'User-Agent': GITHUB_API_HEADERS['User-Agent'],
+            Accept: 'application/json'
+        },
+        signal: AbortSignal.timeout(RELEASE_BRANCH_TIMEOUT_MS)
+    });
+
+    if (!response.ok) {
+        throw new Error(`${source.repo}@${source.branch} raw manifest responded with ${response.status}`);
+    }
+
+    const manifest = await response.json();
+    if (!manifest || !Array.isArray(manifest.artifacts)) {
+        throw new Error(`${source.repo}@${source.branch} raw manifest is invalid`);
+    }
+
+    return manifest;
+}
+
+async function fetchBranchManifestWithFallback(source) {
+    try {
+        return await fetchRawBranchManifest(source);
+    } catch (rawError) {
+        try {
+            return await fetchBranchManifest(source);
+        } catch (apiError) {
+            const rawMessage = rawError instanceof Error ? rawError.message : String(rawError);
+            const apiMessage = apiError instanceof Error ? apiError.message : String(apiError);
+            throw new Error(`${source.repo}@${source.branch} manifest failed: raw=${rawMessage}; api=${apiMessage}`);
+        }
+    }
+}
+
 function buildSourceStatus(source, result) {
     if (result.status === 'fulfilled') {
         const manifest = result.value.manifest;
@@ -501,7 +537,7 @@ async function getReleaseManifest() {
     const branchSources = buildBranchSources(registry.packages);
 
     const settled = await Promise.allSettled(
-        branchSources.map(async (source) => ({ source, manifest: await fetchBranchManifest(source) }))
+        branchSources.map(async (source) => ({ source, manifest: await fetchBranchManifestWithFallback(source) }))
     );
 
     const sources = settled.map((result, index) => buildSourceStatus(branchSources[index], result));
