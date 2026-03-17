@@ -30,6 +30,30 @@
         <SolidColorBrush x:Key="AppWarningBrush" Color="#FFB95F" />
         <SolidColorBrush x:Key="AppDangerBrush" Color="#FF829F" />
         <SolidColorBrush x:Key="AppOverlayScrimBrush" Color="#9C0A0E18" />
+        <LinearGradientBrush x:Key="AppSurfaceGradientBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#20283C" Offset="0" />
+            <GradientStop Color="#171E30" Offset="1" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="AppSurfaceStrongGradientBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#32405A" Offset="0" />
+            <GradientStop Color="#20283C" Offset="1" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="AppAccentGradientBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#7C6BFF" Offset="0" />
+            <GradientStop Color="#57D5F9" Offset="1" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="AppAccentSoftGradientBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#46589B" Offset="0" />
+            <GradientStop Color="#2F6574" Offset="1" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="AppSecondaryGradientBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#27324A" Offset="0" />
+            <GradientStop Color="#32405A" Offset="1" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="AppFieldGradientBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#20283C" Offset="0" />
+            <GradientStop Color="#171E30" Offset="1" />
+        </LinearGradientBrush>
 
         <CornerRadius x:Key="WindowShellCornerRadius">36</CornerRadius>
         <CornerRadius x:Key="SurfaceCardCornerRadius">30</CornerRadius>
@@ -92,7 +116,7 @@
         </Style>
 
         <Style x:Key="SurfaceCardStyle" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource AppSurfaceHighBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppSurfaceGradientBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="{StaticResource SurfaceCardCornerRadius}" />
@@ -100,22 +124,22 @@
         </Style>
 
         <Style x:Key="ElevatedSurfaceCardStyle" TargetType="Border" BasedOn="{StaticResource SurfaceCardStyle}">
-            <Setter Property="Background" Value="{ThemeResource AppPrimaryContainerBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppSurfaceStrongGradientBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineStrongBrush}" />
         </Style>
 
         <Style x:Key="AccentSurfaceCardStyle" TargetType="Border" BasedOn="{StaticResource SurfaceCardStyle}">
-            <Setter Property="Background" Value="{ThemeResource AppAccentSoftBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppAccentSoftGradientBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineStrongBrush}" />
         </Style>
 
         <Style x:Key="SecondarySurfaceCardStyle" TargetType="Border" BasedOn="{StaticResource SurfaceCardStyle}">
-            <Setter Property="Background" Value="{ThemeResource AppSecondaryContainerBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppSecondaryGradientBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineStrongBrush}" />
         </Style>
 
         <Style x:Key="GlassPanelStyle" TargetType="Border" BasedOn="{StaticResource SurfaceCardStyle}">
-            <Setter Property="Background" Value="{ThemeResource AppChromeBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppSurfaceStrongGradientBrush}" />
         </Style>
 
         <Style x:Key="MiniPillStyle" TargetType="Border">
@@ -192,19 +216,19 @@
         </Style>
 
         <Style x:Key="NeuralVButtonStyle" TargetType="Button" BasedOn="{StaticResource BaseButtonStyle}">
-            <Setter Property="Background" Value="{ThemeResource AppAccentBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppAccentGradientBrush}" />
             <Setter Property="Foreground" Value="{ThemeResource AppOnAccentBrush}" />
-            <Setter Property="BorderBrush" Value="{ThemeResource AppAccentBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource AppAccentSecondaryBrush}" />
         </Style>
 
         <Style x:Key="SecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource BaseButtonStyle}">
-            <Setter Property="Background" Value="{ThemeResource AppSecondaryContainerBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppSecondaryGradientBrush}" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineBrush}" />
         </Style>
 
         <Style x:Key="TertiaryButtonStyle" TargetType="Button" BasedOn="{StaticResource BaseButtonStyle}">
-            <Setter Property="Background" Value="{ThemeResource AppSurfaceHighBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppSurfaceGradientBrush}" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineBrush}" />
         </Style>
@@ -229,7 +253,7 @@
             <Setter Property="Padding" Value="16,14" />
             <Setter Property="MinHeight" Value="58" />
             <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
-            <Setter Property="Background" Value="{ThemeResource AppSurfaceHighBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppFieldGradientBrush}" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineBrush}" />
             <Setter Property="BorderThickness" Value="1" />
@@ -241,7 +265,7 @@
             <Setter Property="Padding" Value="16,14" />
             <Setter Property="MinHeight" Value="58" />
             <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
-            <Setter Property="Background" Value="{ThemeResource AppSurfaceHighBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppFieldGradientBrush}" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineBrush}" />
             <Setter Property="BorderThickness" Value="1" />

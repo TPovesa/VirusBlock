@@ -348,7 +348,7 @@ function renderAuthSlot() {
   if (!state.auth.enabled) {
     slot.innerHTML = `
       <div class="auth-status-card compact-status">
-        <span>Telegram login пока не включён на сервере</span>
+        <span>Telegram-вход появится после настройки бота</span>
       </div>
     `;
     return;
@@ -450,16 +450,16 @@ function renderCreatorCard(creator) {
 function renderHome() {
   const packagesEl = document.getElementById('featured-packages');
   const creatorsEl = document.getElementById('featured-creators');
-  const metricPackages = document.getElementById('metric-packages');
-  const metricCreators = document.getElementById('metric-creators');
   if (!packagesEl || !creatorsEl) return;
 
   const featuredPackages = state.catalogPackages.slice(0, 6);
   const featuredCreators = state.creators.slice(0, 4);
-  packagesEl.innerHTML = featuredPackages.map(renderPackageCard).join('');
-  creatorsEl.innerHTML = featuredCreators.map(renderCreatorCard).join('');
-  if (metricPackages) metricPackages.textContent = String(state.catalogPackages.length || 0);
-  if (metricCreators) metricCreators.textContent = String(state.creators.length || 0);
+  packagesEl.innerHTML = featuredPackages.length
+    ? featuredPackages.map(renderPackageCard).join('')
+    : '<p class="empty-state">Пакеты появятся здесь сразу после первой публикации.</p>';
+  creatorsEl.innerHTML = featuredCreators.length
+    ? featuredCreators.map(renderCreatorCard).join('')
+    : '<p class="empty-state">Авторы появятся здесь после первой публикации.</p>';
   bindCopyButtons();
 }
 
@@ -779,7 +779,7 @@ async function renderProfile() {
               <h2>Хочешь выкладывать свои пакеты?</h2>
             </div>
           </div>
-          <p class="section-copy">Войди через Telegram под своим creator slug, после чего здесь появятся формы публикации и релизов.</p>
+          <p class="section-copy">Войди через Telegram. После входа здесь появятся формы для пакетов и релизов.</p>
         </section>`}
 
     <section class="section-shell">

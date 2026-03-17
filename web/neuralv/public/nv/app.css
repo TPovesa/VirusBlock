@@ -12,7 +12,7 @@
   --accent: #6f84ff;
   --accent-strong: #3fd2ff;
   --accent-soft: rgba(111, 132, 255, 0.12);
-  --shadow: 0 14px 38px rgba(0, 0, 0, 0.24);
+  --shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
   --radius-xl: 28px;
   --radius-lg: 22px;
   --radius-md: 16px;
@@ -32,8 +32,8 @@ body {
   font-family: Inter, "Segoe UI", system-ui, sans-serif;
   color: var(--text);
   background:
-    radial-gradient(circle at 20% 0%, rgba(111, 132, 255, 0.10), transparent 24%),
-    radial-gradient(circle at 82% 8%, rgba(63, 210, 255, 0.08), transparent 18%),
+    radial-gradient(circle at 20% 0%, rgba(111, 132, 255, 0.08), transparent 22%),
+    radial-gradient(circle at 82% 8%, rgba(63, 210, 255, 0.06), transparent 16%),
     linear-gradient(180deg, var(--bg), var(--bg-alt));
 }
 
@@ -72,7 +72,7 @@ a {
 }
 
 .nv-shell {
-  width: min(1120px, calc(100% - 32px));
+  width: min(1040px, calc(100% - 32px));
   margin: 0 auto;
   padding: 20px 0 56px;
 }
@@ -105,7 +105,7 @@ a {
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 16px;
-  padding: 14px 16px;
+  padding: 12px 14px;
   border-radius: 999px;
   margin-bottom: 18px;
 }
@@ -140,6 +140,10 @@ a {
 .auth-meta span,
 .compact-status span {
   color: var(--muted);
+}
+
+.brand-copy {
+  font-size: 14px;
 }
 
 .creator-shell code {
