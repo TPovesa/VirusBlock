@@ -70,6 +70,7 @@ public partial class App : Application
             WindowsLog.Error("Window activation failed", ex);
             if (IsSmokeTest)
             {
+                WriteSmokeFailureDetails(ex);
                 Environment.ExitCode = 1;
                 Current.Exit();
                 return;
@@ -304,8 +305,21 @@ public partial class App : Application
         catch (Exception fallbackEx)
         {
             WindowsLog.Error("Startup fallback window failed", fallbackEx);
+            WriteSmokeFailureDetails(fallbackEx);
             Environment.ExitCode = 1;
             Current.Exit();
+        }
+    }
+
+    private static void WriteSmokeFailureDetails(Exception exception)
+    {
+        try
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, "smoke-error.txt");
+            File.WriteAllText(path, exception.ToString());
+        }
+        catch
+        {
         }
     }
 }
