@@ -134,7 +134,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-winui-runtime-log
-          path: ~/AppData/Roaming/NeuralV/log.txt
+          path: |
+            dist/windows/NeuralV/log.txt
+            ~/AppData/Local/NeuralV/log.txt
+            ~/AppData/Roaming/NeuralV/log.txt
           if-no-files-found: warn
 
       - name: Emit Windows build failure annotation

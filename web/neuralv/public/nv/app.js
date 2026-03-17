@@ -3,26 +3,25 @@ const REGISTRY_URL = '/basedata/api/packages/registry';
 const fallbackRegistry = {
   packages: [
     {
-      name: 'nv',
+      name: '@lvls/nv',
       title: 'NV',
       description: 'Пакетный менеджер для установки, обновления и удаления приложений.',
       homepage: '/nv/',
-      latest_version: '1.3.2',
+      latest_version: '1.3.3',
       variants: [
-        { id: 'nv-linux', label: 'Linux', os: 'linux', version: '1.3.2', install_command: 'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh' },
-        { id: 'nv-windows', label: 'Windows', os: 'windows', version: '1.3.2', install_command: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://sosiskibot.ru/neuralv/install/nv.ps1 | iex"' }
+        { id: 'nv-linux', label: 'Linux', os: 'linux', version: '1.3.3', install_command: 'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh' },
+        { id: 'nv-windows', label: 'Windows', os: 'windows', version: '1.3.3', install_command: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://sosiskibot.ru/neuralv/install/nv.ps1 | iex"' }
       ]
     },
     {
-      name: 'neuralv',
+      name: '@lvls/neuralv',
       title: 'NeuralV',
       description: 'Клиент защиты для Windows и Linux.',
       homepage: '/neuralv/',
       latest_version: '1.5.0',
       variants: [
-        { id: 'windows-gui', label: 'Windows', os: 'windows', version: '1.5.0' },
-        { id: 'linux-gui', label: 'Linux GUI', os: 'linux', version: '1.4.0' },
-        { id: 'linux-cli', label: 'Linux CLI', os: 'linux', version: '1.4.1' }
+        { id: 'windows', label: 'Windows', os: 'windows', version: '1.5.0' },
+        { id: 'linux', label: 'Linux', os: 'linux', version: '1.4.0' }
       ]
     }
   ]
@@ -96,7 +95,7 @@ function getPackages() {
 }
 
 function packageCommand(pkg) {
-  return `nv install ${pkg.name}@latest`;
+  return `nv install ${pkg.name}`;
 }
 
 function platformBadge(os) {
@@ -162,7 +161,7 @@ function attachPackageFilters() {
 
 function resolveNvVariant(platform) {
   const packages = getPackages();
-  const nvPackage = packages.find((pkg) => pkg.name === 'nv');
+  const nvPackage = packages.find((pkg) => pkg.name === '@lvls/nv');
   return nvPackage?.variants.find((variant) => variant.os === platform) || null;
 }
 

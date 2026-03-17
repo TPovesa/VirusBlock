@@ -1,12 +1,14 @@
 package com.neuralv.desktop.app
 
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 
 fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
-        title = "NeuralV"
+        title = "NeuralV",
+        icon = painterResource("NeuralV.png")
     ) {
         NeuralVDesktopApp()
     }

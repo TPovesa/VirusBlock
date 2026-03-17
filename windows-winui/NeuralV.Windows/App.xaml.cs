@@ -13,6 +13,7 @@ public partial class App : Application
     public App()
     {
         WindowsLog.StartSession("winui");
+        WindowsLog.Info($"Log file: {WindowsLog.LogFilePath}");
         WindowsLog.Info("App ctor");
         UnhandledException += OnUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnCurrentDomainUnhandledException;
@@ -45,14 +46,6 @@ public partial class App : Application
 
         ApplyPalette(Resources, Palette);
 
-        if (IsSmokeTest)
-        {
-            WindowsLog.Info("Smoke test short-circuit before window creation");
-            Environment.ExitCode = 0;
-            Current.Exit();
-            return;
-        }
-
         try
         {
             var window = new MainWindow();
@@ -61,7 +54,8 @@ public partial class App : Application
         catch (Exception ex)
         {
             WindowsLog.Error("Window activation failed", ex);
-            throw;
+            Environment.ExitCode = 1;
+            Current.Exit();
         }
     }
 

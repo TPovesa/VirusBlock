@@ -6,6 +6,7 @@ public static class WindowsLog
 {
     private static readonly object Sync = new();
     private static string? _logFilePath;
+    private const string LogFileName = "log.txt";
 
     public static string LogFilePath
     {
@@ -16,11 +17,7 @@ public static class WindowsLog
                 return _logFilePath;
             }
 
-            var root = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "NeuralV");
-            Directory.CreateDirectory(root);
-            _logFilePath = Path.Combine(root, "log.txt");
+            _logFilePath = ResolveLogFilePath();
             return _logFilePath;
         }
     }
@@ -70,6 +67,69 @@ public static class WindowsLog
         }
         catch
         {
+        }
+    }
+
+    private static string ResolveLogFilePath()
+    {
+        foreach (var candidate in EnumerateCandidateDirectories())
+        {
+            if (TryEnsureWritableDirectory(candidate))
+            {
+                return Path.Combine(candidate, LogFileName);
+            }
+        }
+
+        return Path.Combine(Path.GetTempPath(), "NeuralV", LogFileName);
+    }
+
+    private static IEnumerable<string> EnumerateCandidateDirectories()
+    {
+        if (!string.IsNullOrWhiteSpace(Environment.ProcessPath))
+        {
+            var processDir = Path.GetDirectoryName(Environment.ProcessPath);
+            if (!string.IsNullOrWhiteSpace(processDir))
+            {
+                yield return processDir;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(AppContext.BaseDirectory))
+        {
+            yield return AppContext.BaseDirectory;
+        }
+
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!string.IsNullOrWhiteSpace(localAppData))
+        {
+            yield return Path.Combine(localAppData, "NeuralV");
+        }
+
+        var roamingAppData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        if (!string.IsNullOrWhiteSpace(roamingAppData))
+        {
+            yield return Path.Combine(roamingAppData, "NeuralV");
+        }
+    }
+
+    private static bool TryEnsureWritableDirectory(string? directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            return false;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+            var probe = Path.Combine(directory, ".neuralv-write-probe");
+            File.WriteAllText(probe, "probe", Encoding.UTF8);
+            File.Delete(probe);
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 }

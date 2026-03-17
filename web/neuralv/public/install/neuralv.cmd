@@ -6,4 +6,4 @@ if errorlevel 1 exit /b 1
 set "PATH=%LOCALAPPDATA%\NV;%PATH%"
 nv -v
 if errorlevel 1 exit /b 1
-nv install neuralv@latest
+nv install @lvls/neuralv

@@ -34,6 +34,13 @@ export type PackageCatalog = {
 
 const registryUrl = (import.meta.env.VITE_PACKAGE_REGISTRY_URL as string | undefined) || '/basedata/api/packages';
 
+function canonicalPackageName(name: string): string {
+  const normalized = name.trim().toLowerCase();
+  if (normalized === 'neuralv' || normalized === '@lvls/neuralv') return '@lvls/neuralv';
+  if (normalized === 'nv' || normalized === '@lvls/nv') return '@lvls/nv';
+  return normalized;
+}
+
 function stableVariantDownloadUrl(entry: Record<string, unknown>, fallbackUrl: string): string {
   const metadata = entry.metadata && typeof entry.metadata === 'object'
     ? (entry.metadata as Record<string, unknown>)
@@ -41,9 +48,9 @@ function stableVariantDownloadUrl(entry: Record<string, unknown>, fallbackUrl: s
   const source = metadata?.source && typeof metadata.source === 'object'
     ? (metadata.source as Record<string, unknown>)
     : undefined;
-  const repo = String(source?.repo ?? '').trim();
-  const branch = String(source?.branch ?? '').trim();
-  const platform = String(source?.platform ?? '').trim();
+  const repo = String(source?.repo ?? metadata?.source_repo ?? '').trim();
+  const branch = String(source?.branch ?? metadata?.source_branch ?? '').trim();
+  const platform = String(source?.platform ?? metadata?.artifactPlatform ?? metadata?.artifact_platform ?? '').trim();
 
   if (!repo || !branch) {
     return fallbackUrl;
@@ -116,7 +123,8 @@ export async function fetchPackageCatalog(signal?: AbortSignal): Promise<Package
 }
 
 export function getPackage(catalog: PackageCatalog, packageName: string): PackageRecord | undefined {
-  return catalog.packages.find((item) => item.name === packageName);
+  const canonical = canonicalPackageName(packageName);
+  return catalog.packages.find((item) => canonicalPackageName(item.name) === canonical);
 }
 
 export function getPackageVariant(pkg: PackageRecord | undefined, variantId: string): PackageVariant | undefined {

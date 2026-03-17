@@ -20,11 +20,16 @@ const deviceShowcaseUrl = `${baseUrl}media/neuralv-devices.svg`;
 export function HomePage() {
   const { catalog } = usePackageRegistry();
   const windowsManifestState = useReleaseManifest('windows');
+  const linuxManifestState = useReleaseManifest('linux');
+  const shellManifestState = useReleaseManifest('shell');
   const windowsArtifact = useMemo(() => getArtifact(windowsManifestState.manifest, 'windows'), [windowsManifestState.manifest]);
   const windowsVersion = windowsArtifact?.version || (windowsManifestState.manifest.platform === 'windows' ? (windowsManifestState.manifest.version || '') : '') || 'pending';
-  const neuralvPackage = useMemo(() => getPackage(catalog, 'neuralv'), [catalog]);
-  const linuxGui = useMemo(() => getPackageVariant(neuralvPackage, 'linux-gui'), [neuralvPackage]);
-  const linuxCli = useMemo(() => getPackageVariant(neuralvPackage, 'linux-cli'), [neuralvPackage]);
+  const linuxArtifact = useMemo(() => getArtifact(linuxManifestState.manifest, 'linux'), [linuxManifestState.manifest]);
+  const shellArtifact = useMemo(() => getArtifact(shellManifestState.manifest, 'shell'), [shellManifestState.manifest]);
+  const linuxGuiVersion = linuxArtifact?.version || (linuxManifestState.manifest.platform === 'linux' ? (linuxManifestState.manifest.version || '') : '') || 'pending';
+  const linuxCliVersion = shellArtifact?.version || (shellManifestState.manifest.platform === 'shell' ? (shellManifestState.manifest.version || '') : '') || 'pending';
+  const neuralvPackage = useMemo(() => getPackage(catalog, '@lvls/neuralv'), [catalog]);
+  const linuxVariant = useMemo(() => getPackageVariant(neuralvPackage, 'linux'), [neuralvPackage]);
 
   return (
     <div className="page-stack">
@@ -95,7 +100,7 @@ export function HomePage() {
               </div>
             </div>
             <div className="platform-meta">
-              GUI {linuxGui?.version || 'pending'} · CLI {linuxCli?.version || 'pending'}
+              GUI {linuxGuiVersion || linuxVariant?.version || 'pending'} · CLI {linuxCliVersion || 'pending'}
             </div>
             <div className="card-actions" style={{ flexWrap: 'nowrap' }}>
               <Link className="nv-button tonal" to="/linux">Открыть</Link>

@@ -23,14 +23,14 @@ export type LinuxCommandRow = {
 };
 
 export const linuxBootstrapCommand = 'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh';
-export const linuxInstallCommand = 'nv install neuralv@latest';
+export const linuxInstallCommand = 'nv install @lvls/neuralv';
 
 export function linuxVersionInstallCommand(version?: string) {
   if (!version || version === 'pending' || version === 'latest') {
     return linuxInstallCommand;
   }
 
-  return `nv install neuralv@${version}`;
+  return `nv install @lvls/neuralv@${version}`;
 }
 
 export const linuxPageContent = {
@@ -70,7 +70,7 @@ export const linuxPageContent = {
     {
       title: 'При необходимости зафиксировать версию',
       description: 'Если знаешь номер релиза, можно поставить конкретную версию вместо latest.',
-      command: 'nv install neuralv@<версия>'
+      command: 'nv install @lvls/neuralv@<версия>'
     }
   ] satisfies LinuxStep[],
   features: [
@@ -109,7 +109,7 @@ export const linuxPageContent = {
     },
     {
       label: 'Удалить',
-      command: 'nv uninstall neuralv'
+      command: 'nv uninstall @lvls/neuralv'
     },
     {
       label: 'Версия nv',

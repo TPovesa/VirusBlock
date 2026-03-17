@@ -4,9 +4,9 @@ $nvCmdWrapper = Join-Path $env:LOCALAPPDATA 'NV\nv.cmd'
 $nvExe = Join-Path $env:LOCALAPPDATA 'NV\nv.exe'
 Invoke-RestMethod $nvScript | Invoke-Expression
 if (Test-Path $nvCmdWrapper) {
-  & $nvCmdWrapper install neuralv@latest
+  & $nvCmdWrapper install @lvls/neuralv
 } elseif (Test-Path $nvExe) {
-  & $nvExe install neuralv@latest
+  & $nvExe install @lvls/neuralv
 } else {
   throw 'NV установлен некорректно: nv.exe не найден'
 }

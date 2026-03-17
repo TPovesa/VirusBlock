@@ -32,7 +32,7 @@ function getPowershellCommand() {
     'irm https://sosiskibot.ru/neuralv/install/nv.ps1 | iex',
     '',
     '# 2. Установить NeuralV',
-    'nv install neuralv@latest'
+    'nv install @lvls/neuralv'
   ].join('\n');
 }
 
@@ -42,7 +42,7 @@ function getCmdCommand() {
     'curl.exe -fsSL https://sosiskibot.ru/neuralv/install/nv.cmd -o "%TEMP%\\nv-install.cmd" && call "%TEMP%\\nv-install.cmd"',
     '',
     'REM 2. Установить NeuralV',
-    'nv install neuralv@latest'
+    'nv install @lvls/neuralv'
   ].join('\n');
 }
 

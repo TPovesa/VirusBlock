@@ -22,6 +22,7 @@ OutputDir={#NeuralVOutputDir}
 OutputBaseFilename=neuralv-setup
 UninstallDisplayIcon={app}\NeuralV.exe
 SetupLogging=yes
+SetupIconFile=..\..\windows-winui\NeuralV.Windows\Assets\NeuralV.ico
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
@@ -31,8 +32,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Source: "{#NeuralVStageDir}\NeuralV\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\NeuralV"; Filename: "{app}\NeuralV.exe"
-Name: "{autodesktop}\NeuralV"; Filename: "{app}\NeuralV.exe"
+Name: "{autoprograms}\NeuralV"; Filename: "{app}\NeuralV.exe"; IconFilename: "{app}\NeuralV.exe"
+Name: "{autodesktop}\NeuralV"; Filename: "{app}\NeuralV.exe"; IconFilename: "{app}\NeuralV.exe"
 
 [Run]
 Filename: "{app}\NeuralV.exe"; Description: "Launch NeuralV"; Flags: nowait postinstall skipifsilent
