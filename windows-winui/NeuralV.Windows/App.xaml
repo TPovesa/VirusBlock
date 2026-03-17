@@ -147,7 +147,6 @@
 
                                 <ContentPresenter Content="{TemplateBinding Content}"
                                                   ContentTemplate="{TemplateBinding ContentTemplate}"
-                                                  Foreground="{TemplateBinding Foreground}"
                                                   HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                                   VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
                             </Border>
@@ -224,7 +223,6 @@
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="PlaceholderForeground" Value="{ThemeResource AppOnSurfaceVariantBrush}" />
         </Style>
 
         <Style x:Key="FieldPasswordBoxStyle" TargetType="PasswordBox">
@@ -237,7 +235,6 @@
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="PlaceholderForeground" Value="{ThemeResource AppOnSurfaceVariantBrush}" />
         </Style>
 
         <Style x:Key="FlatListViewItemStyle" TargetType="ListViewItem">
