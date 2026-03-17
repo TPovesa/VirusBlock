@@ -6,7 +6,8 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
-using Microsoft.UI.Xaml.Shapes;
+using UiEllipse = Microsoft.UI.Xaml.Shapes.UiEllipse;
+using UiRectangle = Microsoft.UI.Xaml.Shapes.UiRectangle;
 using NeuralV.Windows.Models;
 using NeuralV.Windows.Services;
 using Windows.Foundation;
@@ -32,13 +33,13 @@ public sealed partial class MainWindow : Window
     private bool _initialized;
     private readonly string _currentVersion = VersionInfo.Current;
 
-    private Rectangle BackdropGradient = default!;
-    private Rectangle FabricLayerA = default!;
-    private Rectangle FabricLayerB = default!;
-    private Rectangle FabricLayerC = default!;
-    private Ellipse GlowA = default!;
-    private Ellipse GlowB = default!;
-    private Ellipse GlowC = default!;
+    private UiRectangle BackdropGradient = default!;
+    private UiRectangle FabricLayerA = default!;
+    private UiRectangle FabricLayerB = default!;
+    private UiRectangle FabricLayerC = default!;
+    private UiEllipse GlowA = default!;
+    private UiEllipse GlowB = default!;
+    private UiEllipse GlowC = default!;
     private Grid ShellFrame = default!;
     private ColumnDefinition RailColumn = default!;
     private ColumnDefinition GutterColumn = default!;
@@ -69,7 +70,7 @@ public sealed partial class MainWindow : Window
     private TextBlock StatusBannerText = default!;
     private FrameworkElement SplashView = default!;
     private Border SplashHalo = default!;
-    private Ellipse SplashOrbitRing = default!;
+    private UiEllipse SplashOrbitRing = default!;
     private FrameworkElement WelcomeView = default!;
     private FrameworkElement LoginView = default!;
     private TextBox LoginEmailBox = default!;
@@ -336,8 +337,8 @@ public sealed partial class MainWindow : Window
         WindowRoot.Children.Clear();
 
         var ambientLayer = new Grid();
-        BackdropGradient = new Rectangle();
-        FabricLayerA = new Rectangle
+        BackdropGradient = new UiRectangle();
+        FabricLayerA = new UiRectangle
         {
             Width = 1800,
             Height = 920,
@@ -346,7 +347,7 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(-280, -180, 0, 0),
             Opacity = 0.18
         };
-        FabricLayerB = new Rectangle
+        FabricLayerB = new UiRectangle
         {
             Width = 1700,
             Height = 960,
@@ -355,7 +356,7 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(0, -120, -220, 0),
             Opacity = 0.14
         };
-        FabricLayerC = new Rectangle
+        FabricLayerC = new UiRectangle
         {
             Width = 1650,
             Height = 940,
@@ -364,7 +365,7 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(0, 0, 0, -260),
             Opacity = 0.10
         };
-        GlowA = new Ellipse
+        GlowA = new UiEllipse
         {
             Width = 560,
             Height = 560,
@@ -373,7 +374,7 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(-120, -80, 0, 0),
             Opacity = 0.28
         };
-        GlowB = new Ellipse
+        GlowB = new UiEllipse
         {
             Width = 700,
             Height = 700,
@@ -382,7 +383,7 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(0, 0, -180, -180),
             Opacity = 0.22
         };
-        GlowC = new Ellipse
+        GlowC = new UiEllipse
         {
             Width = 460,
             Height = 460,
@@ -644,7 +645,7 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(0, 0, 0, 14)
         };
         var busyGlyph = new Grid();
-        busyGlyph.Children.Add(new Ellipse
+        busyGlyph.Children.Add(new UiEllipse
         {
             Width = 44,
             Height = 44,
@@ -691,7 +692,7 @@ public sealed partial class MainWindow : Window
             CornerRadius = new CornerRadius(66),
             Background = ThemeBrush("AppAccentSoftBrush")
         };
-        SplashOrbitRing = new Ellipse
+        SplashOrbitRing = new UiEllipse
         {
             Width = 112,
             Height = 112,
@@ -890,7 +891,7 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(0, 0, 0, 18)
         };
         var scanGlyphGrid = new Grid();
-        scanGlyphGrid.Children.Add(new Ellipse
+        scanGlyphGrid.Children.Add(new UiEllipse
         {
             Width = 72,
             Height = 72,
@@ -1102,6 +1103,30 @@ public sealed partial class MainWindow : Window
     {
         var button = new Button { Content = text };
         ApplyAppStyle(button, styleKey);
+        button.Foreground = ThemeBrush("AppTextBrush");
+        button.BorderBrush = ThemeBrush("AppOutlineBrush");
+        button.BorderThickness = new Thickness(1);
+        button.Padding = new Thickness(18, 12, 18, 12);
+        button.MinHeight = 48;
+        button.MinWidth = 148;
+        button.CornerRadius = new CornerRadius(20);
+        button.HorizontalAlignment = HorizontalAlignment.Left;
+
+        if (string.Equals(styleKey, "NeuralVButtonStyle", StringComparison.Ordinal))
+        {
+            button.Background = ThemeBrush("AppPrimaryContainerBrush");
+            button.Foreground = ThemeBrush("AppOnAccentBrush");
+            button.BorderBrush = ThemeBrush("AppPrimaryContainerBrush");
+        }
+        else if (string.Equals(styleKey, "NavTabButtonStyle", StringComparison.Ordinal))
+        {
+            button.Background = ThemeBrush("AppSurfaceHighBrush");
+        }
+        else
+        {
+            button.Background = ThemeBrush("AppSurfaceBrush");
+        }
+
         button.Click += handler;
         return button;
     }
@@ -1114,6 +1139,13 @@ public sealed partial class MainWindow : Window
             textBox.PlaceholderText = placeholderText;
         }
         ApplyAppStyle(textBox, "FieldTextBoxStyle");
+        textBox.Background = ThemeBrush("AppSurfaceBrush");
+        textBox.Foreground = ThemeBrush("AppTextBrush");
+        textBox.BorderBrush = ThemeBrush("AppOutlineBrush");
+        textBox.BorderThickness = new Thickness(1);
+        textBox.Padding = new Thickness(16, 14, 16, 14);
+        textBox.MinHeight = 56;
+        textBox.CornerRadius = new CornerRadius(18);
         return textBox;
     }
 
@@ -1121,6 +1153,13 @@ public sealed partial class MainWindow : Window
     {
         var passwordBox = new PasswordBox();
         ApplyAppStyle(passwordBox, "FieldPasswordBoxStyle");
+        passwordBox.Background = ThemeBrush("AppSurfaceBrush");
+        passwordBox.Foreground = ThemeBrush("AppTextBrush");
+        passwordBox.BorderBrush = ThemeBrush("AppOutlineBrush");
+        passwordBox.BorderThickness = new Thickness(1);
+        passwordBox.Padding = new Thickness(16, 14, 16, 14);
+        passwordBox.MinHeight = 56;
+        passwordBox.CornerRadius = new CornerRadius(18);
         return passwordBox;
     }
 
@@ -1130,7 +1169,8 @@ public sealed partial class MainWindow : Window
         {
             SelectionMode = ListViewSelectionMode.None,
             BorderThickness = new Thickness(0),
-            Background = new SolidColorBrush(UiColor.FromArgb(0, 0, 0, 0))
+            Background = new SolidColorBrush(UiColor.FromArgb(0, 0, 0, 0)),
+            Foreground = ThemeBrush("AppTextBrush")
         };
         ApplyAppStyle(listView, "TertiaryListViewStyle");
         if (App.Current.Resources.TryGetValue("FlatListViewItemStyle", out var containerStyle) && containerStyle is Style itemStyle)
@@ -1286,10 +1326,15 @@ public sealed partial class MainWindow : Window
 
     private void ApplyNavButtonStyle(Button button, bool active)
     {
-        if (App.Current.Resources[active ? "SelectedNavTabButtonStyle" : "NavTabButtonStyle"] is Style style)
+        if (App.Current.Resources.TryGetValue(active ? "SelectedNavTabButtonStyle" : "NavTabButtonStyle", out var value) && value is Style style)
         {
             button.Style = style;
+            return;
         }
+
+        button.Background = active ? ThemeBrush("AppPrimaryContainerBrush") : ThemeBrush("AppSurfaceHighBrush");
+        button.Foreground = active ? ThemeBrush("AppOnAccentBrush") : ThemeBrush("AppTextBrush");
+        button.BorderBrush = active ? ThemeBrush("AppPrimaryContainerBrush") : ThemeBrush("AppOutlineBrush");
     }
 
     private void UpdateScreenContext(AppScreen screen)
