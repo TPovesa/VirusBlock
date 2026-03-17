@@ -339,25 +339,11 @@ jobs:
           PY
 
       - name: Publish windows-builds branch
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/windows-builds
-          mkdir -p /tmp/windows-builds
-          cp -R publish-windows/. /tmp/windows-builds/
-          cd /tmp/windows-builds
-          git init
-          git checkout -b windows-builds
-          git config http.version HTTP/1.1
-          git config http.postBuffer 524288000
-          git config core.compression 0
-          git config pack.threads 1
-          git add .
-          semver="${{ needs.build-windows.outputs.release_version }}"
-          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish Windows GUI ${semver} for ${GITHUB_SHA} [skip ci]"
-          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force --progress origin windows-builds
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: windows-builds
+          publish_dir: publish-windows
+          force_orphan: true
+          enable_jekyll: false
+          commit_message: Publish Windows GUI ${{ needs.build-windows.outputs.release_version }} for ${{ github.sha }} [skip ci]
