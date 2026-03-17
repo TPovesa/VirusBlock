@@ -62,7 +62,7 @@ func candidateRoots(appName string) []string {
 	if workDir, err := os.Getwd(); err == nil && strings.TrimSpace(workDir) != "" {
 		roots = append(roots, workDir)
 	}
-	if dataRoot, err := os.UserDataDir(); err == nil && strings.TrimSpace(dataRoot) != "" {
+	if dataRoot := userDataDir(); dataRoot != "" {
 		roots = append(roots, filepath.Join(dataRoot, appName))
 	}
 
@@ -91,6 +91,17 @@ func executableDir() string {
 		executablePath = resolved
 	}
 	return filepath.Dir(executablePath)
+}
+
+func userDataDir() string {
+	if value := strings.TrimSpace(os.Getenv("XDG_DATA_HOME")); value != "" {
+		return value
+	}
+	home := strings.TrimSpace(os.Getenv("HOME"))
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".local", "share")
 }
 
 func Close() error {
