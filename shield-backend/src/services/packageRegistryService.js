@@ -7,6 +7,7 @@ const PACKAGE_REGISTRY_CACHE_TTL_MS = parseInt(process.env.PACKAGE_REGISTRY_CACH
 const PACKAGE_REGISTRY_REMOTE_URL = String(
     process.env.PACKAGE_REGISTRY_REMOTE_URL || 'https://raw.githubusercontent.com/Perdonus/NV/main/registry/packages.json'
 ).trim();
+const NV_HUB_STORE_PATH = path.resolve(__dirname, '../data/nv-hub.json');
 
 let registryCache = null;
 let registryCacheExpiresAt = 0;
@@ -85,6 +86,10 @@ async function fetchJson(url) {
 
 function canonicalPackageName(rawName) {
     const normalized = normalizeText(rawName);
+    const namespaced = normalized.match(/^@?([a-z0-9._-]+)\/([a-z0-9._-]+)$/);
+    if (namespaced) {
+        return `@${namespaced[1]}/${namespaced[2]}`;
+    }
     switch (normalized) {
         case 'neuralv':
         case '@lvls/neuralv':
@@ -126,6 +131,16 @@ function parsePackageRef(rawRef) {
 
 function ensureArray(value) {
     return Array.isArray(value) ? value : [];
+}
+
+function loadHubStorePackages() {
+    try {
+        const raw = fs.readFileSync(NV_HUB_STORE_PATH, 'utf8');
+        const parsed = JSON.parse(raw);
+        return ensureArray(parsed?.packages);
+    } catch {
+        return [];
+    }
 }
 
 function ensureAliases(packageDef, fallbacks = []) {
@@ -651,6 +666,115 @@ async function materializePackage(packageDef, os = '') {
     };
 }
 
+function normalizeHubRelease(release, packageDef) {
+    const os = normalizeOs(release?.os || release?.platform || '');
+    if (!os) {
+        return null;
+    }
+    const version = String(release?.version || '').trim();
+    if (!version) {
+        return null;
+    }
+    return {
+        id: `${os}-${version}`,
+        label: platformLabelForHub(os),
+        os,
+        is_default: false,
+        version,
+        channel: String(release?.channel || 'community').trim() || 'community',
+        file_name: String(release?.file_name || '').trim(),
+        download_url: String(release?.download_url || '').trim(),
+        install_command: String(release?.install_command || packageDef.install_command || `nv install ${packageDef.name}`).trim(),
+        update_command: String(release?.update_command || packageDef.update_command || packageDef.install_command || `nv install ${packageDef.name}`).trim(),
+        update_policy: 'nv-command',
+        auto_update: false,
+        sha256: String(release?.sha256 || '').trim(),
+        install_strategy: String(release?.install_strategy || '').trim(),
+        uninstall_strategy: '',
+        install_root: '',
+        binary_name: '',
+        wrapper_name: '',
+        launcher_path: '',
+        notes: ensureArray(release?.notes).map((entry) => String(entry || '').trim()).filter(Boolean),
+        metadata: release?.metadata && typeof release.metadata === 'object'
+            ? {
+                ...release.metadata,
+                source: 'hub',
+                package_name: packageDef.name,
+                variant_id: `${os}-${version}`
+            }
+            : {
+                source: 'hub',
+                package_name: packageDef.name,
+                variant_id: `${os}-${version}`
+            }
+    };
+}
+
+function platformLabelForHub(os) {
+    return os === 'windows' ? 'Windows' : os === 'linux' ? 'Linux' : os;
+}
+
+function materializeHubPackage(rawPackage, os = '') {
+    const requestedOs = normalizeOs(os);
+    const creatorSlug = normalizeText(rawPackage?.creator_slug || parsePackageRef(rawPackage?.name || '').name.split('/')[0] || '').replace(/^@/, '');
+    const packageSlug = normalizeText(rawPackage?.package_slug || parsePackageRef(rawPackage?.name || '').name.split('/')[1] || '');
+    const canonicalName = canonicalPackageName(rawPackage?.name || (creatorSlug && packageSlug ? `@${creatorSlug}/${packageSlug}` : ''));
+    if (!canonicalName || String(rawPackage?.visibility || 'public').trim() !== 'public') {
+        return null;
+    }
+
+    const variants = ensureArray(rawPackage?.releases)
+        .map((release) => normalizeHubRelease(release, {
+            name: canonicalName,
+            install_command: String(rawPackage?.install_command || `nv install ${canonicalName}`).trim(),
+            update_command: String(rawPackage?.update_command || rawPackage?.install_command || `nv install ${canonicalName}`).trim()
+        }))
+        .filter(Boolean)
+        .filter((variant) => !requestedOs || variant.os === requestedOs)
+        .sort((left, right) => {
+            const versionDelta = compareSemver(right.version, left.version);
+            if (versionDelta !== 0) return versionDelta;
+            return left.os.localeCompare(right.os);
+        });
+
+    const latestVersions = variants.reduce((accumulator, variant) => {
+        if (!accumulator[variant.os]) {
+            accumulator[variant.os] = variant.version;
+        }
+        return accumulator;
+    }, {});
+
+    const defaultKeys = new Set();
+    for (const variant of variants) {
+        if (!defaultKeys.has(variant.os)) {
+            variant.is_default = true;
+            defaultKeys.add(variant.os);
+        }
+    }
+
+    const latestVersion = requestedOs
+        ? (latestVersions[requestedOs] || '')
+        : (Object.keys(latestVersions).length === 1 ? Object.values(latestVersions)[0] : String(rawPackage?.latest_version || variants[0]?.version || '').trim());
+
+    return {
+        name: canonicalName,
+        aliases: [],
+        title: String(rawPackage?.title || packageSlug || canonicalName).trim(),
+        description: String(rawPackage?.description || '').trim(),
+        homepage: String(rawPackage?.homepage || '').trim(),
+        latest_version: latestVersion,
+        latest_versions: latestVersions,
+        variants
+    };
+}
+
+function loadHubMaterializedPackages(os = '') {
+    return loadHubStorePackages()
+        .map((pkg) => materializeHubPackage(pkg, os))
+        .filter(Boolean);
+}
+
 function matchesPackageRef(packageDef, rawRef) {
     const parsed = parsePackageRef(rawRef);
     const canonicalName = String(packageDef?.name || '').trim().toLowerCase();
@@ -668,27 +792,42 @@ async function getPackageRegistry({ os = '' } = {}) {
     for (const packageDef of registry.packages) {
         materialized.push(await materializePackage(packageDef, os));
     }
-    return {
-        success: true,
-        source: registry.source,
-        source_url: registry.sourceUrl,
-        fetched_at: registry.fetchedAt,
-        packages: materialized
-    };
-}
-
-async function getPackageDetails(name, { os = '' } = {}) {
-    const registry = await loadRegistryConfig();
-    const packageDef = registry.packages.find((entry) => matchesPackageRef(entry, name));
-    if (!packageDef) {
-        return null;
+    const hubPackages = loadHubMaterializedPackages(os);
+    const merged = new Map();
+    for (const pkg of [...materialized, ...hubPackages]) {
+        merged.set(pkg.name, pkg);
     }
     return {
         success: true,
         source: registry.source,
         source_url: registry.sourceUrl,
         fetched_at: registry.fetchedAt,
-        package: await materializePackage(packageDef, os)
+        packages: Array.from(merged.values())
+    };
+}
+
+async function getPackageDetails(name, { os = '' } = {}) {
+    const registry = await loadRegistryConfig();
+    const packageDef = registry.packages.find((entry) => matchesPackageRef(entry, name));
+    if (packageDef) {
+        return {
+            success: true,
+            source: registry.source,
+            source_url: registry.sourceUrl,
+            fetched_at: registry.fetchedAt,
+            package: await materializePackage(packageDef, os)
+        };
+    }
+    const hubPackage = loadHubMaterializedPackages(os).find((entry) => matchesPackageRef(entry, name));
+    if (!hubPackage) {
+        return null;
+    }
+    return {
+        success: true,
+        source: 'hub',
+        source_url: '',
+        fetched_at: new Date().toISOString(),
+        package: hubPackage
     };
 }
 

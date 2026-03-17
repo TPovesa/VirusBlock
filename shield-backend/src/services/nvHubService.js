@@ -50,6 +50,18 @@ function packageNameFromParts(creatorSlug, packageSlug) {
     return `@${creator}/${pkg}`;
 }
 
+function ensureStoreFile() {
+    if (fs.existsSync(HUB_STORE_PATH)) {
+        return;
+    }
+    fs.mkdirSync(path.dirname(HUB_STORE_PATH), { recursive: true });
+    fs.writeFileSync(HUB_STORE_PATH, JSON.stringify({
+        creators: [],
+        packages: [],
+        sessions: []
+    }, null, 2) + '\n', 'utf8');
+}
+
 function parseCanonicalPackageName(rawValue) {
     const raw = String(rawValue || '').trim();
     if (!raw) {
@@ -80,6 +92,7 @@ function parseCanonicalPackageName(rawValue) {
 }
 
 function readStore() {
+    ensureStoreFile();
     const parsed = JSON.parse(fs.readFileSync(HUB_STORE_PATH, 'utf8'));
     return {
         creators: ensureArray(parsed.creators),
@@ -112,6 +125,24 @@ function getHubAuthConfig() {
         enabled: Boolean(TELEGRAM_BOT_USERNAME && TELEGRAM_BOT_TOKEN && HUB_SESSION_SECRET),
         bot_username: TELEGRAM_BOT_USERNAME
     };
+}
+
+function sessionCookieOptions() {
+    return {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: HUB_SESSION_TTL_MS
+    };
+}
+
+function ensureTelegramConfigured() {
+    if (!TELEGRAM_BOT_USERNAME || !TELEGRAM_BOT_TOKEN || !HUB_SESSION_SECRET) {
+        const error = new Error('Telegram login is not configured');
+        error.code = 'NV_TELEGRAM_NOT_CONFIGURED';
+        throw error;
+    }
 }
 
 function parseCookieHeader(rawCookie) {
@@ -212,6 +243,38 @@ function actorDisplayName(telegramUser) {
     const last = String(telegramUser.last_name || '').trim();
     const username = String(telegramUser.username || '').trim();
     return [first, last].filter(Boolean).join(' ').trim() || username || `Telegram ${telegramUser.telegram_id}`;
+}
+
+function findCreatorRecord(store, creatorSlug) {
+    const slug = normalizeCreatorSlug(creatorSlug);
+    return ensureArray(store.creators).find((entry) => normalizeCreatorSlug(entry.slug) === slug) || null;
+}
+
+function buildCreatorPayload(creator) {
+    if (!creator) return null;
+    return {
+        slug: normalizeCreatorSlug(creator.slug),
+        display_name: String(creator.display_name || creator.slug || '').trim(),
+        bio: String(creator.bio || '').trim(),
+        avatar_url: String(creator.avatar_url || '').trim(),
+        telegram_username: String(creator.telegram_username || '').replace(/^@+/, '').trim(),
+        links: ensureArray(creator.links).map((link) => ({
+            label: String(link.label || '').trim(),
+            href: String(link.href || '').trim()
+        })).filter((link) => link.label && link.href)
+    };
+}
+
+function buildUserPayload(session) {
+    if (!session) return null;
+    return {
+        id: String(session.telegram_id || '').trim(),
+        username: String(session.username || '').trim(),
+        first_name: String(session.first_name || '').trim(),
+        last_name: String(session.last_name || '').trim(),
+        display_name: String(session.display_name || '').trim(),
+        photo_url: String(session.avatar_url || '').trim()
+    };
 }
 
 function builtinPackageToHubPackage(pkg) {
@@ -454,6 +517,7 @@ async function getHubPackageDetails(packageRef) {
 }
 
 async function createTelegramHubSession(payload) {
+    ensureTelegramConfigured();
     const telegramUser = verifyTelegramAuthPayload(payload);
     const store = pruneSessions(readStore());
     const creatorSlug = normalizeCreatorSlug(telegramUser.username || `telegram-${telegramUser.telegram_id}`);
@@ -463,6 +527,8 @@ async function createTelegramHubSession(payload) {
         creator_slug: creatorSlug,
         telegram_id: String(telegramUser.telegram_id),
         username: telegramUser.username || '',
+        first_name: telegramUser.first_name || '',
+        last_name: telegramUser.last_name || '',
         display_name: actorDisplayName(telegramUser),
         avatar_url: telegramUser.photo_url || '',
         auth_date: telegramUser.auth_date,
@@ -490,7 +556,10 @@ async function createTelegramHubSession(payload) {
 
     writeStore(store);
     const token = signHubSessionToken(session);
+    const creator = findCreatorRecord(store, creatorSlug);
     return {
+        user: buildUserPayload(session),
+        creator: buildCreatorPayload(creator),
         session: {
             creator_slug: session.creator_slug,
             username: session.username,
@@ -498,7 +567,8 @@ async function createTelegramHubSession(payload) {
             avatar_url: session.avatar_url,
             provider: session.provider
         },
-        cookie: buildSessionCookie(token)
+        cookie: buildSessionCookie(token),
+        cookieValue: token
     };
 }
 
@@ -519,11 +589,45 @@ async function getHubSessionFromRequest(req) {
     return {
         creator_slug: session.creator_slug,
         username: session.username,
+        first_name: session.first_name || '',
+        last_name: session.last_name || '',
         display_name: session.display_name,
         avatar_url: session.avatar_url,
         provider: session.provider,
         telegram_id: session.telegram_id,
         session_id: session.id
+    };
+}
+
+async function createTelegramSession(payload, requestMeta = {}) {
+    const result = await createTelegramHubSession(payload);
+    return {
+        ...result,
+        session: {
+            ...result.session,
+            ip_address: String(requestMeta.ip_address || '').trim(),
+            user_agent: String(requestMeta.user_agent || '').trim()
+        }
+    };
+}
+
+async function resolveSessionFromRequest(req) {
+    const session = await getHubSessionFromRequest(req);
+    if (!session) {
+        return null;
+    }
+    const store = pruneSessions(readStore());
+    const creator = findCreatorRecord(store, session.creator_slug);
+    return {
+        user: buildUserPayload(session),
+        creator: buildCreatorPayload(creator),
+        session: {
+            creator_slug: session.creator_slug,
+            provider: session.provider,
+            username: session.username,
+            display_name: session.display_name,
+            avatar_url: session.avatar_url
+        }
     };
 }
 
@@ -539,6 +643,10 @@ async function clearHubSessionFromRequest(req) {
         // no-op
     }
     return clearSessionCookie();
+}
+
+async function revokeSessionByRequest(req) {
+    await clearHubSessionFromRequest(req);
 }
 
 function ensureHubActor(session) {
@@ -673,15 +781,22 @@ async function publishHubRelease(actor, packageRef, payload) {
 }
 
 module.exports = {
+    COOKIE_NAME: HUB_COOKIE_NAME,
     HUB_COOKIE_NAME,
     getHubAuthConfig,
+    getTelegramConfig: getHubAuthConfig,
     clearHubSessionFromRequest,
+    createTelegramSession,
     createTelegramHubSession,
+    ensureTelegramConfigured,
     getCreatorProfile,
     getHubPackageDetails,
     getHubSessionFromRequest,
     listHubCatalog,
     parseCanonicalPackageName,
     publishHubPackage,
-    publishHubRelease
+    publishHubRelease,
+    resolveSessionFromRequest,
+    revokeSessionByRequest,
+    sessionCookieOptions
 };

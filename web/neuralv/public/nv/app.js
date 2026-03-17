@@ -1,8 +1,15 @@
-const REGISTRY_URL = '/basedata/api/packages/registry';
-const AUTH_CONFIG_URL = '/basedata/api/nv/auth/config';
-const AUTH_ME_URL = '/basedata/api/nv/auth/me';
-const AUTH_LOGIN_URL = '/basedata/api/nv/auth/telegram';
-const AUTH_LOGOUT_URL = '/basedata/api/nv/auth/logout';
+const API_BASE = '/basedata/api';
+const API = {
+  registry: `${API_BASE}/packages/registry`,
+  catalog: `${API_BASE}/packages/catalog`,
+  creator: (slug) => `${API_BASE}/packages/creators/${encodeURIComponent(slug)}`,
+  authConfig: `${API_BASE}/nv/auth/config`,
+  authMe: `${API_BASE}/nv/auth/me`,
+  authLogin: `${API_BASE}/nv/auth/telegram`,
+  authLogout: `${API_BASE}/nv/auth/logout`,
+  publishPackage: `${API_BASE}/packages/publish`,
+  publishRelease: (creator, name) => `${API_BASE}/packages/${encodeURIComponent(creator)}/${encodeURIComponent(name)}/releases`
+};
 
 const fallbackRegistry = {
   packages: [
@@ -18,36 +25,38 @@ const fallbackRegistry = {
           label: 'Linux',
           os: 'linux',
           version: '1.3.3',
-          download_url: 'https://raw.githubusercontent.com/Perdonus/NV/linux-builds/linux/nv-linux.tar.gz',
-          install_command: 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh'
+          install_command: 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh',
+          download_url: 'https://raw.githubusercontent.com/Perdonus/NV/linux-builds/linux/nv-linux-1.3.3.tar.gz'
         },
         {
           id: 'nv-windows',
           label: 'Windows',
           os: 'windows',
           version: '1.3.3',
-          download_url: 'https://raw.githubusercontent.com/Perdonus/NV/windows-builds/windows/nv.exe',
-          install_command: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1 | iex"'
+          install_command: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1 | iex"',
+          download_url: 'https://raw.githubusercontent.com/Perdonus/NV/windows-builds/windows/nv-1.3.3.exe'
         }
       ]
     },
     {
       name: '@lvls/neuralv',
       title: 'NeuralV',
-      description: 'Клиент защиты NeuralV для Windows и Linux.',
+      description: 'Клиент защиты для Windows и Linux.',
       homepage: '/neuralv/',
       latest_version: '1.5.0',
       variants: [
         { id: 'windows', label: 'Windows', os: 'windows', version: '1.5.0' },
-        { id: 'linux', label: 'Linux', os: 'linux', version: '1.4.1' }
+        { id: 'linux', label: 'Linux', os: 'linux', version: '1.4.0' }
       ]
     }
   ]
 };
 
-const page = document.body.dataset.page;
 const state = {
+  page: document.body.dataset.page || 'home',
   registry: fallbackRegistry,
+  catalogPackages: [],
+  creators: [],
   platformFilter: 'all',
   searchTerm: '',
   downloadPlatform: 'linux',
@@ -61,8 +70,6 @@ const state = {
   }
 };
 
-window.NVTelegramAuth = handleTelegramWidgetAuth;
-
 function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -72,166 +79,179 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
-function pluralizeRu(count, one, few, many) {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return one;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
-  return many;
-}
-
-function parseScopedName(name) {
-  const match = /^@([^/]+)\/(.+)$/.exec(String(name || '').trim());
-  if (!match) {
-    return { creator: 'unknown', packageName: String(name || 'package').trim(), canonicalName: String(name || 'package').trim() };
-  }
-  return {
-    creator: match[1],
-    packageName: match[2],
-    canonicalName: `@${match[1]}/${match[2]}`
-  };
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
 }
 
 function platformLabel(os) {
   if (os === 'windows') return 'Windows';
   if (os === 'linux') return 'Linux';
-  return os || 'Unknown';
+  return os || 'Платформа';
 }
 
-function normalizeVariant(variant) {
+function parsePackageName(rawName) {
+  const matched = /^@([^/]+)\/(.+)$/.exec(String(rawName || '').trim());
+  if (!matched) {
+    return { creator: 'unknown', packageName: String(rawName || '').trim() || 'package', canonicalName: String(rawName || '').trim() || 'package' };
+  }
   return {
-    id: String(variant.id || ''),
-    label: String(variant.label || platformLabel(variant.os)),
-    os: String(variant.os || 'unknown').toLowerCase(),
-    version: String(variant.version || ''),
-    downloadUrl: String(variant.download_url || ''),
-    installCommand:
-      String(variant.install_command || '') ||
-      String(variant.metadata?.commands?.powershell?.install || '') ||
-      String(variant.metadata?.commands?.cmd?.install || ''),
-    metadata: variant.metadata || {}
+    creator: matched[1],
+    packageName: matched[2],
+    canonicalName: `@${matched[1]}/${matched[2]}`
   };
-}
-
-function normalizePackage(pkg) {
-  const identity = parseScopedName(pkg.name);
-  const variants = Array.isArray(pkg.variants) ? pkg.variants.map(normalizeVariant) : [];
-  const platforms = [...new Set(variants.map((variant) => variant.os).filter(Boolean))];
-  return {
-    creator: identity.creator,
-    packageName: identity.packageName,
-    name: identity.canonicalName,
-    title: String(pkg.title || identity.packageName),
-    description: String(pkg.description || 'Пакет для NV.'),
-    homepage: String(pkg.homepage || ''),
-    latestVersion: String(pkg.latest_version || variants[0]?.version || '—'),
-    variants,
-    platforms
-  };
-}
-
-function getPackages() {
-  return (state.registry.packages || []).map(normalizePackage);
-}
-
-function getCreators(packages) {
-  const creatorMap = new Map();
-  packages.forEach((pkg) => {
-    if (!creatorMap.has(pkg.creator)) {
-      creatorMap.set(pkg.creator, { creator: pkg.creator, packages: [], platforms: new Set() });
-    }
-    const record = creatorMap.get(pkg.creator);
-    record.packages.push(pkg);
-    pkg.platforms.forEach((platform) => record.platforms.add(platform));
-  });
-
-  return [...creatorMap.values()]
-    .map((record) => ({
-      creator: record.creator,
-      packageCount: record.packages.length,
-      packages: record.packages,
-      platforms: [...record.platforms]
-    }))
-    .sort((left, right) => left.creator.localeCompare(right.creator, 'ru'));
 }
 
 function creatorLink(creator) {
   return `/nv/profile/?creator=${encodeURIComponent(creator)}`;
 }
 
-function packageInstallCommand(pkg) {
-  return `nv install ${pkg.name}`;
+function normalizeVariant(variant) {
+  return {
+    id: String(variant.id || '').trim(),
+    label: String(variant.label || platformLabel(variant.os)).trim(),
+    os: String(variant.os || 'unknown').trim().toLowerCase(),
+    version: String(variant.version || '').trim(),
+    downloadUrl: String(variant.download_url || '').trim(),
+    installCommand: String(
+      variant.install_command ||
+      variant.metadata?.commands?.powershell?.install ||
+      variant.metadata?.commands?.cmd?.install ||
+      ''
+    ).trim(),
+    metadata: variant.metadata || {}
+  };
 }
 
-function renderPlatformBadges(platforms) {
-  return platforms.map((platform) => `<span class="badge">${escapeHtml(platformLabel(platform))}</span>`).join('');
+function normalizeRegistryPackage(pkg) {
+  const identity = parsePackageName(pkg.name);
+  const variants = safeArray(pkg.variants).map(normalizeVariant);
+  const platforms = [...new Set(variants.map((variant) => variant.os).filter(Boolean))];
+  return {
+    name: identity.canonicalName,
+    creator: identity.creator,
+    packageName: identity.packageName,
+    title: String(pkg.title || identity.packageName).trim(),
+    description: String(pkg.description || '').trim(),
+    homepage: String(pkg.homepage || '').trim(),
+    latestVersion: String(pkg.latest_version || variants[0]?.version || '—').trim(),
+    variants,
+    platforms
+  };
 }
 
-function renderPackageCard(pkg) {
-  return `
-    <article class="package-card">
-      <div class="package-head">
-        <div>
-          <p class="package-title">${escapeHtml(pkg.title)}</p>
-          <a class="package-name" href="${creatorLink(pkg.creator)}">@${escapeHtml(pkg.creator)}</a>
-          <span class="package-slash">/</span>
-          <span class="package-leaf">${escapeHtml(pkg.packageName)}</span>
-        </div>
-        <span class="version-pill">${escapeHtml(pkg.latestVersion)}</span>
-      </div>
-      <p class="package-description">${escapeHtml(pkg.description)}</p>
-      <div class="badge-row">${renderPlatformBadges(pkg.platforms)}</div>
-      <div class="command-inline">
-        <code>${escapeHtml(packageInstallCommand(pkg))}</code>
-        <button class="text-button" type="button" data-copy="${escapeHtml(packageInstallCommand(pkg))}">Копировать</button>
-      </div>
-      <div class="package-actions">
-        <a class="ghost-button ghost-button-compact" href="${creatorLink(pkg.creator)}">Профиль</a>
-        ${pkg.homepage ? `<a class="ghost-button ghost-button-compact" href="${escapeHtml(pkg.homepage)}">Сайт</a>` : ''}
-      </div>
-    </article>
-  `;
+function normalizeCatalogPackage(pkg) {
+  const identity = parsePackageName(pkg.name);
+  const platforms = safeArray(pkg.platforms).map((item) => String(item || '').trim().toLowerCase()).filter(Boolean);
+  return {
+    name: identity.canonicalName,
+    creator: identity.creator,
+    packageName: identity.packageName,
+    title: String(pkg.title || identity.packageName).trim(),
+    description: String(pkg.description || '').trim(),
+    homepage: String(pkg.homepage || '').trim(),
+    latestVersion: String(pkg.latest_version || '—').trim(),
+    platforms,
+    installCommand: String(pkg.install_command || `nv install ${identity.canonicalName}`).trim(),
+    source: String(pkg.source || '').trim()
+  };
 }
 
-function renderFeaturedPackages() {
-  const packagesContainer = document.getElementById('featured-packages');
-  const creatorsContainer = document.getElementById('featured-creators');
-  if (!packagesContainer || !creatorsContainer) return;
+function deriveCatalogFromRegistry() {
+  const packages = safeArray(state.registry.packages).map(normalizeRegistryPackage).map((pkg) => ({
+    ...pkg,
+    installCommand: `nv install ${pkg.name}`,
+    source: 'registry'
+  }));
+  const creatorsMap = new Map();
+  for (const pkg of packages) {
+    const current = creatorsMap.get(pkg.creator) || {
+      slug: pkg.creator,
+      display_name: pkg.creator,
+      avatar_url: '',
+      package_count: 0
+    };
+    current.package_count += 1;
+    creatorsMap.set(pkg.creator, current);
+  }
+  state.catalogPackages = packages;
+  state.creators = [...creatorsMap.values()].sort((left, right) => left.slug.localeCompare(right.slug, 'ru'));
+}
 
-  const packages = getPackages();
-  const creators = getCreators(packages);
-  packagesContainer.innerHTML = packages.slice(0, 6).map(renderPackageCard).join('');
-  creatorsContainer.innerHTML = creators
-    .slice(0, 4)
-    .map(
-      (creator) => `
-        <article class="creator-card">
-          <div>
-            <p class="creator-title">@${escapeHtml(creator.creator)}</p>
-            <p class="creator-meta">${creator.packageCount} ${pluralizeRu(creator.packageCount, 'пакет', 'пакета', 'пакетов')} · ${escapeHtml(creator.platforms.map(platformLabel).join(', '))}</p>
-          </div>
-          <a class="ghost-button ghost-button-compact" href="${creatorLink(creator.creator)}">Открыть профиль</a>
-        </article>
-      `
-    )
-    .join('');
-
-  const packagesMetric = document.getElementById('metric-packages');
-  const creatorsMetric = document.getElementById('metric-creators');
-  if (packagesMetric) packagesMetric.textContent = String(packages.length);
-  if (creatorsMetric) creatorsMetric.textContent = String(creators.length);
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, {
+    cache: 'no-store',
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      ...(options.headers || {})
+    },
+    ...options
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = payload?.error || `HTTP ${response.status}`;
+    throw new Error(message);
+  }
+  return payload;
 }
 
 async function loadRegistry() {
   try {
-    const response = await fetch(REGISTRY_URL, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const json = await response.json();
-    if (!Array.isArray(json.packages)) throw new Error('Invalid registry');
-    state.registry = json;
+    const payload = await fetchJson(API.registry);
+    if (!Array.isArray(payload.packages)) {
+      throw new Error('Registry payload is invalid');
+    }
+    state.registry = payload;
   } catch (error) {
     console.warn('NV registry fallback', error);
     state.registry = fallbackRegistry;
+  }
+}
+
+async function loadCatalog() {
+  try {
+    const payload = await fetchJson(API.catalog);
+    state.catalogPackages = safeArray(payload.packages).map(normalizeCatalogPackage);
+    state.creators = safeArray(payload.creators).map((creator) => ({
+      slug: String(creator.slug || '').trim(),
+      display_name: String(creator.display_name || creator.slug || '').trim(),
+      avatar_url: String(creator.avatar_url || '').trim(),
+      package_count: Number(creator.package_count || 0)
+    }));
+    if (!state.catalogPackages.length) {
+      deriveCatalogFromRegistry();
+    }
+  } catch (error) {
+    console.warn('NV catalog fallback', error);
+    deriveCatalogFromRegistry();
+  }
+}
+
+async function loadCreatorProfile(creatorSlug) {
+  try {
+    const payload = await fetchJson(API.creator(creatorSlug));
+    return {
+      creator: payload.creator || null,
+      packages: safeArray(payload.packages).map(normalizeCatalogPackage)
+    };
+  } catch (error) {
+    console.warn('NV creator fallback', error);
+    const slug = String(creatorSlug || '').trim().replace(/^@/, '').toLowerCase();
+    const packages = state.catalogPackages.filter((pkg) => pkg.creator.toLowerCase() === slug);
+    const creator = state.creators.find((item) => item.slug.toLowerCase() === slug) || null;
+    return {
+      creator: creator
+        ? {
+            slug: creator.slug,
+            display_name: creator.display_name,
+            bio: '',
+            avatar_url: creator.avatar_url,
+            telegram_username: '',
+            links: []
+          }
+        : null,
+      packages
+    };
   }
 }
 
@@ -239,16 +259,15 @@ async function loadAuthState() {
   state.auth.loading = true;
   renderAuthSlot();
   try {
-    const [configResponse, meResponse] = await Promise.all([
-      fetch(AUTH_CONFIG_URL, { cache: 'no-store', credentials: 'include' }),
-      fetch(AUTH_ME_URL, { cache: 'no-store', credentials: 'include' })
+    const [config, session] = await Promise.all([
+      fetchJson(API.authConfig).catch(() => ({ enabled: false, bot_username: '' })),
+      fetchJson(API.authMe).catch(() => ({ authenticated: false, user: null, creator: null }))
     ]);
-    const config = configResponse.ok ? await configResponse.json() : { enabled: false, bot_username: '' };
-    const me = meResponse.ok ? await meResponse.json() : { authenticated: false };
+
     state.auth.enabled = Boolean(config.enabled);
     state.auth.botUsername = String(config.bot_username || '').trim();
-    state.auth.user = me.authenticated ? me.user || null : null;
-    state.auth.creator = me.authenticated ? me.creator || null : null;
+    state.auth.user = session.authenticated ? session.user || null : null;
+    state.auth.creator = session.authenticated ? session.creator || null : null;
     state.auth.error = null;
   } catch (error) {
     console.warn('NV auth bootstrap failed', error);
@@ -260,14 +279,12 @@ async function loadAuthState() {
   } finally {
     state.auth.loading = false;
     renderAuthSlot();
-    renderProfile();
   }
 }
 
 function authDisplayName() {
   if (!state.auth.user) return 'NV user';
-  const fullName = [state.auth.user.first_name, state.auth.user.last_name].filter(Boolean).join(' ').trim();
-  return state.auth.user.display_name || fullName || state.auth.user.username || 'NV user';
+  return state.auth.user.display_name || [state.auth.user.first_name, state.auth.user.last_name].filter(Boolean).join(' ').trim() || state.auth.user.username || 'NV user';
 }
 
 function authHandle() {
@@ -276,12 +293,12 @@ function authHandle() {
   return 'Telegram';
 }
 
-function authAvatarMarkup(wrapperClass = 'auth-avatar') {
+function authAvatarMarkup(sizeClass = 'auth-avatar') {
   if (state.auth.user?.photo_url) {
-    return `<span class="${wrapperClass}"><img class="auth-avatar-image" src="${escapeHtml(state.auth.user.photo_url)}" alt="${escapeHtml(authDisplayName())}" /></span>`;
+    return `<span class="${sizeClass}"><img class="auth-avatar-image" src="${escapeHtml(state.auth.user.photo_url)}" alt="${escapeHtml(authDisplayName())}" /></span>`;
   }
   const letter = authDisplayName().charAt(0).toUpperCase() || 'N';
-  return `<span class="${wrapperClass}"><span class="auth-avatar-fallback">${escapeHtml(letter)}</span></span>`;
+  return `<span class="${sizeClass}"><span class="auth-avatar-fallback">${escapeHtml(letter)}</span></span>`;
 }
 
 function mountTelegramWidget(container) {
@@ -330,11 +347,8 @@ function renderAuthSlot() {
 
   if (!state.auth.enabled) {
     slot.innerHTML = `
-      <div class="auth-status-card">
-        <div>
-          <strong>Telegram login ещё не настроен</strong>
-          <span>${escapeHtml(state.auth.error || 'Нужны bot username, bot token и web session secret.')}</span>
-        </div>
+      <div class="auth-status-card compact-status">
+        <span>Telegram login пока не настроен</span>
       </div>
     `;
     return;
@@ -344,34 +358,28 @@ function renderAuthSlot() {
     <div class="auth-widget-card">
       <div>
         <strong>Войти через Telegram</strong>
-        <span>Это включит creator-профиль и web-сессию сайта.</span>
+        <span>Чтобы открыть профиль и публиковать пакеты.</span>
       </div>
-      <div id="header-telegram-widget"></div>
+      <div id="telegram-widget-slot"></div>
     </div>
   `;
-  mountTelegramWidget(document.getElementById('header-telegram-widget'));
+  mountTelegramWidget(document.getElementById('telegram-widget-slot'));
 }
 
 async function handleTelegramWidgetAuth(user) {
   try {
-    const response = await fetch(AUTH_LOGIN_URL, {
+    const payload = await fetchJson(API.authLogin, {
       method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ telegram_auth: user })
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload?.error || `HTTP ${response.status}`);
-    }
     state.auth.user = payload.user || null;
     state.auth.creator = payload.creator || null;
     state.auth.error = null;
     renderAuthSlot();
-    renderProfile();
+    if (state.page === 'profile') {
+      await renderProfile();
+    }
   } catch (error) {
     console.warn('NV Telegram login failed', error);
     state.auth.error = error instanceof Error ? error.message : 'Не удалось завершить вход';
@@ -381,38 +389,84 @@ async function handleTelegramWidgetAuth(user) {
 
 async function logoutSiteUser() {
   try {
-    await fetch(AUTH_LOGOUT_URL, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { Accept: 'application/json' }
-    });
+    await fetchJson(API.authLogout, { method: 'POST' });
   } catch (error) {
     console.warn('NV logout failed', error);
   }
   state.auth.user = null;
   state.auth.creator = null;
   renderAuthSlot();
-  renderProfile();
+  if (state.page === 'profile') {
+    await renderProfile();
+  }
+}
+
+function renderPlatformBadges(platforms) {
+  return safeArray(platforms)
+    .map((platform) => `<span class="badge">${escapeHtml(platformLabel(platform))}</span>`)
+    .join('');
+}
+
+function renderPackageCard(pkg) {
+  return `
+    <article class="package-card">
+      <div class="package-head">
+        <div>
+          <p class="package-title">${escapeHtml(pkg.title)}</p>
+          <div class="package-ref">
+            <a class="package-name" href="${creatorLink(pkg.creator)}">@${escapeHtml(pkg.creator)}</a>
+            <span>/</span>
+            <span class="package-leaf">${escapeHtml(pkg.packageName)}</span>
+          </div>
+        </div>
+        <span class="version-pill">${escapeHtml(pkg.latestVersion || '—')}</span>
+      </div>
+      <p class="package-description">${escapeHtml(pkg.description || 'Пакет для NV.')}</p>
+      <div class="badge-row">${renderPlatformBadges(pkg.platforms)}</div>
+      <div class="command-inline">
+        <code>${escapeHtml(pkg.installCommand || `nv install ${pkg.name}`)}</code>
+        <button class="text-button" type="button" data-copy="${escapeHtml(pkg.installCommand || `nv install ${pkg.name}`)}">Копировать</button>
+      </div>
+      <div class="package-actions">
+        <a class="ghost-button ghost-button-compact" href="${creatorLink(pkg.creator)}">Профиль</a>
+        ${pkg.homepage ? `<a class="ghost-button ghost-button-compact" href="${escapeHtml(pkg.homepage)}">Сайт</a>` : ''}
+      </div>
+    </article>
+  `;
+}
+
+function renderCreatorCard(creator) {
+  return `
+    <article class="creator-card">
+      <div>
+        <p class="creator-title">@${escapeHtml(creator.slug)}</p>
+        <p class="creator-meta">${escapeHtml(String(creator.package_count || 0))} пакета</p>
+      </div>
+      <a class="ghost-button ghost-button-compact" href="${creatorLink(creator.slug)}">Открыть</a>
+    </article>
+  `;
+}
+
+function renderHome() {
+  const packagesEl = document.getElementById('featured-packages');
+  const creatorsEl = document.getElementById('featured-creators');
+  const metricPackages = document.getElementById('metric-packages');
+  const metricCreators = document.getElementById('metric-creators');
+  if (!packagesEl || !creatorsEl) return;
+
+  const featuredPackages = state.catalogPackages.slice(0, 6);
+  const featuredCreators = state.creators.slice(0, 4);
+  packagesEl.innerHTML = featuredPackages.map(renderPackageCard).join('');
+  creatorsEl.innerHTML = featuredCreators.map(renderCreatorCard).join('');
+  if (metricPackages) metricPackages.textContent = String(state.catalogPackages.length || 0);
+  if (metricCreators) metricCreators.textContent = String(state.creators.length || 0);
 }
 
 function resolveNvVariant(platform) {
-  const nvPackage = getPackages().find((pkg) => pkg.packageName === 'nv');
+  const nvPackage = safeArray(state.registry.packages)
+    .map(normalizeRegistryPackage)
+    .find((pkg) => pkg.packageName === 'nv');
   return nvPackage?.variants.find((variant) => variant.os === platform) || null;
-}
-
-function downloadButtonsForVariant(variant) {
-  if (!variant) return '';
-  const buttons = [];
-  if (variant.downloadUrl) {
-    buttons.push(`<a class="primary-button" href="${escapeHtml(variant.downloadUrl)}">Скачать бинарник</a>`);
-  }
-  if (platformLabel(variant.os) === 'Windows') {
-    const powershell = variant.metadata?.commands?.powershell?.install || variant.installCommand;
-    if (powershell) {
-      buttons.push(`<button class="ghost-button" type="button" data-copy="${escapeHtml(powershell)}">Копировать PowerShell</button>`);
-    }
-  }
-  return buttons.join('');
 }
 
 function applyDownloadPlatform(platform) {
@@ -429,17 +483,27 @@ function applyDownloadPlatform(platform) {
   if (title) title.textContent = platformLabel(platform);
   if (version) version.textContent = variant?.version || '—';
   if (command) {
-    command.textContent =
-      platform === 'windows'
-        ? variant?.metadata?.commands?.powershell?.install || variant?.installCommand || ''
-        : variant?.installCommand || '';
+    command.textContent = platform === 'windows'
+      ? String(variant?.metadata?.commands?.powershell?.install || variant?.installCommand || '')
+      : String(variant?.installCommand || '');
   }
-  if (actions) actions.innerHTML = downloadButtonsForVariant(variant);
+  if (actions) {
+    const buttons = [];
+    if (variant?.downloadUrl) {
+      buttons.push(`<a class="primary-button" href="${escapeHtml(variant.downloadUrl)}">Скачать бинарник</a>`);
+    }
+    const extraCommand = platform === 'windows'
+      ? String(variant?.metadata?.commands?.cmd?.install || '')
+      : '';
+    if (extraCommand) {
+      buttons.push(`<button class="ghost-button" type="button" data-copy="${escapeHtml(extraCommand)}">Копировать CMD</button>`);
+    }
+    actions.innerHTML = buttons.join('');
+  }
   if (note) {
-    note.textContent =
-      platform === 'windows'
-        ? 'Windows путь: ставишь NV, потом через него ставишь пакеты. Можно сразу работать из PowerShell.'
-        : 'Linux путь: одна команда ставит NV в систему, дальше пакеты ставятся через nv install @creator/package.';
+    note.textContent = platform === 'windows'
+      ? 'Windows версия ставится в профиль пользователя, после чего NV можно использовать сразу из PowerShell или CMD.'
+      : 'Linux версия ставится в пользовательский bin, после чего команды nv install @creator/package работают сразу.';
   }
 }
 
@@ -468,11 +532,11 @@ function attachDownloadTabs() {
 }
 
 function packageMatchesFilters(pkg) {
-  if (state.platformFilter !== 'all' && !pkg.platforms.includes(state.platformFilter)) {
+  if (state.platformFilter !== 'all' && !safeArray(pkg.platforms).includes(state.platformFilter)) {
     return false;
   }
   if (!state.searchTerm) return true;
-  const haystack = [pkg.name, pkg.title, pkg.description, pkg.latestVersion, ...pkg.platforms].join(' ').toLowerCase();
+  const haystack = [pkg.name, pkg.title, pkg.description, pkg.latestVersion, ...safeArray(pkg.platforms)].join(' ').toLowerCase();
   return haystack.includes(state.searchTerm);
 }
 
@@ -482,12 +546,10 @@ function renderCatalog() {
   const meta = document.getElementById('catalog-meta');
   if (!list || !empty || !meta) return;
 
-  const allPackages = getPackages();
-  const packages = allPackages.filter(packageMatchesFilters);
-  list.innerHTML = packages.map(renderPackageCard).join('');
-  empty.hidden = packages.length > 0;
-  const creatorsCount = getCreators(allPackages).length;
-  meta.textContent = `${packages.length} ${pluralizeRu(packages.length, 'пакет', 'пакета', 'пакетов')} · ${creatorsCount} ${pluralizeRu(creatorsCount, 'автор', 'автора', 'авторов')}`;
+  const filtered = state.catalogPackages.filter(packageMatchesFilters);
+  list.innerHTML = filtered.map(renderPackageCard).join('');
+  empty.hidden = filtered.length > 0;
+  meta.textContent = `${filtered.length} пакета · ${state.creators.length} создателя`;
 }
 
 function attachCatalogControls() {
@@ -503,136 +565,214 @@ function attachCatalogControls() {
   });
 
   search?.addEventListener('input', () => {
-    state.searchTerm = (search.value || '').trim().toLowerCase();
+    state.searchTerm = String(search.value || '').trim().toLowerCase();
     renderCatalog();
   });
 
   renderCatalog();
 }
 
-function renderProfile() {
+function publishFormMarkup(creatorSlug, packages) {
+  const packageOptions = packages.length
+    ? packages.map((pkg) => `<option value="${escapeHtml(pkg.packageName)}">${escapeHtml(pkg.title)} (${escapeHtml(pkg.name)})</option>`).join('')
+    : '<option value="neuralv-addon">Новый пакет</option>';
+
+  return `
+    <section class="section-shell publish-shell">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Публикация</p>
+          <h2>Выложить пакет</h2>
+        </div>
+      </div>
+      <div class="publish-grid">
+        <form class="publish-form" id="package-form">
+          <h3>Карточка пакета</h3>
+          <label><span>Slug</span><input name="package_slug" type="text" placeholder="my-tool" required /></label>
+          <label><span>Название</span><input name="title" type="text" placeholder="Мой пакет" required /></label>
+          <label><span>Описание</span><textarea name="description" rows="4" placeholder="Коротко: что это за пакет"></textarea></label>
+          <label><span>Сайт</span><input name="homepage" type="url" placeholder="https://example.com" /></label>
+          <label><span>Теги</span><input name="tags" type="text" placeholder="cli, tools" /></label>
+          <div class="checkbox-row">
+            <label><input type="checkbox" name="platforms" value="windows" /> Windows</label>
+            <label><input type="checkbox" name="platforms" value="linux" /> Linux</label>
+          </div>
+          <button class="primary-button" type="submit">Сохранить пакет</button>
+          <p class="form-status" id="package-form-status"></p>
+        </form>
+
+        <form class="publish-form" id="release-form">
+          <h3>Выложить релиз</h3>
+          <label><span>Пакет</span>
+            <select name="package_slug">${packageOptions}</select>
+          </label>
+          <label><span>Версия</span><input name="version" type="text" placeholder="1.0.0" required /></label>
+          <label><span>Платформа</span>
+            <select name="os">
+              <option value="windows">Windows</option>
+              <option value="linux">Linux</option>
+            </select>
+          </label>
+          <label><span>Файл</span><input name="file_name" type="text" placeholder="tool-1.0.0.zip" /></label>
+          <label><span>Ссылка</span><input name="download_url" type="url" placeholder="https://..." required /></label>
+          <label><span>Команда install</span><input name="install_command" type="text" placeholder="nv install @${escapeHtml(creatorSlug)}/package" /></label>
+          <label><span>Команда update</span><input name="update_command" type="text" placeholder="nv install @${escapeHtml(creatorSlug)}/package" /></label>
+          <label><span>SHA256</span><input name="sha256" type="text" placeholder="optional" /></label>
+          <button class="primary-button" type="submit">Опубликовать релиз</button>
+          <p class="form-status" id="release-form-status"></p>
+        </form>
+      </div>
+    </section>
+  `;
+}
+
+async function submitPackageForm(form, creatorSlug) {
+  const formData = new FormData(form);
+  const platforms = formData.getAll('platforms').map((entry) => String(entry));
+  const tags = String(formData.get('tags') || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  return fetchJson(API.publishPackage, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      creator_slug: creatorSlug,
+      package_slug: String(formData.get('package_slug') || '').trim(),
+      title: String(formData.get('title') || '').trim(),
+      description: String(formData.get('description') || '').trim(),
+      homepage: String(formData.get('homepage') || '').trim(),
+      platforms,
+      tags,
+      visibility: 'public'
+    })
+  });
+}
+
+async function submitReleaseForm(form, creatorSlug) {
+  const formData = new FormData(form);
+  const packageSlug = String(formData.get('package_slug') || '').trim();
+  return fetchJson(API.publishRelease(creatorSlug, packageSlug), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      version: String(formData.get('version') || '').trim(),
+      os: String(formData.get('os') || '').trim(),
+      file_name: String(formData.get('file_name') || '').trim(),
+      download_url: String(formData.get('download_url') || '').trim(),
+      install_command: String(formData.get('install_command') || '').trim(),
+      update_command: String(formData.get('update_command') || '').trim(),
+      sha256: String(formData.get('sha256') || '').trim(),
+      channel: 'community'
+    })
+  });
+}
+
+function bindProfileForms(creatorSlug) {
+  const packageForm = document.getElementById('package-form');
+  const releaseForm = document.getElementById('release-form');
+  const packageStatus = document.getElementById('package-form-status');
+  const releaseStatus = document.getElementById('release-form-status');
+
+  packageForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (packageStatus) packageStatus.textContent = 'Сохраняем пакет…';
+    try {
+      await submitPackageForm(packageForm, creatorSlug);
+      if (packageStatus) packageStatus.textContent = 'Пакет сохранён.';
+      await loadCatalog();
+      await renderProfile();
+    } catch (error) {
+      if (packageStatus) packageStatus.textContent = error instanceof Error ? error.message : 'Не удалось сохранить пакет';
+    }
+  });
+
+  releaseForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (releaseStatus) releaseStatus.textContent = 'Публикуем релиз…';
+    try {
+      await submitReleaseForm(releaseForm, creatorSlug);
+      if (releaseStatus) releaseStatus.textContent = 'Релиз опубликован.';
+      await loadCatalog();
+      await renderProfile();
+    } catch (error) {
+      if (releaseStatus) releaseStatus.textContent = error instanceof Error ? error.message : 'Не удалось выложить релиз';
+    }
+  });
+}
+
+async function renderProfile() {
   const root = document.getElementById('profile-content');
   if (!root) return;
 
-  const packages = getPackages();
-  const creators = getCreators(packages);
   const params = new URLSearchParams(window.location.search);
-  const fallbackCreator = state.auth.creator?.slug || creators[0]?.creator || 'lvls';
-  const requestedCreator = (params.get('creator') || fallbackCreator).trim().replace(/^@/, '');
-  const creator = creators.find((item) => item.creator.toLowerCase() === requestedCreator.toLowerCase());
-  const canPublish = Boolean(state.auth.creator?.slug && state.auth.creator.slug.toLowerCase() === requestedCreator.toLowerCase());
-  const creatorPackages = creator ? creator.packages.map(renderPackageCard).join('') : '';
+  const requestedCreator = String(params.get('creator') || state.auth.creator?.slug || state.creators[0]?.slug || 'lvls').trim().replace(/^@/, '');
+  const profile = await loadCreatorProfile(requestedCreator);
+  const creator = profile.creator || {
+    slug: requestedCreator,
+    display_name: requestedCreator,
+    bio: '',
+    avatar_url: '',
+    telegram_username: '',
+    links: []
+  };
+  const packages = profile.packages || [];
+  const canEdit = Boolean(state.auth.creator?.slug && state.auth.creator.slug.toLowerCase() === creator.slug.toLowerCase());
 
   root.innerHTML = `
-    <section class="hero hero-compact">
-      <div class="hero-copy hero-copy-tight">
-        <p class="eyebrow">Создатель</p>
-        <h1>@${escapeHtml(requestedCreator)}</h1>
-        <p class="hero-text">
-          ${escapeHtml(canPublish
-            ? 'Это твой creator-профиль. Telegram-сессия уже активна, ниже доступна модель формы публикации.'
-            : creator
-              ? `Автор публикует ${creator.packageCount} ${pluralizeRu(creator.packageCount, 'пакет', 'пакета', 'пакетов')} для ${creator.platforms.map(platformLabel).join(' и ')}.`
-              : 'Пока в каталоге нет пакетов этого автора.')}
-        </p>
+    <section class="section-shell profile-shell">
+      <div class="profile-head">
+        ${canEdit ? authAvatarMarkup('profile-avatar') : '<span class="profile-avatar"><span class="auth-avatar-fallback">@</span></span>'}
+        <div>
+          <p class="eyebrow">Creator</p>
+          <h1 class="section-title">@${escapeHtml(creator.slug)}</h1>
+          <p class="section-copy">${escapeHtml(creator.bio || 'Публичный профиль автора пакетов NV.')}</p>
+        </div>
+      </div>
+      <div class="profile-metrics">
+        <article class="metric-card">
+          <span class="metric-value">${escapeHtml(String(packages.length))}</span>
+          <span class="metric-label">пакетов</span>
+        </article>
+        <article class="metric-card">
+          <span class="metric-value">${escapeHtml(`@${creator.slug}`)}</span>
+          <span class="metric-label">namespace</span>
+        </article>
+        <article class="metric-card">
+          <span class="metric-value">${canEdit ? 'owner' : 'public'}</span>
+          <span class="metric-label">статус</span>
+        </article>
       </div>
     </section>
 
-    <section class="profile-layout">
-      <article class="section-shell profile-main-shell">
-        <div class="profile-meta">
-          <div class="metric-card">
-            <span class="metric-value">${escapeHtml(String(creator?.packageCount || 0))}</span>
-            <span class="metric-label">${pluralizeRu(creator?.packageCount || 0, 'пакет', 'пакета', 'пакетов')}</span>
+    ${canEdit
+      ? publishFormMarkup(creator.slug, packages)
+      : `
+        <section class="section-shell">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Публикация</p>
+              <h2>Хочешь выкладывать свои пакеты?</h2>
+            </div>
           </div>
-          <div class="metric-card">
-            <span class="metric-value">${escapeHtml(creator ? creator.platforms.map(platformLabel).join(', ') : '—')}</span>
-            <span class="metric-label">платформы</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-value">@${escapeHtml(requestedCreator)}</span>
-            <span class="metric-label">slug создателя</span>
-          </div>
+          <p class="section-copy">Войди через Telegram под своим creator slug, после чего здесь появятся формы публикации.</p>
+        </section>`}
+
+    <section class="section-shell">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Пакеты автора</p>
+          <h2>${packages.length ? 'Опубликованные пакеты' : 'Пока пусто'}</h2>
         </div>
-        <div class="package-grid package-grid-wide" aria-live="polite">${creatorPackages}</div>
-        <p class="empty-state" ${creator ? 'hidden' : ''}>У этого автора пока нет пакетов в каталоге.</p>
-      </article>
-
-      <aside class="profile-sidebar">
-        <article class="section-shell side-stack-card">
-          <div class="section-head section-head-compact">
-            <div>
-              <p class="eyebrow">Telegram</p>
-              <h2>Вход создателя</h2>
-            </div>
-          </div>
-          <div class="widget-slot" id="telegram-widget-slot"></div>
-        </article>
-
-        <article class="section-shell side-stack-card" ${canPublish ? '' : 'hidden'}>
-          <div class="section-head section-head-compact">
-            <div>
-              <p class="eyebrow">Publish</p>
-              <h2>Форма публикации</h2>
-            </div>
-          </div>
-          <form class="publish-form" id="publish-form" action="#" method="dialog">
-            <label class="field">
-              <span>Creator</span>
-              <input id="publish-creator" type="text" value="@${escapeHtml(requestedCreator)}" readonly />
-            </label>
-            <label class="field">
-              <span>Пакет</span>
-              <input id="publish-package" type="text" placeholder="${escapeHtml(requestedCreator)}-package" />
-            </label>
-            <label class="field">
-              <span>Версия</span>
-              <input id="publish-version" type="text" placeholder="1.0.0" />
-            </label>
-            <label class="field field-wide">
-              <span>Описание</span>
-              <textarea id="publish-description" rows="4" placeholder="Коротко о пакете"></textarea>
-            </label>
-            <div class="toggle-row" aria-label="Платформы пакета">
-              <label><input type="checkbox" checked /> Windows</label>
-              <label><input type="checkbox" checked /> Linux</label>
-            </div>
-            <label class="field field-wide">
-              <span>Источник архива</span>
-              <input id="publish-url" type="url" placeholder="https://example.com/package.zip" />
-            </label>
-            <div class="form-actions">
-              <button class="primary-button" type="button" disabled>Опубликовать</button>
-              <span class="form-note">Это publish-form модель. Реальный backend publish API можно подвязать следующим слоем.</span>
-            </div>
-          </form>
-        </article>
-      </aside>
+      </div>
+      <div class="package-grid package-grid-wide">${packages.map(renderPackageCard).join('')}</div>
+      <p class="empty-state" ${packages.length ? 'hidden' : ''}>У этого автора ещё нет пакетов.</p>
     </section>
   `;
 
-  const widgetSlot = document.getElementById('telegram-widget-slot');
-  if (widgetSlot) {
-    if (state.auth.user && state.auth.creator) {
-      widgetSlot.innerHTML = `
-        <div class="auth-user-card auth-user-card-vertical">
-          <div class="auth-user-link">
-            ${authAvatarMarkup('auth-avatar')}
-            <span class="auth-meta">
-              <strong>${escapeHtml(authDisplayName())}</strong>
-              <span>${escapeHtml(authHandle())}</span>
-            </span>
-          </div>
-          <button class="ghost-button ghost-button-compact" type="button" id="profile-logout-button">Выйти</button>
-        </div>
-      `;
-      document.getElementById('profile-logout-button')?.addEventListener('click', logoutSiteUser);
-    } else if (state.auth.enabled) {
-      widgetSlot.innerHTML = '<div id="profile-telegram-auth"></div>';
-      mountTelegramWidget(document.getElementById('profile-telegram-auth'));
-    } else {
-      widgetSlot.innerHTML = '<div class="auth-status-card">Telegram login ещё не настроен на backend.</div>';
-    }
+  if (canEdit) {
+    bindProfileForms(creator.slug);
   }
 }
 
@@ -661,26 +801,25 @@ function attachCopyDelegation() {
 }
 
 async function init() {
+  window.NVTelegramAuth = handleTelegramWidgetAuth;
   attachCopyDelegation();
-  await Promise.all([loadRegistry(), loadAuthState()]);
+  await loadRegistry();
+  await Promise.all([loadCatalog(), loadAuthState()]);
 
-  if (page === 'home') {
-    renderFeaturedPackages();
+  if (state.page === 'home') {
+    renderHome();
     return;
   }
-
-  if (page === 'downloads') {
+  if (state.page === 'downloads') {
     attachDownloadTabs();
     return;
   }
-
-  if (page === 'packages') {
+  if (state.page === 'packages') {
     attachCatalogControls();
     return;
   }
-
-  if (page === 'profile') {
-    renderProfile();
+  if (state.page === 'profile') {
+    await renderProfile();
   }
 }
 

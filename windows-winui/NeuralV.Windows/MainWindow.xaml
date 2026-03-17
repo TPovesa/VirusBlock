@@ -206,7 +206,7 @@
                                 </Border>
                                 <StackPanel Spacing="4" VerticalAlignment="Center">
                                     <TextBlock Text="NeuralV" Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Text="Native WinUI 3" Style="{StaticResource CaptionTextStyle}" />
+                                    <TextBlock Text="Нативный Windows-клиент" Style="{StaticResource CaptionTextStyle}" />
                                 </StackPanel>
                             </StackPanel>
 
