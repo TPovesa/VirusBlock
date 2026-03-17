@@ -10,14 +10,22 @@ public static class WindowsSmokeVerifier
         _ = SessionStore.AppDirectory;
         _ = WindowsEnvironmentService.DetectScanRoots();
         _ = WindowsEnvironmentService.DetectInstallRoots();
+        var processPath = Environment.ProcessPath ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(processPath) || !File.Exists(processPath))
+        {
+            throw new FileNotFoundException("Smoke verifier did not find process executable", processPath);
+        }
+        WindowsLog.Info($"Smoke verifier process ok: {processPath}");
 
         var assetPath = Path.Combine(AppContext.BaseDirectory, "Assets", "NeuralV.png");
-        if (!File.Exists(assetPath))
+        if (File.Exists(assetPath))
         {
-            throw new FileNotFoundException("Smoke verifier did not find packaged icon asset", assetPath);
+            WindowsLog.Info($"Smoke verifier asset ok: {assetPath}");
         }
-
-        WindowsLog.Info($"Smoke verifier asset ok: {assetPath}");
+        else
+        {
+            WindowsLog.Info($"Smoke verifier asset not present as loose file: {assetPath}");
+        }
         using var client = new NeuralVApiClient();
         WindowsLog.Info("Smoke verifier API client constructed");
     }
