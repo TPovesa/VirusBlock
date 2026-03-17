@@ -81,6 +81,14 @@ public sealed partial class MainWindow : Window
             {
                 dotStoryboard.Begin();
             }
+            if (WindowRoot.Resources["ScanDotLoadingStoryboard"] is Storyboard scanLoaderStoryboard)
+            {
+                scanLoaderStoryboard.Begin();
+            }
+            if (WindowRoot.Resources["BusyDotLoadingStoryboard"] is Storyboard busyLoaderStoryboard)
+            {
+                busyLoaderStoryboard.Begin();
+            }
             if (WindowRoot.Resources["SplashOrbitStoryboard"] is Storyboard orbitStoryboard)
             {
                 orbitStoryboard.Begin();
@@ -113,8 +121,7 @@ public sealed partial class MainWindow : Window
             }
 
             var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
-            var appWindow = AppWindow.GetFromWindowId(windowId);
-            appWindow?.Resize(new SizeInt32(1440, 920));
+            _ = AppWindow.GetFromWindowId(windowId);
         }
         catch (Exception ex)
         {
@@ -185,13 +192,13 @@ public sealed partial class MainWindow : Window
 
         PaletteSourceLabel.Text = App.Palette.Source switch
         {
-            PaletteSource.Wallpaper => "Палитра взята из обоев, нормализована по контрасту и разложена в три тона для живого интерфейса.",
-            PaletteSource.WindowsAccent => "Обои недоступны, поэтому палитра мягко строится от системного акцента Windows.",
-            _ => "Не удалось безопасно прочитать обои или акцент Windows. Используем нейтральный резервный вариант без провала по контрасту."
+            PaletteSource.Wallpaper => "Цвета взяты из обоев.",
+            PaletteSource.WindowsAccent => "Цвета взяты из системного акцента Windows.",
+            _ => "Активна безопасная резервная палитра."
         };
         PaletteSeedLabel.Text = $"Акцент {App.Palette.AccentHex}";
-        SettingsPaletteText.Text = $"Источник палитры: {App.Palette.SourceLabel}. Акцент: {App.Palette.AccentHex}.";
-        SettingsVersionText.Text = $"Сборка Windows-клиента: {_currentVersion}. Активный режим: {(App.Palette.IsDark ? "тёмный" : "светлый")}.";
+        SettingsPaletteText.Text = $"Палитра: {App.Palette.SourceLabel}. Акцент: {App.Palette.AccentHex}.";
+        SettingsVersionText.Text = $"Версия клиента: {_currentVersion}. Режим: {(App.Palette.IsDark ? "тёмный" : "светлый")}.";
     }
 
     private static Brush BuildGlowBrush(UiColor color, double opacity)
@@ -363,46 +370,46 @@ public sealed partial class MainWindow : Window
         {
             AppScreen.Splash => (
                 "Запуск",
-                "Подготавливаем выразительный интерфейс",
-                "Палитра, локальная сессия и стартовый контур клиента поднимаются без лишних промежуточных окон."),
+                "Готовим NeuralV",
+                "Поднимаем палитру, сессию и стартовый экран."),
             AppScreen.Welcome => (
                 "Добро пожаловать",
-                "Нативная защита, собранная под Windows",
-                "Вход, регистрация, проверка, история и обновления теперь выглядят как единый Windows-клиент, а не как набор случайных экранов."),
+                "Нативный клиент для Windows",
+                "Вход, проверка, история и обновления собраны в один интерфейс."),
             AppScreen.Login => (
                 "Вход",
-                "Почта, пароль и быстрый переход к коду",
-                "Поток входа собран в одну форму с ясным следующим шагом и без визуального мусора."),
+                "Почта, пароль и код",
+                "После входа сразу открывается основной экран."),
             AppScreen.Register => (
                 "Регистрация",
-                "Создать аккаунт и сразу войти в интерфейс",
-                "Регистрация визуально совпадает с входом, чтобы поток не разваливался на отдельные несвязанные экраны."),
+                "Создать аккаунт",
+                "Подтверди почту и переходи к проверкам."),
             AppScreen.Code => (
                 "Подтверждение",
-                "Остался один шаг до рабочего интерфейса",
-                "Код подтверждения завершает ветку авторизации и передаёт пользователя прямо на основной экран проверки."),
+                "Остался один шаг",
+                "Подтверждение завершит вход."),
             AppScreen.Home => (
-                "Центр контроля",
-                "Проверка, статус и обновления в одном месте",
-                "Главный экран держит быстрые действия слева и живую ленту справа, без перегруза интерфейса."),
+                "Главный экран",
+                "Проверка, статус и обновления",
+                "Запуск, состояние и события собраны в одном месте."),
             AppScreen.Scan => (
                 "Проверка",
                 string.IsNullOrWhiteSpace(_activeScan?.Verdict) ? "Серверная проверка уже идёт" : _activeScan!.Verdict,
                 string.IsNullOrWhiteSpace(_activeScan?.Message)
-                    ? "Мы держим состояние сканирования, ленту событий и управление отменой в одном экране."
+                    ? "Держим прогресс, ленту событий и отмену на одном экране."
                     : _activeScan!.Message),
             AppScreen.History => (
-                "Локальная история",
-                "Последние завершённые проверки всегда под рукой",
-                "История сохраняется локально и не зависит от текущего состояния серверного экрана."),
+                "История",
+                "Последние завершённые проверки",
+                "Локальный журнал последних результатов."),
             AppScreen.Settings => (
+                "Настройки",
                 "Сессия и оформление",
-                "Текущий интерфейс объясняет сам себя",
-                "Здесь только рабочие настройки: активная сессия, версия клиента и источник палитры."),
+                "Здесь только активная сессия и параметры клиента."),
             _ => (
                 "NeuralV",
-                "Нативный Windows-клиент",
-                "Защитный клиент с единым выразительным языком интерфейса.")
+                "Windows-клиент",
+                "Защитный клиент NeuralV.")
         };
 
         RailBadgeText.Text = badge;
@@ -420,14 +427,14 @@ public sealed partial class MainWindow : Window
         RailUserNameText.Text = displayName;
         RailUserMetaText.Text = hasSession
             ? _session!.User.Email
-            : "Войди, чтобы запускать проверки, сохранять историю и получать обновления внутри клиента.";
+            : "Войди, чтобы запускать проверки и хранить историю.";
         RailUserStateText.Text = hasSession
             ? (_session!.User.IsPremium ? "Активная премиум-сессия" : "Активная сессия")
             : "Сессия не активна";
         UserLabel.Text = hasSession ? _session!.User.Email : "Не авторизован";
         SettingsSessionText.Text = hasSession
-            ? $"Пользователь: {displayName}. Почта: {_session!.User.Email}. Идентификатор устройства хранится локально для рабочего сценария входа."
-            : "Активной сессии нет. После входа здесь появится информация о пользователе и текущем рабочем контуре.";
+            ? $"Пользователь: {displayName}. Почта: {_session!.User.Email}."
+            : "Активной сессии нет.";
     }
 
     private async Task LoadHistoryAsync()
@@ -695,7 +702,6 @@ public sealed partial class MainWindow : Window
             }
 
             _activeScan = result.scan;
-            ScanProgressRing.IsActive = true;
             SetStatus(null);
             RenderScan(result.scan);
             ShowScreen(AppScreen.Scan);
@@ -733,7 +739,6 @@ public sealed partial class MainWindow : Window
                 RenderScan(result.scan);
                 if (result.scan.IsFinished)
                 {
-                    ScanProgressRing.IsActive = false;
                     SetStatus(result.scan.PrimarySummary);
                     if (result.scan.IsSuccessful)
                     {

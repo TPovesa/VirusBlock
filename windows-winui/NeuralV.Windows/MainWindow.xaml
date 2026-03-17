@@ -35,6 +35,32 @@
                 <DoubleAnimation Storyboard.TargetName="SplashDot4Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.8" From="0.72" To="1.16" AutoReverse="True" BeginTime="0:0:0.42" />
             </Storyboard>
 
+            <Storyboard x:Key="ScanDotLoadingStoryboard" RepeatBehavior="Forever">
+                <DoubleAnimation Storyboard.TargetName="ScanDot1Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.0" />
+                <DoubleAnimation Storyboard.TargetName="ScanDot1Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.0" />
+                <DoubleAnimation Storyboard.TargetName="ScanDot2Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.16" />
+                <DoubleAnimation Storyboard.TargetName="ScanDot2Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.16" />
+                <DoubleAnimation Storyboard.TargetName="ScanDot3Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.32" />
+                <DoubleAnimation Storyboard.TargetName="ScanDot3Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.32" />
+                <DoubleAnimation Storyboard.TargetName="ScanDot4Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.48" />
+                <DoubleAnimation Storyboard.TargetName="ScanDot4Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.48" />
+                <DoubleAnimation Storyboard.TargetName="ScanHaloScale" Storyboard.TargetProperty="ScaleX" Duration="0:0:1.8" From="0.96" To="1.05" AutoReverse="True" />
+                <DoubleAnimation Storyboard.TargetName="ScanHaloScale" Storyboard.TargetProperty="ScaleY" Duration="0:0:1.8" From="0.96" To="1.05" AutoReverse="True" />
+            </Storyboard>
+
+            <Storyboard x:Key="BusyDotLoadingStoryboard" RepeatBehavior="Forever">
+                <DoubleAnimation Storyboard.TargetName="BusyDot1Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.0" />
+                <DoubleAnimation Storyboard.TargetName="BusyDot1Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.0" />
+                <DoubleAnimation Storyboard.TargetName="BusyDot2Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.16" />
+                <DoubleAnimation Storyboard.TargetName="BusyDot2Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.16" />
+                <DoubleAnimation Storyboard.TargetName="BusyDot3Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.32" />
+                <DoubleAnimation Storyboard.TargetName="BusyDot3Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.32" />
+                <DoubleAnimation Storyboard.TargetName="BusyDot4Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.48" />
+                <DoubleAnimation Storyboard.TargetName="BusyDot4Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.48" />
+                <DoubleAnimation Storyboard.TargetName="BusyHaloScale" Storyboard.TargetProperty="ScaleX" Duration="0:0:1.8" From="0.96" To="1.05" AutoReverse="True" />
+                <DoubleAnimation Storyboard.TargetName="BusyHaloScale" Storyboard.TargetProperty="ScaleY" Duration="0:0:1.8" From="0.96" To="1.05" AutoReverse="True" />
+            </Storyboard>
+
             <Storyboard x:Key="SplashOrbitStoryboard" RepeatBehavior="Forever">
                 <DoubleAnimation Storyboard.TargetName="SplashOrbitRotate" Storyboard.TargetProperty="Angle" Duration="0:0:5.6" From="0" To="360" />
                 <DoubleAnimation Storyboard.TargetName="SplashHaloScale" Storyboard.TargetProperty="ScaleX" Duration="0:0:1.8" From="0.96" To="1.04" AutoReverse="True" />
@@ -120,14 +146,57 @@
             </Rectangle>
         </Grid>
 
-        <Grid Padding="28">
+        <Grid x:Name="ShellFrame" Padding="24">
+            <VisualStateManager.VisualStateGroups>
+                <VisualStateGroup x:Name="ShellAdaptiveStates">
+                    <VisualState x:Name="CompactState">
+                        <VisualState.Setters>
+                            <Setter Target="RailColumn.Width" Value="0" />
+                            <Setter Target="GutterColumn.Width" Value="0" />
+                            <Setter Target="RailPanel.Visibility" Value="Collapsed" />
+                            <Setter Target="ContentShell.(Grid.Column)" Value="0" />
+                            <Setter Target="ContentShell.(Grid.ColumnSpan)" Value="3" />
+                            <Setter Target="HeaderMetaBar.Visibility" Value="Collapsed" />
+                        </VisualState.Setters>
+                    </VisualState>
+
+                    <VisualState x:Name="MediumState">
+                        <VisualState.StateTriggers>
+                            <AdaptiveTrigger MinWindowWidth="1080" />
+                        </VisualState.StateTriggers>
+                        <VisualState.Setters>
+                            <Setter Target="RailColumn.Width" Value="296" />
+                            <Setter Target="GutterColumn.Width" Value="16" />
+                            <Setter Target="RailPanel.Visibility" Value="Visible" />
+                            <Setter Target="ContentShell.(Grid.Column)" Value="2" />
+                            <Setter Target="ContentShell.(Grid.ColumnSpan)" Value="1" />
+                            <Setter Target="HeaderMetaBar.Visibility" Value="Visible" />
+                        </VisualState.Setters>
+                    </VisualState>
+
+                    <VisualState x:Name="WideState">
+                        <VisualState.StateTriggers>
+                            <AdaptiveTrigger MinWindowWidth="1320" />
+                        </VisualState.StateTriggers>
+                        <VisualState.Setters>
+                            <Setter Target="RailColumn.Width" Value="336" />
+                            <Setter Target="GutterColumn.Width" Value="20" />
+                            <Setter Target="RailPanel.Visibility" Value="Visible" />
+                            <Setter Target="ContentShell.(Grid.Column)" Value="2" />
+                            <Setter Target="ContentShell.(Grid.ColumnSpan)" Value="1" />
+                            <Setter Target="HeaderMetaBar.Visibility" Value="Visible" />
+                        </VisualState.Setters>
+                    </VisualState>
+                </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="344" />
-                <ColumnDefinition Width="20" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition x:Name="RailColumn" Width="336" />
+                <ColumnDefinition x:Name="GutterColumn" Width="20" />
+                <ColumnDefinition x:Name="ContentColumn" Width="*" />
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" Style="{StaticResource GlassPanelStyle}" CornerRadius="36" Padding="24">
+            <Border x:Name="RailPanel" Grid.Column="0" Style="{StaticResource GlassPanelStyle}" CornerRadius="36" Padding="22">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Spacing="22">
                         <StackPanel Spacing="18">
@@ -137,7 +206,7 @@
                                 </Border>
                                 <StackPanel Spacing="4" VerticalAlignment="Center">
                                     <TextBlock Text="NeuralV" Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Text="Нативный Windows-клиент" Style="{StaticResource CaptionTextStyle}" />
+                                    <TextBlock Text="Native WinUI 3" Style="{StaticResource CaptionTextStyle}" />
                                 </StackPanel>
                             </StackPanel>
 
@@ -164,18 +233,7 @@
 
                         <Border Style="{StaticResource SurfaceCardStyle}">
                             <StackPanel Spacing="14">
-                                <TextBlock Text="Контур клиента" Style="{StaticResource CardTitleStyle}" FontSize="22" />
-                                <StackPanel Spacing="10">
-                                    <TextBlock Text="Авторизация по почте и коду." Style="{StaticResource BodyTextStyle}" />
-                                    <TextBlock Text="Серверные проверки и локальная история." Style="{StaticResource BodyTextStyle}" />
-                                    <TextBlock Text="Самообновление и палитра от обоев с безопасным резервным вариантом." Style="{StaticResource BodyTextStyle}" />
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Style="{StaticResource SurfaceCardStyle}">
-                            <StackPanel Spacing="14">
-                                <TextBlock Text="Сессия" Style="{StaticResource CardTitleStyle}" FontSize="22" />
+                                <TextBlock Text="Аккаунт" Style="{StaticResource CardTitleStyle}" FontSize="22" />
                                 <TextBlock x:Name="RailUserNameText" Style="{StaticResource ValueTextStyle}" />
                                 <TextBlock x:Name="RailUserMetaText" Style="{StaticResource BodyTextStyle}" />
                                 <Border Style="{StaticResource MiniPillStyle}" HorizontalAlignment="Left">
@@ -187,15 +245,14 @@
                 </ScrollViewer>
             </Border>
 
-            <Grid Grid.Column="2">
+            <Grid x:Name="ContentShell" Grid.Column="2">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <Grid Grid.Row="0" Margin="0,0,0,18">
+                <Grid x:Name="HeaderMetaBar" Grid.Row="0" Margin="0,0,0,18">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
@@ -210,12 +267,8 @@
                         <TextBlock x:Name="PaletteModeHeaderLabel" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
                     </Border>
 
-                    <Border Grid.Column="2" Style="{StaticResource MiniPillStyle}">
+                    <Border Grid.Column="3" Style="{StaticResource MiniPillStyle}">
                         <TextBlock x:Name="VersionLabel" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
-                    </Border>
-
-                    <Border Grid.Column="4" Style="{StaticResource MiniPillStyle}">
-                        <TextBlock Text="Выразительная оболочка WinUI 3" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
                     </Border>
                 </Grid>
 
@@ -313,11 +366,11 @@
                                         <Grid ColumnSpacing="18">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="260" />
+                                                <ColumnDefinition Width="220" />
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Spacing="14">
-                                                <TextBlock Text="Нативная защита для Windows без плоского корпоративного шума" Style="{StaticResource PageTitleStyle}" />
-                                                <TextBlock Text="Один клиент для входа, проверок, истории и обновлений. Цвета берутся из обоев, фон живёт, формы и карточки выглядят как современное приложение Windows, а не как перенесённый веб-интерфейс." Style="{StaticResource BodyTextStyle}" />
+                                                <TextBlock Text="NeuralV для Windows" Style="{StaticResource PageTitleStyle}" />
+                                                <TextBlock Text="Один нативный клиент для входа, проверок, истории и обновлений." Style="{StaticResource BodyTextStyle}" />
                                                 <StackPanel Orientation="Horizontal" Spacing="12">
                                                     <Button Content="Войти" Click="OnShowLoginClick" Style="{StaticResource NeuralVButtonStyle}" Width="180" />
                                                     <Button Content="Регистрация" Click="OnShowRegisterClick" Style="{StaticResource SecondaryButtonStyle}" Width="180" />
@@ -326,10 +379,10 @@
 
                                             <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}" Padding="18">
                                                 <StackPanel Spacing="12">
-                                                    <TextBlock Text="Ключевые блоки" Style="{StaticResource CardTitleStyle}" FontSize="20" />
-                                                    <TextBlock Text="Вход и код подтверждения." Style="{StaticResource BodyTextStyle}" />
-                                                    <TextBlock Text="Серверная проверка и локальная история." Style="{StaticResource BodyTextStyle}" />
-                                                    <TextBlock Text="Самообновление и живая тема." Style="{StaticResource BodyTextStyle}" />
+                                                    <TextBlock Text="Что внутри" Style="{StaticResource CardTitleStyle}" FontSize="20" />
+                                                    <TextBlock Text="Авторизация." Style="{StaticResource BodyTextStyle}" />
+                                                    <TextBlock Text="Проверка." Style="{StaticResource BodyTextStyle}" />
+                                                    <TextBlock Text="История и обновления." Style="{StaticResource BodyTextStyle}" />
                                                 </StackPanel>
                                             </Border>
                                         </Grid>
@@ -343,20 +396,20 @@
                                         </Grid.ColumnDefinitions>
                                         <Border Grid.Column="0" Style="{StaticResource SurfaceCardStyle}">
                                             <StackPanel Spacing="10">
-                                                <TextBlock Text="Тканевый фон" Style="{StaticResource CardTitleStyle}" FontSize="20" />
-                                                <TextBlock Text="Несколько слоёв с мягкими переливами и тканым узором вместо плоского градиента." Style="{StaticResource BodyTextStyle}" />
+                                                <TextBlock Text="Живой фон" Style="{StaticResource CardTitleStyle}" FontSize="20" />
+                                                <TextBlock Text="Мягкий градиент с глубиной и движением." Style="{StaticResource BodyTextStyle}" />
                                             </StackPanel>
                                         </Border>
                                         <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}">
                                             <StackPanel Spacing="10">
                                                 <TextBlock Text="Палитра от обоев" Style="{StaticResource CardTitleStyle}" FontSize="20" />
-                                                <TextBlock Text="Палитра строится от обоев и уходит в безопасный резервный вариант, если чтение изображения недоступно." Style="{StaticResource BodyTextStyle}" />
+                                                <TextBlock Text="Интерфейс подхватывает цвета фона и держит безопасный запасной вариант." Style="{StaticResource BodyTextStyle}" />
                                             </StackPanel>
                                         </Border>
                                         <Border Grid.Column="2" Style="{StaticResource SurfaceCardStyle}">
                                             <StackPanel Spacing="10">
-                                                <TextBlock Text="Единый интерфейс" Style="{StaticResource CardTitleStyle}" FontSize="20" />
-                                                <TextBlock Text="Все экраны от приветствия до настроек собраны в один визуальный язык." Style="{StaticResource BodyTextStyle}" />
+                                                <TextBlock Text="Единый стиль" Style="{StaticResource CardTitleStyle}" FontSize="20" />
+                                                <TextBlock Text="Один ритм для входа, проверки и истории." Style="{StaticResource BodyTextStyle}" />
                                             </StackPanel>
                                         </Border>
                                     </Grid>
@@ -372,7 +425,7 @@
                                     <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
                                         <StackPanel Spacing="16">
                                             <TextBlock Text="Вход" Style="{StaticResource PageTitleStyle}" />
-                                            <TextBlock Text="Почта и пароль. После этого на e-mail придёт код подтверждения." Style="{StaticResource BodyTextStyle}" />
+                                            <TextBlock Text="Введи почту и пароль. После этого придёт код подтверждения." Style="{StaticResource BodyTextStyle}" />
                                             <TextBox x:Name="LoginEmailBox" Header="E-mail" PlaceholderText="name@example.com" Style="{StaticResource FieldTextBoxStyle}" />
                                             <PasswordBox x:Name="LoginPasswordBox" Header="Пароль" Style="{StaticResource FieldPasswordBoxStyle}" />
                                             <StackPanel Orientation="Horizontal" Spacing="12">
@@ -383,10 +436,8 @@
                                     </Border>
                                     <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}">
                                         <StackPanel Spacing="14">
-                                            <TextBlock Text="Что дальше" Style="{StaticResource CardTitleStyle}" FontSize="22" />
-                                            <TextBlock Text="1. Проверяем логин на сервере." Style="{StaticResource BodyTextStyle}" />
-                                            <TextBlock Text="2. Просим код с почты." Style="{StaticResource BodyTextStyle}" />
-                                            <TextBlock Text="3. После верификации сразу открываем основной интерфейс." Style="{StaticResource BodyTextStyle}" />
+                                            <TextBlock Text="Следующий шаг" Style="{StaticResource CardTitleStyle}" FontSize="22" />
+                                            <TextBlock Text="Сразу после проверки откроется ввод кода с почты." Style="{StaticResource BodyTextStyle}" />
                                         </StackPanel>
                                     </Border>
                                 </Grid>
@@ -401,7 +452,7 @@
                                     <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
                                         <StackPanel Spacing="16">
                                             <TextBlock Text="Регистрация" Style="{StaticResource PageTitleStyle}" />
-                                            <TextBlock Text="Создай аккаунт, подтверди почту кодом и сразу переходи к проверкам." Style="{StaticResource BodyTextStyle}" />
+                                            <TextBlock Text="Создай аккаунт, подтверди почту кодом и переходи к проверкам." Style="{StaticResource BodyTextStyle}" />
                                             <TextBox x:Name="RegisterNameBox" Header="Имя" Style="{StaticResource FieldTextBoxStyle}" />
                                             <TextBox x:Name="RegisterEmailBox" Header="E-mail" PlaceholderText="name@example.com" Style="{StaticResource FieldTextBoxStyle}" />
                                             <PasswordBox x:Name="RegisterPasswordBox" Header="Пароль" Style="{StaticResource FieldPasswordBoxStyle}" />
@@ -414,9 +465,8 @@
                                     </Border>
                                     <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}">
                                         <StackPanel Spacing="14">
-                                            <TextBlock Text="Почему так" Style="{StaticResource CardTitleStyle}" FontSize="22" />
-                                            <TextBlock Text="Код подтверждения остаётся частью рабочего пути, поэтому экран регистрации сразу готовит пользователя к следующему шагу." Style="{StaticResource BodyTextStyle}" />
-                                            <TextBlock Text="Русские строки хранятся прямо в XAML/C# в UTF-8, без лишних конвертеров и без кракозябр." Style="{StaticResource BodyTextStyle}" />
+                                            <TextBlock Text="После регистрации" Style="{StaticResource CardTitleStyle}" FontSize="22" />
+                                            <TextBlock Text="Дальше останется только ввести код из письма." Style="{StaticResource BodyTextStyle}" />
                                         </StackPanel>
                                     </Border>
                                 </Grid>
@@ -441,8 +491,8 @@
                                     </Border>
                                     <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}">
                                         <StackPanel Spacing="14">
-                                            <TextBlock Text="Готово к переходу" Style="{StaticResource CardTitleStyle}" FontSize="22" />
-                                            <TextBlock Text="После успешной проверки код закрывает ветку авторизации и сразу открывает основной экран с проверками, историей и настройками." Style="{StaticResource BodyTextStyle}" />
+                                            <TextBlock Text="После кода" Style="{StaticResource CardTitleStyle}" FontSize="22" />
+                                            <TextBlock Text="Сразу откроется основной экран клиента." Style="{StaticResource BodyTextStyle}" />
                                         </StackPanel>
                                     </Border>
                                 </Grid>
@@ -454,19 +504,19 @@
                                         <Grid ColumnSpacing="18">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="280" />
+                                                <ColumnDefinition Width="240" />
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Spacing="12">
-                                                <TextBlock Text="Проверка Windows" Style="{StaticResource PageTitleStyle}" />
-                                                <TextBlock Text="Основной экран собран как выразительный дашборд: крупный запуск проверки, живой статус, обновления и лента последних событий." Style="{StaticResource BodyTextStyle}" />
+                                                <TextBlock Text="NeuralV для Windows" Style="{StaticResource PageTitleStyle}" />
+                                                <TextBlock Text="Запуск проверки, статус, обновления и события собраны на одном экране." Style="{StaticResource BodyTextStyle}" />
                                                 <Border Style="{StaticResource MiniPillStyle}" HorizontalAlignment="Left">
                                                     <TextBlock x:Name="HomeStatusText" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
                                                 </Border>
                                             </StackPanel>
                                             <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}" Padding="18">
                                                 <StackPanel Spacing="10">
-                                                    <TextBlock Text="Режим клиента" Style="{StaticResource CardTitleStyle}" FontSize="20" />
-                                                    <TextBlock Text="Быстрая и глубокая проверка доступны сразу из главного экрана." Style="{StaticResource BodyTextStyle}" />
+                                                    <TextBlock Text="Режимы" Style="{StaticResource CardTitleStyle}" FontSize="20" />
+                                                    <TextBlock Text="Быстрая и глубокая проверка доступны сразу." Style="{StaticResource BodyTextStyle}" />
                                                 </StackPanel>
                                             </Border>
                                         </Grid>
@@ -482,7 +532,7 @@
                                             <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
                                                 <StackPanel Spacing="16">
                                                     <TextBlock Text="Запустить проверку" Style="{StaticResource CardTitleStyle}" />
-                                                    <TextBlock Text="Быстрый режим даёт ответ сразу, глубокий прогоняет полный серверный сценарий." Style="{StaticResource BodyTextStyle}" />
+                                                    <TextBlock Text="Быстрый режим даёт ответ сразу, глубокий запускает серверный проход." Style="{StaticResource BodyTextStyle}" />
                                                     <Grid ColumnSpacing="12">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="*" />
@@ -529,7 +579,50 @@
                                     <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
                                         <StackPanel Spacing="18">
                                             <TextBlock Text="Проверка" Style="{StaticResource PageTitleStyle}" />
-                                            <ProgressRing x:Name="ScanProgressRing" Width="92" Height="92" IsActive="True" Foreground="{ThemeResource AppAccentBrush}" HorizontalAlignment="Left" />
+                                            <Grid Width="104" Height="104" HorizontalAlignment="Left">
+                                                <Border Width="104"
+                                                        Height="104"
+                                                        CornerRadius="52"
+                                                        Background="{ThemeResource AppAccentSoftBrush}"
+                                                        BorderBrush="{ThemeResource AppOutlineBrush}"
+                                                        BorderThickness="1"
+                                                        Opacity="0.95" />
+                                                <Border Width="78"
+                                                        Height="78"
+                                                        CornerRadius="39"
+                                                        Background="{ThemeResource AppSurfaceStrongBrush}"
+                                                        BorderBrush="{ThemeResource AppOutlineStrongBrush}"
+                                                        BorderThickness="1"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        RenderTransformOrigin="0.5,0.5">
+                                                    <Border.RenderTransform>
+                                                        <ScaleTransform x:Name="ScanHaloScale" ScaleX="0.96" ScaleY="0.96" />
+                                                    </Border.RenderTransform>
+                                                </Border>
+                                                <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Ellipse Width="12" Height="12" Fill="{ThemeResource AppAccentBrush}">
+                                                        <Ellipse.RenderTransform>
+                                                            <ScaleTransform x:Name="ScanDot1Scale" ScaleX="0.74" ScaleY="0.74" />
+                                                        </Ellipse.RenderTransform>
+                                                    </Ellipse>
+                                                    <Ellipse Width="12" Height="12" Fill="{ThemeResource AppAccentSecondaryBrush}">
+                                                        <Ellipse.RenderTransform>
+                                                            <ScaleTransform x:Name="ScanDot2Scale" ScaleX="0.74" ScaleY="0.74" />
+                                                        </Ellipse.RenderTransform>
+                                                    </Ellipse>
+                                                    <Ellipse Width="12" Height="12" Fill="{ThemeResource AppAccentBrush}">
+                                                        <Ellipse.RenderTransform>
+                                                            <ScaleTransform x:Name="ScanDot3Scale" ScaleX="0.74" ScaleY="0.74" />
+                                                        </Ellipse.RenderTransform>
+                                                    </Ellipse>
+                                                    <Ellipse Width="12" Height="12" Fill="{ThemeResource AppAccentTertiaryBrush}">
+                                                        <Ellipse.RenderTransform>
+                                                            <ScaleTransform x:Name="ScanDot4Scale" ScaleX="0.74" ScaleY="0.74" />
+                                                        </Ellipse.RenderTransform>
+                                                    </Ellipse>
+                                                </StackPanel>
+                                            </Grid>
                                             <TextBlock x:Name="ScanPrimaryText" Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock x:Name="ScanSecondaryText" Style="{StaticResource BodyTextStyle}" />
                                             <StackPanel Orientation="Horizontal" Spacing="12">
@@ -559,7 +652,7 @@
                                     <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
                                         <StackPanel Spacing="12">
                                             <TextBlock Text="История" Style="{StaticResource PageTitleStyle}" />
-                                            <TextBlock Text="Сохраняем локальный срез завершённых проверок, чтобы рабочий Windows-клиент не зависел от того, открыт ли серверный экран сейчас." Style="{StaticResource BodyTextStyle}" />
+                                            <TextBlock Text="Последние завершённые проверки сохраняются локально." Style="{StaticResource BodyTextStyle}" />
                                         </StackPanel>
                                     </Border>
                                     <Border Style="{StaticResource SurfaceCardStyle}">
@@ -582,7 +675,7 @@
                                     <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
                                         <StackPanel Spacing="12">
                                             <TextBlock Text="Настройки" Style="{StaticResource PageTitleStyle}" />
-                                            <TextBlock Text="Экран не ломает рабочий сценарий запуска: здесь только информация о текущем интерфейсе, палитре и управление активной сессией." Style="{StaticResource BodyTextStyle}" />
+                                            <TextBlock Text="Здесь только сессия и оформление клиента." Style="{StaticResource BodyTextStyle}" />
                                         </StackPanel>
                                     </Border>
 
@@ -618,7 +711,50 @@
                             <Grid>
                                 <Border Style="{StaticResource ElevatedSurfaceCardStyle}" Width="320" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <StackPanel Spacing="14" HorizontalAlignment="Center">
-                                        <ProgressRing Width="66" Height="66" IsActive="True" Foreground="{ThemeResource AppAccentBrush}" HorizontalAlignment="Center" />
+                                        <Grid Width="82" Height="82" HorizontalAlignment="Center">
+                                            <Border Width="82"
+                                                    Height="82"
+                                                    CornerRadius="41"
+                                                    Background="{ThemeResource AppAccentSoftBrush}"
+                                                    BorderBrush="{ThemeResource AppOutlineBrush}"
+                                                    BorderThickness="1"
+                                                    Opacity="0.96" />
+                                            <Border Width="60"
+                                                    Height="60"
+                                                    CornerRadius="30"
+                                                    Background="{ThemeResource AppSurfaceStrongBrush}"
+                                                    BorderBrush="{ThemeResource AppOutlineStrongBrush}"
+                                                    BorderThickness="1"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    RenderTransformOrigin="0.5,0.5">
+                                                <Border.RenderTransform>
+                                                    <ScaleTransform x:Name="BusyHaloScale" ScaleX="0.97" ScaleY="0.97" />
+                                                </Border.RenderTransform>
+                                            </Border>
+                                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <Ellipse Width="10" Height="10" Fill="{ThemeResource AppAccentBrush}">
+                                                    <Ellipse.RenderTransform>
+                                                        <ScaleTransform x:Name="BusyDot1Scale" ScaleX="0.74" ScaleY="0.74" />
+                                                    </Ellipse.RenderTransform>
+                                                </Ellipse>
+                                                <Ellipse Width="10" Height="10" Fill="{ThemeResource AppAccentSecondaryBrush}">
+                                                    <Ellipse.RenderTransform>
+                                                        <ScaleTransform x:Name="BusyDot2Scale" ScaleX="0.74" ScaleY="0.74" />
+                                                    </Ellipse.RenderTransform>
+                                                </Ellipse>
+                                                <Ellipse Width="10" Height="10" Fill="{ThemeResource AppAccentBrush}">
+                                                    <Ellipse.RenderTransform>
+                                                        <ScaleTransform x:Name="BusyDot3Scale" ScaleX="0.74" ScaleY="0.74" />
+                                                    </Ellipse.RenderTransform>
+                                                </Ellipse>
+                                                <Ellipse Width="10" Height="10" Fill="{ThemeResource AppAccentTertiaryBrush}">
+                                                    <Ellipse.RenderTransform>
+                                                        <ScaleTransform x:Name="BusyDot4Scale" ScaleX="0.74" ScaleY="0.74" />
+                                                    </Ellipse.RenderTransform>
+                                                </Ellipse>
+                                            </StackPanel>
+                                        </Grid>
                                         <TextBlock x:Name="BusyText" Text="Загрузка" Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource AppTextBrush}" HorizontalAlignment="Center" TextAlignment="Center" />
                                     </StackPanel>
                                 </Border>
