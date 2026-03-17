@@ -18,6 +18,16 @@
                 <DoubleAnimation Storyboard.TargetName="GlowC" Storyboard.TargetProperty="(UIElement.RenderTransform).(CompositeTransform.TranslateY)" Duration="0:0:19" To="-90" />
                 <DoubleAnimation Storyboard.TargetName="GlowC" Storyboard.TargetProperty="(UIElement.RenderTransform).(CompositeTransform.TranslateX)" Duration="0:0:23" To="70" />
             </Storyboard>
+            <Storyboard x:Key="DotLoadingStoryboard" RepeatBehavior="Forever">
+                <DoubleAnimation Storyboard.TargetName="SplashDot1Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.8" From="0.72" To="1.14" AutoReverse="True" BeginTime="0:0:0.0" />
+                <DoubleAnimation Storyboard.TargetName="SplashDot1Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.8" From="0.72" To="1.14" AutoReverse="True" BeginTime="0:0:0.0" />
+                <DoubleAnimation Storyboard.TargetName="SplashDot2Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.8" From="0.72" To="1.14" AutoReverse="True" BeginTime="0:0:0.14" />
+                <DoubleAnimation Storyboard.TargetName="SplashDot2Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.8" From="0.72" To="1.14" AutoReverse="True" BeginTime="0:0:0.14" />
+                <DoubleAnimation Storyboard.TargetName="SplashDot3Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.8" From="0.72" To="1.14" AutoReverse="True" BeginTime="0:0:0.28" />
+                <DoubleAnimation Storyboard.TargetName="SplashDot3Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.8" From="0.72" To="1.14" AutoReverse="True" BeginTime="0:0:0.28" />
+                <DoubleAnimation Storyboard.TargetName="SplashDot4Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.8" From="0.72" To="1.14" AutoReverse="True" BeginTime="0:0:0.42" />
+                <DoubleAnimation Storyboard.TargetName="SplashDot4Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.8" From="0.72" To="1.14" AutoReverse="True" BeginTime="0:0:0.42" />
+            </Storyboard>
         </Grid.Resources>
 
         <Grid>
@@ -137,7 +147,28 @@
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="18" MaxWidth="420">
                                 <TextBlock Text="NeuralV" Style="{StaticResource HeroTitleStyle}" HorizontalAlignment="Center" />
                                 <TextBlock Text="Подготовка защищённого рабочего пространства." Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center" TextAlignment="Center" />
-                                <ProgressRing Width="76" Height="76" IsActive="True" HorizontalAlignment="Center" Foreground="{ThemeResource AppAccentBrush}" />
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
+                                    <Border Width="14" Height="14" CornerRadius="7" Background="{ThemeResource AppAccentBrush}" Opacity="0.92" RenderTransformOrigin="0.5,0.5">
+                                        <Border.RenderTransform>
+                                            <ScaleTransform x:Name="SplashDot1Scale" ScaleX="0.72" ScaleY="0.72" />
+                                        </Border.RenderTransform>
+                                    </Border>
+                                    <Border Width="14" Height="14" CornerRadius="7" Background="{ThemeResource AppAccentBrush}" Opacity="0.84" RenderTransformOrigin="0.5,0.5">
+                                        <Border.RenderTransform>
+                                            <ScaleTransform x:Name="SplashDot2Scale" ScaleX="0.72" ScaleY="0.72" />
+                                        </Border.RenderTransform>
+                                    </Border>
+                                    <Border Width="14" Height="14" CornerRadius="7" Background="{ThemeResource AppAccentBrush}" Opacity="0.76" RenderTransformOrigin="0.5,0.5">
+                                        <Border.RenderTransform>
+                                            <ScaleTransform x:Name="SplashDot3Scale" ScaleX="0.72" ScaleY="0.72" />
+                                        </Border.RenderTransform>
+                                    </Border>
+                                    <Border Width="14" Height="14" CornerRadius="7" Background="{ThemeResource AppAccentBrush}" Opacity="0.68" RenderTransformOrigin="0.5,0.5">
+                                        <Border.RenderTransform>
+                                            <ScaleTransform x:Name="SplashDot4Scale" ScaleX="0.72" ScaleY="0.72" />
+                                        </Border.RenderTransform>
+                                    </Border>
+                                </StackPanel>
                             </StackPanel>
                         </Grid>
 

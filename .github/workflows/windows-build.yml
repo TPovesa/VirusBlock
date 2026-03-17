@@ -83,6 +83,20 @@ jobs:
             -o dist\windows\NeuralV 2>&1 | Tee-Object -FilePath windows-build.log
           "WINDOWS_WINUI_BUILD_EXIT=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Smoke test published Windows client
+        if: env.WINDOWS_WINUI_BUILD_EXIT == '0'
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path 'dist/windows/NeuralV/NeuralV.exe'
+          $proc = Start-Process -FilePath $exe -ArgumentList '--smoke-test' -PassThru
+          if (-not $proc.WaitForExit(30000)) {
+            try { $proc.Kill($true) } catch {}
+            throw 'Windows smoke test timed out after 30 seconds'
+          }
+          if ($proc.ExitCode -ne 0) {
+            throw "Windows smoke test failed with exit code $($proc.ExitCode)"
+          }
+
       - name: Package Windows portable archive
         shell: pwsh
         run: |

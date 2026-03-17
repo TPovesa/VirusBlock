@@ -8,6 +8,7 @@ namespace NeuralV.Windows;
 public partial class App : Application
 {
     public static ThemePalette Palette { get; private set; } = ThemePalette.DefaultDark();
+    public static bool IsSmokeTest { get; private set; }
 
     public App()
     {
@@ -16,7 +17,19 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        Palette = WallpaperPaletteService.Load();
+        IsSmokeTest = (args.Arguments ?? string.Empty)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(arg => string.Equals(arg, "--smoke-test", StringComparison.OrdinalIgnoreCase));
+
+        try
+        {
+            Palette = WallpaperPaletteService.Load();
+        }
+        catch
+        {
+            Palette = ThemePalette.DefaultDark();
+        }
+
         ApplyPalette(Resources, Palette);
 
         var window = new MainWindow();

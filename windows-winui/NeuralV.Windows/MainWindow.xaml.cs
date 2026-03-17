@@ -64,6 +64,10 @@ public sealed partial class MainWindow : Window
         {
             storyboard.Begin();
         }
+        if (WindowRoot.Resources["DotLoadingStoryboard"] is Storyboard dotStoryboard)
+        {
+            dotStoryboard.Begin();
+        }
         await InitializeAsync();
     }
 
@@ -92,6 +96,15 @@ public sealed partial class MainWindow : Window
         SetBusy(true, "Поднимаем новую Windows-версию");
         try
         {
+            if (App.IsSmokeTest)
+            {
+                ShowScreen(AppScreen.Welcome);
+                SetStatus("Smoke test completed.");
+                await Task.Delay(250);
+                App.Current.Exit();
+                return;
+            }
+
             _session = await SessionStore.LoadSessionAsync();
             if (_session is { IsValid: true })
             {
@@ -108,14 +121,8 @@ public sealed partial class MainWindow : Window
             }
 
             await LoadHistoryAsync();
-            _updateInfo = await _apiClient.CheckForUpdateAsync(_currentVersion);
-            ApplyUpdateState();
-            if (_updateInfo.Available && !string.IsNullOrWhiteSpace(_updateInfo.SetupUrl))
-            {
-                await DownloadAndRunUpdateAsync(_updateInfo.SetupUrl, autoMode: true);
-                return;
-            }
             ShowScreen(_session is null ? AppScreen.Welcome : AppScreen.Home);
+            _ = CheckForUpdatesAsync();
         }
         catch (Exception ex)
         {
@@ -125,6 +132,24 @@ public sealed partial class MainWindow : Window
         finally
         {
             SetBusy(false);
+        }
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            _updateInfo = await _apiClient.CheckForUpdateAsync(_currentVersion);
+            ApplyUpdateState();
+            if (_updateInfo.Available)
+            {
+                SetStatus($"Доступно обновление Windows {_updateInfo.LatestVersion}.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _updateInfo = new UpdateInfo { Error = ex.Message };
+            ApplyUpdateState();
         }
     }
 

@@ -21,6 +21,7 @@
         <CornerRadius x:Key="FieldCornerRadius">20</CornerRadius>
 
         <Style x:Key="HeroTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI Variable Display Semib" />
             <Setter Property="FontSize" Value="42" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
@@ -28,18 +29,21 @@
         </Style>
 
         <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI Variable Display" />
             <Setter Property="FontSize" Value="28" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
         </Style>
 
         <Style x:Key="BodyTextStyle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI Variable Text" />
             <Setter Property="FontSize" Value="15" />
             <Setter Property="Foreground" Value="{ThemeResource AppMutedTextBrush}" />
             <Setter Property="TextWrapping" Value="WrapWholeWords" />
         </Style>
 
         <Style x:Key="NeuralVButtonStyle" TargetType="Button">
+            <Setter Property="FontFamily" Value="Segoe UI Variable Text Semibold" />
             <Setter Property="CornerRadius" Value="20" />
             <Setter Property="Padding" Value="18,14" />
             <Setter Property="MinHeight" Value="54" />
@@ -59,6 +63,7 @@
         </Style>
 
         <Style x:Key="FieldTextBoxStyle" TargetType="TextBox">
+            <Setter Property="FontFamily" Value="Segoe UI Variable Text" />
             <Setter Property="CornerRadius" Value="20" />
             <Setter Property="Padding" Value="16,12" />
             <Setter Property="Background" Value="{ThemeResource AppSurfaceRaisedBrush}" />
@@ -68,6 +73,7 @@
         </Style>
 
         <Style x:Key="FieldPasswordBoxStyle" TargetType="PasswordBox">
+            <Setter Property="FontFamily" Value="Segoe UI Variable Text" />
             <Setter Property="CornerRadius" Value="20" />
             <Setter Property="Padding" Value="16,12" />
             <Setter Property="Background" Value="{ThemeResource AppSurfaceRaisedBrush}" />
