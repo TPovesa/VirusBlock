@@ -94,13 +94,16 @@ public sealed partial class MainWindow : Window
     private async Task InitializeAsync()
     {
         SetBusy(true, "Поднимаем новую Windows-версию");
+        WindowsLog.Info("InitializeAsync started");
         try
         {
             if (App.IsSmokeTest)
             {
+                WindowsLog.Info("Smoke test mode entered");
                 ShowScreen(AppScreen.Welcome);
                 SetStatus("Smoke test completed.");
                 await Task.Delay(250);
+                Environment.ExitCode = 0;
                 App.Current.Exit();
                 return;
             }
@@ -126,6 +129,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            WindowsLog.Error("InitializeAsync failed", ex);
             SetStatus(ex.Message);
             ShowScreen(AppScreen.Welcome);
         }
@@ -143,11 +147,13 @@ public sealed partial class MainWindow : Window
             ApplyUpdateState();
             if (_updateInfo.Available)
             {
+                WindowsLog.Info($"Update available: {_updateInfo.LatestVersion}");
                 SetStatus($"Доступно обновление Windows {_updateInfo.LatestVersion}.");
             }
         }
         catch (Exception ex)
         {
+            WindowsLog.Error("CheckForUpdatesAsync failed", ex);
             _updateInfo = new UpdateInfo { Error = ex.Message };
             ApplyUpdateState();
         }
@@ -377,6 +383,7 @@ public sealed partial class MainWindow : Window
         }
 
         SetBusy(true, "Создаём серверную проверку");
+        WindowsLog.Info($"Start scan requested: {mode}");
         try
         {
             var roots = WindowsEnvironmentService.DetectScanRoots();
@@ -384,6 +391,7 @@ public sealed partial class MainWindow : Window
             var result = await _apiClient.StartDesktopScanAsync(_session, mode, "filesystem", Environment.MachineName, Environment.SystemDirectory, roots, installRoots);
             if (result.scan is null)
             {
+                WindowsLog.Error($"Desktop scan creation failed: {result.error}");
                 SetStatus(result.error ?? "Не удалось создать desktop-задачу.");
                 return;
             }
@@ -396,6 +404,11 @@ public sealed partial class MainWindow : Window
             _scanPollCts?.Cancel();
             _scanPollCts = new CancellationTokenSource();
             _ = PollScanAsync(result.scan.Id, _scanPollCts.Token);
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("StartScanAsync failed", ex);
+            SetStatus(ex.Message);
         }
         finally
         {
@@ -412,6 +425,7 @@ public sealed partial class MainWindow : Window
                 var result = await _apiClient.GetDesktopScanAsync(_session, scanId, cancellationToken);
                 if (result.scan is null)
                 {
+                    WindowsLog.Error($"Desktop scan poll returned null: {result.error}");
                     ScanSecondaryText.Text = result.error ?? "Не удалось прочитать статус проверки.";
                     await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
                     continue;
@@ -428,15 +442,18 @@ public sealed partial class MainWindow : Window
                         await HistoryStore.AppendAsync(result.scan, cancellationToken);
                         await LoadHistoryAsync();
                     }
+                    WindowsLog.Info($"Desktop scan finished: {result.scan.Status} / {result.scan.Verdict}");
                     return;
                 }
             }
             catch (OperationCanceledException)
             {
+                WindowsLog.Info("Desktop scan polling cancelled");
                 return;
             }
             catch (Exception ex)
             {
+                WindowsLog.Error("PollScanAsync failed", ex);
                 ScanSecondaryText.Text = ex.Message;
             }
 
@@ -481,6 +498,7 @@ public sealed partial class MainWindow : Window
             _scanPollCts?.Cancel();
             var result = await _apiClient.CancelDesktopScanAsync(_session);
             var message = result.success ? "Проверка остановлена." : result.error ?? "Не удалось отменить проверку.";
+            WindowsLog.Info($"Cancel scan result: {message}");
             ScanSecondaryText.Text = message;
             SetStatus(message);
         }
@@ -512,6 +530,7 @@ public sealed partial class MainWindow : Window
             }
         }
 
+        WindowsLog.Info("Logout requested");
         _scanPollCts?.Cancel();
         _session = null;
         SessionStore.ClearSession();
@@ -532,6 +551,7 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            WindowsLog.Info($"DownloadAndRunUpdateAsync started: auto={autoMode}");
             SetBusy(true, autoMode ? "Ставим новую Windows-версию" : "Скачиваем обновление");
             using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
             var target = Path.Combine(Path.GetTempPath(), "NeuralVSetup-latest.exe");
@@ -544,10 +564,12 @@ public sealed partial class MainWindow : Window
                 Arguments = "--self-update --no-launch",
                 UseShellExecute = true
             });
+            WindowsLog.Info($"Update installer started: {target}");
             App.Current.Exit();
         }
         catch (Exception ex)
         {
+            WindowsLog.Error("DownloadAndRunUpdateAsync failed", ex);
             UpdateStatusText.Text = ex.Message;
             SetBusy(false);
         }

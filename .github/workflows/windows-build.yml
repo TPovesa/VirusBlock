@@ -88,7 +88,8 @@ jobs:
         shell: pwsh
         run: |
           $exe = Resolve-Path 'dist/windows/NeuralV/NeuralV.exe'
-          $proc = Start-Process -FilePath $exe -ArgumentList '--smoke-test' -PassThru
+          $env:NEURALV_SMOKE_TEST = '1'
+          $proc = Start-Process -FilePath $exe -ArgumentList '--smoke-test' -PassThru -WorkingDirectory (Split-Path $exe)
           if (-not $proc.WaitForExit(30000)) {
             try { $proc.Kill($true) } catch {}
             throw 'Windows smoke test timed out after 30 seconds'
@@ -126,6 +127,14 @@ jobs:
         with:
           name: windows-winui-log
           path: windows-build.log
+          if-no-files-found: warn
+
+      - name: Upload Windows runtime smoke log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-winui-runtime-log
+          path: ~/AppData/Roaming/NeuralV/log.txt
           if-no-files-found: warn
 
       - name: Emit Windows build failure annotation

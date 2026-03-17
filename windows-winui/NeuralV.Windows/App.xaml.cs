@@ -12,28 +12,49 @@ public partial class App : Application
 
     public App()
     {
+        WindowsLog.StartSession("winui");
+        WindowsLog.Info("App ctor");
+        UnhandledException += OnUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnCurrentDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         InitializeComponent();
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        IsSmokeTest = (args.Arguments ?? string.Empty)
+        var smokeFromArgs = (args.Arguments ?? string.Empty)
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Any(arg => string.Equals(arg, "--smoke-test", StringComparison.OrdinalIgnoreCase));
+        var smokeFromEnv = string.Equals(
+            Environment.GetEnvironmentVariable("NEURALV_SMOKE_TEST"),
+            "1",
+            StringComparison.OrdinalIgnoreCase);
+        IsSmokeTest = smokeFromArgs || smokeFromEnv;
 
         try
         {
+            WindowsLog.Info($"Launch arguments: {args.Arguments}");
+            WindowsLog.Info($"Smoke test mode: {IsSmokeTest}");
             Palette = WallpaperPaletteService.Load();
         }
-        catch
+        catch (Exception ex)
         {
+            WindowsLog.Error("Wallpaper palette load failed, fallback to default", ex);
             Palette = ThemePalette.DefaultDark();
         }
 
         ApplyPalette(Resources, Palette);
 
-        var window = new MainWindow();
-        window.Activate();
+        try
+        {
+            var window = new MainWindow();
+            window.Activate();
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("Window activation failed", ex);
+            throw;
+        }
     }
 
     public static void ApplyPalette(ResourceDictionary resources, ThemePalette palette)
@@ -52,4 +73,20 @@ public partial class App : Application
     }
 
     private static SolidColorBrush Brush(Color color) => new(color);
+
+    private static void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+    {
+        WindowsLog.Error("UI unhandled exception", e.Exception);
+    }
+
+    private static void OnCurrentDomainUnhandledException(object? sender, UnhandledExceptionEventArgs e)
+    {
+        WindowsLog.Error("AppDomain unhandled exception", e.ExceptionObject as Exception);
+    }
+
+    private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        WindowsLog.Error("TaskScheduler unobserved exception", e.Exception);
+        e.SetObserved();
+    }
 }
