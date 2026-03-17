@@ -68,6 +68,12 @@ public partial class App : Application
         catch (Exception ex)
         {
             WindowsLog.Error("Window activation failed", ex);
+            if (IsSmokeTest)
+            {
+                Environment.ExitCode = 1;
+                Current.Exit();
+                return;
+            }
             ShowStartupFailureWindow(ex);
         }
     }

@@ -110,14 +110,29 @@ jobs:
         if: env.WINDOWS_WINUI_BUILD_EXIT == '0'
         shell: pwsh
         run: |
+          function Write-NeuralVSmokeLogs {
+            $candidates = @(
+              'dist/windows/NeuralV/log.txt',
+              "$HOME/AppData/Local/NeuralV/log.txt",
+              "$HOME/AppData/Roaming/NeuralV/log.txt"
+            )
+            foreach ($candidate in $candidates) {
+              if (Test-Path $candidate) {
+                Write-Host "---- $candidate ----"
+                Get-Content $candidate -ErrorAction SilentlyContinue | Write-Host
+              }
+            }
+          }
           $exe = Resolve-Path 'dist/windows/NeuralV/NeuralV.exe'
           $env:NEURALV_SMOKE_TEST = '1'
           $proc = Start-Process -FilePath $exe -ArgumentList '--smoke-test' -PassThru -WorkingDirectory (Split-Path $exe)
           if (-not $proc.WaitForExit(30000)) {
+            Write-NeuralVSmokeLogs
             try { $proc.Kill($true) } catch {}
             throw 'Windows smoke test timed out after 30 seconds'
           }
           if ($proc.ExitCode -ne 0) {
+            Write-NeuralVSmokeLogs
             throw "Windows smoke test failed with exit code $($proc.ExitCode)"
           }
 
