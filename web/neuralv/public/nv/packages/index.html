@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NV Packages</title>
+    <meta
+      name="description"
+      content="Каталог пакетов NV для Windows и Linux."
+    />
+    <link rel="icon" href="/neuralv/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/nv/app.css" />
+  </head>
+  <body data-page="packages">
+    <div class="nv-shell">
+      <header class="topbar">
+        <a class="brand" href="/nv/">NV</a>
+        <nav class="topnav" aria-label="Навигация NV">
+          <a href="/nv/downloads/">Скачать</a>
+          <a class="is-active" href="/nv/packages/">Пакеты</a>
+        </nav>
+      </header>
+
+      <main class="page-stack">
+        <section class="hero hero-compact">
+          <div class="hero-copy">
+            <p class="eyebrow">Catalog</p>
+            <h1>Пакеты NV</h1>
+            <p class="hero-text">
+              Список пакетов, которые можно ставить через NV. Выбери платформу и посмотри, что доступно прямо сейчас.
+            </p>
+          </div>
+        </section>
+
+        <section class="panel panel-spacious">
+          <div class="panel-head row-head row-head-tight">
+            <div>
+              <p class="eyebrow">Фильтры</p>
+              <h2>Каталог</h2>
+            </div>
+            <div class="filter-tabs" role="tablist" aria-label="Фильтр пакетов">
+              <button class="filter-button is-active" type="button" data-filter="all">Все</button>
+              <button class="filter-button" type="button" data-filter="windows">Windows</button>
+              <button class="filter-button" type="button" data-filter="linux">Linux</button>
+            </div>
+          </div>
+
+          <div class="package-grid package-grid-wide" id="package-list" aria-live="polite"></div>
+          <p class="empty-state" id="package-empty" hidden>Под выбранный фильтр пакеты не найдены.</p>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/nv/app.js"></script>
+  </body>
+</html>

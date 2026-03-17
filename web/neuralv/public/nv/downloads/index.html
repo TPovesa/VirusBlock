@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NV Downloads</title>
+    <meta
+      name="description"
+      content="Скачать NV для Windows и Linux и получить готовую команду установки."
+    />
+    <link rel="icon" href="/neuralv/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/nv/app.css" />
+  </head>
+  <body data-page="downloads">
+    <div class="nv-shell">
+      <header class="topbar">
+        <a class="brand" href="/nv/">NV</a>
+        <nav class="topnav" aria-label="Навигация NV">
+          <a class="is-active" href="/nv/downloads/">Скачать</a>
+          <a href="/nv/packages/">Пакеты</a>
+        </nav>
+      </header>
+
+      <main class="page-stack">
+        <section class="hero hero-compact">
+          <div class="hero-copy">
+            <p class="eyebrow">Downloads</p>
+            <h1>Скачать NV</h1>
+            <p class="hero-text">
+              Выбери систему и сразу получи рабочую команду установки. После этого NV сможет ставить и обновлять любые пакеты из каталога.
+            </p>
+          </div>
+        </section>
+
+        <section class="panel panel-spacious">
+          <div class="panel-head">
+            <p class="eyebrow">Платформа</p>
+            <h2>Установка NV</h2>
+          </div>
+
+          <div class="platform-tabs" role="tablist" aria-label="Платформа NV">
+            <button class="tab-button is-active" type="button" data-platform="linux">Linux</button>
+            <button class="tab-button" type="button" data-platform="windows">Windows</button>
+          </div>
+
+          <div class="downloads-grid">
+            <article class="install-card install-card-emphasis">
+              <div class="install-head">
+                <h3 id="platform-title">Linux</h3>
+                <span class="version-pill" id="platform-version">Загрузка…</span>
+              </div>
+              <div class="command-block">
+                <div class="command-head">
+                  <span>Команда</span>
+                  <button id="copy-command" type="button">Копировать</button>
+                </div>
+                <pre id="install-command"></pre>
+              </div>
+            </article>
+
+            <article class="install-card install-sidecard">
+              <div class="install-head">
+                <h3>Что дальше</h3>
+              </div>
+              <p class="muted" id="download-note"></p>
+              <ul class="bullet-list">
+                <li>После установки можно ставить пакеты из каталога.</li>
+                <li>NV сам показывает актуальную версию доступного пакета.</li>
+                <li>Команды установки и обновления остаются одинаковыми.</li>
+              </ul>
+              <div class="mini-actions">
+                <a class="ghost-button ghost-button-compact" href="/nv/packages/">Открыть каталог</a>
+              </div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/nv/app.js"></script>
+  </body>
+</html>

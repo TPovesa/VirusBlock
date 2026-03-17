@@ -4,120 +4,98 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NV</title>
-    <meta name="description" content="NV — пакетный менеджер для установки, обновления и удаления NeuralV и других пакетов." />
+    <meta
+      name="description"
+      content="NV — пакетный менеджер для установки, обновления и удаления приложений на Windows и Linux."
+    />
     <link rel="icon" href="/neuralv/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/nv/app.css" />
   </head>
-  <body>
+  <body data-page="home">
     <div class="nv-shell">
-      <header class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow">Package manager</p>
-          <h1>NV</h1>
-          <p class="hero-text">Отдельный пакетный менеджер. Сначала ставишь NV, потом через него ставишь и обновляешь пакеты.</p>
-          <div class="hero-actions">
-            <a class="primary-button" href="#install">Установить</a>
-            <a class="ghost-button" href="#packages">Пакеты</a>
-          </div>
-        </div>
-        <div class="hero-console" aria-hidden="true">
-          <div class="console-window">
-            <div class="console-bar">
-              <span></span><span></span><span></span>
-            </div>
-            <pre>$ nv -v
-$ nv install neuralv@latest
-$ nv install nv@latest
-$ nv uninstall neuralv</pre>
-          </div>
-        </div>
+      <header class="topbar">
+        <a class="brand" href="/nv/">NV</a>
+        <nav class="topnav" aria-label="Навигация NV">
+          <a href="/nv/downloads/">Скачать</a>
+          <a href="/nv/packages/">Пакеты</a>
+        </nav>
       </header>
 
-      <main class="content">
-        <section id="install" class="panel two-column">
-          <div class="panel-copy">
-            <h2>Установка NV</h2>
-            <p>Выбери систему и получи готовый install flow.</p>
-            <div class="platform-tabs" role="tablist" aria-label="Платформа NV">
-              <button class="tab-button is-active" type="button" data-platform="linux">Linux</button>
-              <button class="tab-button" type="button" data-platform="windows">Windows</button>
+      <main class="page-stack">
+        <section class="hero hero-wide">
+          <div class="hero-copy">
+            <p class="eyebrow">Package manager</p>
+            <h1>NV</h1>
+            <p class="hero-text">
+              Один менеджер пакетов для Windows и Linux. Через NV можно ставить,
+              обновлять и удалять приложения без ручной возни с архивами и длинными инструкциями.
+            </p>
+            <div class="hero-actions">
+              <a class="primary-button" href="/nv/downloads/">Скачать</a>
+              <a class="ghost-button" href="/nv/packages/">Показать все пакеты</a>
             </div>
           </div>
 
-          <div class="install-stack">
-            <article class="install-card">
-              <div class="install-head">
-                <h3 id="platform-title">Linux</h3>
-                <span class="version-pill" id="platform-version">Загрузка…</span>
+          <aside class="hero-console" aria-hidden="true">
+            <div class="console-window">
+              <div class="console-bar">
+                <span></span><span></span><span></span>
               </div>
-              <div class="command-block">
-                <div class="command-head">
-                  <span>Команда</span>
-                  <button id="copy-command" type="button">Копировать</button>
-                </div>
-                <pre id="install-command">curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh
-export PATH="$HOME/.local/bin:$PATH"
-nv -v</pre>
-              </div>
-            </article>
-
-            <article class="install-card install-card-compact">
-              <div class="install-head">
-                <h3>Дальше</h3>
-              </div>
-              <p class="muted" id="download-note">После установки NV можно сразу поставить NeuralV:</p>
-              <div class="command-block">
-                <pre>nv install neuralv@latest</pre>
-              </div>
-            </article>
-          </div>
+              <pre>$ nv -v
+$ nv install package@latest
+$ nv install nv@latest
+$ nv uninstall package</pre>
+            </div>
+          </aside>
         </section>
 
-        <section id="packages" class="panel">
-          <div class="panel-head">
-            <h2>Пакеты</h2>
-            <p>NV ищет пакет по имени и берёт актуальные версии с сервера.</p>
-          </div>
-          <div class="package-grid">
-            <article class="package-card">
-              <h3>neuralv</h3>
-              <p>Графическая версия приложения.</p>
-              <pre>nv install neuralv@latest</pre>
-            </article>
-            <article class="package-card">
-              <h3>nv</h3>
-              <p>Сам пакетный менеджер.</p>
-              <pre>nv install nv@latest</pre>
-            </article>
-            <article class="package-card package-card-muted">
-              <h3>Версии</h3>
-              <p>Используется обычный semver.</p>
-              <pre>nv install neuralv@1.4.0</pre>
-            </article>
-          </div>
+        <section class="panel feature-grid">
+          <article class="feature-card">
+            <h2>Быстрый старт</h2>
+            <p>Ставишь NV один раз, дальше работаешь с пакетами одной командой.</p>
+          </article>
+          <article class="feature-card">
+            <h2>Один каталог</h2>
+            <p>На одной странице видно доступные проекты, платформы и актуальные версии.</p>
+          </article>
+          <article class="feature-card">
+            <h2>Прямое обновление</h2>
+            <p>NV сам ставит свежие сборки, без ручной проверки архивов и ссылок.</p>
+          </article>
         </section>
 
-        <section class="panel command-matrix">
-          <div class="panel-head">
-            <h2>Основные команды</h2>
+        <section class="panel panel-spacious">
+          <div class="panel-head row-head">
+            <div>
+              <p class="eyebrow">Пакеты</p>
+              <h2>Что можно ставить через NV</h2>
+            </div>
+            <a class="ghost-button ghost-button-compact" href="/nv/packages/">Весь каталог</a>
           </div>
-          <div class="command-grid">
-            <div class="command-tile">
-              <span>Установка или обновление</span>
-              <pre>nv install &lt;package&gt;@latest</pre>
-            </div>
-            <div class="command-tile">
-              <span>Установка версии</span>
-              <pre>nv install &lt;package&gt;@&lt;version&gt;</pre>
-            </div>
-            <div class="command-tile">
-              <span>Удаление</span>
-              <pre>nv uninstall &lt;package&gt;</pre>
-            </div>
-            <div class="command-tile">
-              <span>Версия NV</span>
-              <pre>nv -v</pre>
-            </div>
+          <div class="package-grid" id="featured-packages" aria-live="polite"></div>
+        </section>
+
+        <section class="panel panel-spacious steps-panel">
+          <div class="panel-head">
+            <p class="eyebrow">Как это работает</p>
+            <h2>Три коротких шага</h2>
+          </div>
+          <div class="steps-grid">
+            <article class="step-card">
+              <span class="step-index">01</span>
+              <h3>Ставишь NV</h3>
+              <p>Открываешь страницу загрузки и берёшь готовую команду под свою систему.</p>
+            </article>
+            <article class="step-card">
+              <span class="step-index">02</span>
+              <h3>Выбираешь пакет</h3>
+              <p>Открываешь каталог и смотришь, какие приложения есть для Windows и Linux.</p>
+            </article>
+            <article class="step-card">
+              <span class="step-index">03</span>
+              <h3>Ставишь или обновляешь</h3>
+              <p>NV скачивает актуальную версию и дальше обслуживает её той же командой.</p>
+            </article>
           </div>
         </section>
       </main>
