@@ -78,7 +78,7 @@ router.post('/auth/telegram', async (req, res) => {
         const message = String(error?.message || '');
         if (message.includes('not configured')) {
             return res.status(503).json({
-                error: 'Telegram login is not configured',
+                error: 'Telegram login для NV ещё не настроен',
                 code: error.code || 'NV_TELEGRAM_NOT_CONFIGURED',
                 auth: getHubAuthConfig(),
                 details: error.details || null
@@ -86,7 +86,7 @@ router.post('/auth/telegram', async (req, res) => {
         }
         if (message.toLowerCase().includes('telegram')) {
             return res.status(400).json({
-                error: 'Недействительный ответ Telegram login',
+                error: 'Telegram login отклонил вход. Проверь домен бота и настройки виджета.',
                 code: error.code || 'NV_TELEGRAM_AUTH_INVALID'
             });
         }

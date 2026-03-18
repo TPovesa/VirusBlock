@@ -21,6 +21,54 @@ public enum AppScreen
     Settings
 }
 
+public enum ThemeModePreference
+{
+    System,
+    Light,
+    Dark
+}
+
+public enum DesktopCoverageMode
+{
+    SmartCoverage,
+    FullDisk
+}
+
+public enum WindowsScanRootKind
+{
+    UserProfile,
+    Desktop,
+    Downloads,
+    Documents,
+    LocalAppData,
+    RoamingAppData,
+    ProgramFiles,
+    ProgramFilesX86,
+    StartMenu,
+    CommonStartMenu,
+    Startup,
+    CommonStartup,
+    TargetFile,
+    TargetDirectory,
+    RelatedBinaryRoot,
+    ServicesMetadata,
+    ScheduledTasksMetadata,
+    DriveRoot,
+    Temp,
+    Custom
+}
+
+public enum TrayScanVisualState
+{
+    Idle,
+    Preparing,
+    Running,
+    AwaitingUpload,
+    Completed,
+    Failed,
+    Cancelled
+}
+
 public sealed class SessionUser
 {
     [JsonPropertyName("id")]
@@ -84,6 +132,80 @@ public sealed class UpdateInfo
     public string Error { get; init; } = string.Empty;
 }
 
+public sealed class ClientPreferences
+{
+    public ThemeModePreference ThemeMode { get; set; } = ThemeModePreference.System;
+    public bool DynamicColorsEnabled { get; set; } = true;
+    public bool DeveloperModeEnabled { get; set; }
+    public bool NetworkProtectionEnabled { get; set; }
+    public bool AdBlockEnabled { get; set; }
+    public bool UnsafeSitesEnabled { get; set; }
+    public bool MinimizeToTrayOnClose { get; set; } = true;
+    public int BlockedThreats { get; set; }
+    public int BlockedAds { get; set; }
+
+    public string NetworkProtectionSummary =>
+        $"Заблокировано угроз: {BlockedThreats} · рекламы: {BlockedAds}";
+}
+
+public sealed class NetworkProtectionState
+{
+    public string Platform { get; init; } = string.Empty;
+    public bool NetworkEnabled { get; init; }
+    public bool AdBlockEnabled { get; init; }
+    public bool UnsafeSitesEnabled { get; init; }
+    public int BlockedAdsTotal { get; init; }
+    public int BlockedThreatsTotal { get; init; }
+    public int BlockedAdsPlatform { get; init; }
+    public int BlockedThreatsPlatform { get; init; }
+    public bool DeveloperMode { get; init; }
+    public string Summary => $"Заблокировано угроз: {BlockedThreatsPlatform} · рекламы: {BlockedAdsPlatform}";
+}
+
+public sealed class WindowsScanRoot
+{
+    public WindowsScanRootKind Kind { get; init; } = WindowsScanRootKind.Custom;
+    public string Path { get; init; } = string.Empty;
+    public string Label { get; init; } = string.Empty;
+    public bool Exists { get; init; }
+    public bool IsMetadataOnly { get; init; }
+}
+
+public sealed class WindowsScanPlan
+{
+    public string Mode { get; init; } = "quick";
+    public string ArtifactKind { get; init; } = "filesystem";
+    public string TargetName { get; init; } = string.Empty;
+    public string TargetPath { get; init; } = string.Empty;
+    public DesktopCoverageMode CoverageMode { get; init; } = DesktopCoverageMode.SmartCoverage;
+    public IReadOnlyList<WindowsScanRoot> CoverageRoots { get; init; } = Array.Empty<WindowsScanRoot>();
+    public IReadOnlyList<WindowsScanRoot> MetadataRoots { get; init; } = Array.Empty<WindowsScanRoot>();
+    public IReadOnlyList<string> InstallRoots { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> RelatedBinaryRoots { get; init; } = Array.Empty<string>();
+
+    [JsonIgnore]
+    public IReadOnlyList<string> ScanRoots =>
+        CoverageRoots
+            .Where(root => !root.IsMetadataOnly && root.Exists && !string.IsNullOrWhiteSpace(root.Path))
+            .Select(root => root.Path)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    [JsonIgnore]
+    public IReadOnlyList<string> AllBinaryRoots =>
+        ScanRoots
+            .Concat(RelatedBinaryRoots.Where(path => !string.IsNullOrWhiteSpace(path)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    [JsonIgnore]
+    public string CoverageModeValue => CoverageMode switch
+    {
+        DesktopCoverageMode.FullDisk => "full-disk",
+        _ => "smart-coverage"
+    };
+}
+
 public sealed class DesktopScanFinding
 {
     public string Id { get; init; } = string.Empty;
@@ -111,6 +233,20 @@ public sealed class DesktopScanState
     public bool IsFinished => Status is "COMPLETED" or "FAILED" or "CANCELLED";
     public bool IsSuccessful => Status == "COMPLETED";
     public string PrimarySummary => string.IsNullOrWhiteSpace(Message) ? Verdict : Message;
+}
+
+public sealed class TrayProgressState
+{
+    public bool IsVisible { get; init; }
+    public bool IsIndeterminate { get; init; }
+    public string ScanId { get; init; } = string.Empty;
+    public string Mode { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public int ProgressPercent { get; init; }
+    public string Title { get; init; } = "NeuralV";
+    public string Subtitle { get; init; } = string.Empty;
+    public string Tooltip { get; init; } = "NeuralV";
+    public TrayScanVisualState VisualState { get; init; } = TrayScanVisualState.Idle;
 }
 
 public sealed class StoredScanRecord

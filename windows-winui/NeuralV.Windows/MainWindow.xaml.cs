@@ -1,38 +1,58 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
-using UiEllipse = Microsoft.UI.Xaml.Shapes.Ellipse;
-using UiRectangle = Microsoft.UI.Xaml.Shapes.Rectangle;
 using NeuralV.Windows.Models;
 using NeuralV.Windows.Services;
 using Windows.Foundation;
+using Windows.Storage.Pickers;
 using UiColor = global::Windows.UI.Color;
+using UiEllipse = Microsoft.UI.Xaml.Shapes.Ellipse;
+using UiRectangle = Microsoft.UI.Xaml.Shapes.Rectangle;
 using WinRT.Interop;
 
 namespace NeuralV.Windows;
 
 public sealed partial class MainWindow : Window
 {
+    private sealed class FloatingShape
+    {
+        public Border Element { get; init; } = default!;
+        public int Variant { get; set; }
+        public double Angle { get; set; }
+        public double Velocity { get; set; }
+    }
+
     private readonly NeuralVApiClient _apiClient = new();
     private readonly string _deviceId;
-    private readonly ObservableCollection<string> _homeTimeline = new();
-    private readonly ObservableCollection<string> _scanTimeline = new();
+    private readonly string _currentVersion = VersionInfo.Current;
+    private readonly Grid _windowRoot = new();
     private readonly ObservableCollection<string> _historyItems = new();
-    private readonly Grid WindowRoot = new();
+    private readonly ObservableCollection<string> _scanTimeline = new();
+    private readonly List<FloatingShape> _floatingShapes = new();
+    private readonly DispatcherTimer _shapeTimer = new();
+    private readonly Random _random = new();
 
     private SessionData? _session;
     private ChallengeTicket? _challenge;
-    private AppScreen _screen = AppScreen.Splash;
     private DesktopScanState? _activeScan;
+    private NetworkProtectionState _networkState = new();
+    private ClientPreferences _preferences = new();
     private CancellationTokenSource? _scanPollCts;
-    private UpdateInfo? _updateInfo;
     private bool _initialized;
-    private readonly string _currentVersion = VersionInfo.Current;
+    private bool _drawerOpen;
+    private bool _scanOverlayOpen;
+    private bool _networkUiSync;
+    private bool _preferenceUiSync;
+    private AppScreen _screen = AppScreen.Splash;
+    private IntPtr _windowHandle;
+    private AppWindow? _appWindow;
 
     private UiRectangle BackdropGradient = default!;
     private UiRectangle FabricLayerA = default!;
@@ -41,97 +61,94 @@ public sealed partial class MainWindow : Window
     private UiEllipse GlowA = default!;
     private UiEllipse GlowB = default!;
     private UiEllipse GlowC = default!;
-    private Grid ShellFrame = default!;
-    private ColumnDefinition RailColumn = default!;
-    private ColumnDefinition GutterColumn = default!;
-    private ColumnDefinition ContentColumn = default!;
-    private Border RailPanel = default!;
-    private Grid ContentShell = default!;
-    private Grid HeaderMetaBar = default!;
-    private TextBlock RailBadgeText = default!;
-    private TextBlock RailHeadlineText = default!;
-    private TextBlock RailDescriptionText = default!;
-    private TextBlock PaletteSourceLabel = default!;
-    private Border PaletteSwatchPrimary = default!;
-    private Border PaletteSwatchSecondary = default!;
-    private Border PaletteSwatchTertiary = default!;
-    private TextBlock PaletteSeedLabel = default!;
-    private TextBlock RailUserNameText = default!;
-    private TextBlock RailUserMetaText = default!;
-    private TextBlock RailUserStateText = default!;
-    private TextBlock ThemeModeLabel = default!;
-    private TextBlock PaletteModeHeaderLabel = default!;
-    private TextBlock VersionLabel = default!;
-    private Grid AppNavigationBar = default!;
-    private Button HomeNavButton = default!;
-    private Button HistoryNavButton = default!;
-    private Button SettingsNavButton = default!;
-    private TextBlock UserLabel = default!;
+
+    private Border DrawerScrim = default!;
+    private Border DrawerPanel = default!;
+    private Border BusyOverlay = default!;
     private Border StatusBanner = default!;
+    private Grid ScreenHost = default!;
+    private Grid ScanOverlay = default!;
+    private TextBlock HeaderTitleText = default!;
+    private TextBlock HeaderSubtitleText = default!;
+    private TextBlock AccountChipText = default!;
     private TextBlock StatusBannerText = default!;
+    private TextBlock BusyText = default!;
+    private TextBlock DrawerUserNameText = default!;
+    private TextBlock DrawerUserMetaText = default!;
+
     private FrameworkElement SplashView = default!;
-    private Border SplashHalo = default!;
-    private UiEllipse SplashOrbitRing = default!;
     private FrameworkElement WelcomeView = default!;
     private FrameworkElement LoginView = default!;
+    private FrameworkElement RegisterView = default!;
+    private FrameworkElement CodeView = default!;
+    private FrameworkElement HomeView = default!;
+    private FrameworkElement HistoryView = default!;
+    private FrameworkElement SettingsView = default!;
+
     private TextBox LoginEmailBox = default!;
     private PasswordBox LoginPasswordBox = default!;
-    private FrameworkElement RegisterView = default!;
     private TextBox RegisterNameBox = default!;
     private TextBox RegisterEmailBox = default!;
     private PasswordBox RegisterPasswordBox = default!;
     private PasswordBox RegisterPasswordRepeatBox = default!;
-    private FrameworkElement CodeView = default!;
-    private TextBlock CodeHintText = default!;
     private TextBox VerificationCodeBox = default!;
-    private FrameworkElement HomeView = default!;
-    private TextBlock HomeStatusText = default!;
-    private Button QuickScanButton = default!;
-    private Button DeepScanButton = default!;
-    private TextBlock UpdateStatusText = default!;
-    private Button UpdateButton = default!;
-    private ListView HomeTimelineList = default!;
-    private FrameworkElement ScanView = default!;
-    private TextBlock ScanPrimaryText = default!;
-    private TextBlock ScanSecondaryText = default!;
+    private TextBlock CodeHintText = default!;
+
+    private TextBlock HomeHeroTitleText = default!;
+    private TextBlock HomeHeroSubtitleText = default!;
+    private Border ActiveScanCard = default!;
+    private TextBlock ActiveScanCardTitleText = default!;
+    private TextBlock ActiveScanCardMetaText = default!;
+    private ToggleSwitch NetworkProtectionToggle = default!;
+    private ToggleSwitch AdBlockToggle = default!;
+    private ToggleSwitch UnsafeSitesToggle = default!;
+    private TextBlock NetworkCountersText = default!;
+
+    private TextBlock ScanModeText = default!;
+    private TextBlock ScanStageText = default!;
+    private TextBlock ScanProgressText = default!;
+    private TextBlock ScanCountsText = default!;
+    private ProgressBar ScanProgressBar = default!;
+    private ProgressRing ScanProgressRing = default!;
     private ListView ScanTimelineList = default!;
-    private FrameworkElement HistoryView = default!;
+
     private ListView HistoryList = default!;
-    private FrameworkElement SettingsView = default!;
-    private TextBlock SettingsPaletteText = default!;
-    private TextBlock SettingsVersionText = default!;
-    private TextBlock SettingsSessionText = default!;
-    private Border BusyOverlay = default!;
-    private TextBlock BusyText = default!;
+    private TextBlock SettingsAccountText = default!;
+    private TextBlock SettingsDeveloperText = default!;
+    private ComboBox ThemeModeCombo = default!;
+    private ToggleSwitch DynamicColorsToggle = default!;
+    private ToggleSwitch SettingsNetworkToggle = default!;
+    private ToggleSwitch SettingsAdToggle = default!;
+    private ToggleSwitch SettingsUnsafeToggle = default!;
 
     public MainWindow()
     {
         try
         {
             _deviceId = EnsureDeviceIdSafe();
-            Content = WindowRoot;
-            WindowRoot.Loaded += OnRootLoaded;
-            WindowRoot.Background = ThemeBrush("AppBackgroundBrush");
+            Content = _windowRoot;
+            _windowRoot.Background = ThemeBrush("AppBackgroundBrush");
+            _windowRoot.Loaded += OnRootLoaded;
+            Closed += OnClosed;
+
+            _shapeTimer.Interval = TimeSpan.FromMilliseconds(900);
+            _shapeTimer.Tick += OnShapeTick;
+
             BuildLayout();
-
-            HomeTimelineList.ItemsSource = _homeTimeline;
-            ScanTimelineList.ItemsSource = _scanTimeline;
-            HistoryList.ItemsSource = _historyItems;
-
-            ExtendsContentIntoTitleBar = false;
-            Title = "NeuralV";
-
-            Closed += (_, _) =>
-            {
-                _scanPollCts?.Cancel();
-                _apiClient.Dispose();
-            };
         }
         catch (Exception ex)
         {
             WindowsLog.Error("MainWindow ctor failed", ex);
             throw;
         }
+    }
+
+    public void RunSmokeValidation()
+    {
+        TryConfigureWindowHandle();
+        ApplyAmbientPalette();
+        ShowScreen(AppScreen.Welcome);
+        SetStatus("Smoke test completed.");
     }
 
     private static string EnsureDeviceIdSafe()
@@ -155,203 +172,149 @@ public sealed partial class MainWindow : Window
         }
 
         _initialized = true;
-        WindowsLog.Info("Window root loaded");
-
-        try
-        {
-            TryConfigureWindowFrame();
-            TryInitializeChrome();
-            UpdateStatusText.Text = "Проверяем актуальную сборку...";
-            TryBeginStoryboard("AmbientMotionStoryboard");
-            TryBeginStoryboard("DotLoadingStoryboard");
-            TryBeginStoryboard("ScanDotLoadingStoryboard");
-            TryBeginStoryboard("BusyDotLoadingStoryboard");
-            TryBeginStoryboard("SplashOrbitStoryboard");
-
-            await InitializeAsync();
-        }
-        catch (Exception ex)
-        {
-            WindowsLog.Error("OnRootLoaded failed", ex);
-            SetBusy(false);
-            SetStatus("Не удалось подготовить интерфейс. Подробности в log.txt.");
-            ShowScreen(AppScreen.Welcome);
-        }
+        TryConfigureWindowHandle();
+        ApplyAmbientPalette();
+        _shapeTimer.Start();
+        await InitializeAsync();
     }
 
-    public void RunSmokeValidation()
+    private void OnClosed(object sender, WindowEventArgs args)
     {
-        WindowsLog.Info("Running WinUI smoke validation");
-        TryConfigureWindowFrame();
-        TryInitializeChrome();
-        UpdateStatusHomeFallback();
-        ApplyUpdateState();
+        _shapeTimer.Stop();
+        _scanPollCts?.Cancel();
+        _apiClient.Dispose();
     }
 
-    private void TryConfigureWindowFrame()
+    private void TryConfigureWindowHandle()
     {
         try
         {
-            var hwnd = WindowNative.GetWindowHandle(this);
-            if (hwnd == IntPtr.Zero)
+            _windowHandle = WindowNative.GetWindowHandle(this);
+            if (_windowHandle == IntPtr.Zero)
             {
                 return;
             }
 
-            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
-            _ = AppWindow.GetFromWindowId(windowId);
+            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(_windowHandle);
+            _appWindow = AppWindow.GetFromWindowId(windowId);
         }
         catch (Exception ex)
         {
-            WindowsLog.Error("Window frame configuration failed", ex);
+            WindowsLog.Error("Window handle setup failed", ex);
         }
     }
 
-    private void TryInitializeChrome()
+    private async Task InitializeAsync()
     {
+        SetBusy(true, "Поднимаем Windows-клиент");
+        WindowsLog.Info("InitializeAsync started");
+
         try
         {
-            ApplyAmbientPalette();
-            ApplyChromeCopy();
+            _preferences = ClientPreferencesStore.Load();
+            _networkState = BuildLocalNetworkFallback();
+            _session = await SessionStore.LoadSessionAsync();
+
+            if (_session is { IsValid: true })
+            {
+                var refresh = await _apiClient.RefreshSessionAsync(_session);
+                if (refresh.session is { IsValid: true } refreshed)
+                {
+                    _session = refreshed;
+                    await SessionStore.SaveSessionAsync(refreshed);
+                }
+                else
+                {
+                    WindowsLog.Info($"Session refresh soft-failed: {refresh.error ?? "unknown"}");
+                }
+            }
+            else
+            {
+                _session = null;
+            }
+
+            await LoadHistoryAsync();
+            await LoadNetworkProtectionStateAsync();
             ApplySessionState();
-            UpdateNavigationState(AppScreen.Splash);
-            UpdateScreenContext(AppScreen.Splash);
-            UpdateStatusHomeFallback();
+            ShowScreen(_session is null ? AppScreen.Welcome : AppScreen.Home);
         }
         catch (Exception ex)
         {
-            WindowsLog.Error("Window chrome initialization failed", ex);
+            WindowsLog.Error("InitializeAsync failed", ex);
+            ShowScreen(AppScreen.Welcome);
+            SetStatus("Не удалось подготовить интерфейс. Подробности в log.txt.");
+        }
+        finally
+        {
+            SetBusy(false);
         }
     }
 
-    private void TryBeginStoryboard(string key)
+    private async Task LoadHistoryAsync(CancellationToken cancellationToken = default)
     {
+        _historyItems.Clear();
+        var history = await HistoryStore.LoadAsync(cancellationToken);
+        foreach (var item in history)
+        {
+            _historyItems.Add($"{item.SavedAt.LocalDateTime:dd.MM HH:mm} · {item.Mode} · {item.Verdict}");
+        }
+
+        if (_historyItems.Count == 0)
+        {
+            _historyItems.Add("История появится после первой завершённой проверки.");
+        }
+    }
+
+    private NetworkProtectionState BuildLocalNetworkFallback()
+    {
+        return new NetworkProtectionState
+        {
+            Platform = "windows",
+            NetworkEnabled = _preferences.NetworkProtectionEnabled,
+            AdBlockEnabled = _preferences.AdBlockEnabled,
+            UnsafeSitesEnabled = _preferences.UnsafeSitesEnabled,
+            BlockedAdsPlatform = _preferences.BlockedAds,
+            BlockedThreatsPlatform = _preferences.BlockedThreats,
+            BlockedAdsTotal = _preferences.BlockedAds,
+            BlockedThreatsTotal = _preferences.BlockedThreats,
+            DeveloperMode = _preferences.DeveloperModeEnabled
+        };
+    }
+
+    private async Task LoadNetworkProtectionStateAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session is null)
+        {
+            _networkState = BuildLocalNetworkFallback();
+            UpdateNetworkUi();
+            return;
+        }
+
         try
         {
-            if (WindowRoot.Resources.TryGetValue(key, out var value) && value is Storyboard storyboard)
+            var result = await _apiClient.GetNetworkProtectionStateAsync(_session, "windows", cancellationToken);
+            if (result.state is not null)
             {
-                storyboard.Begin();
+                _networkState = result.state;
+                _preferences = await ClientPreferencesStateService.ApplyRemoteNetworkStateAsync(result.state, cancellationToken);
+            }
+            else if (!string.IsNullOrWhiteSpace(result.error))
+            {
+                WindowsLog.Error($"Network protection state error: {result.error}");
             }
         }
         catch (Exception ex)
         {
-            WindowsLog.Error($"Storyboard start failed: {key}", ex);
+            WindowsLog.Error("LoadNetworkProtectionStateAsync failed", ex);
         }
-    }
 
-    private void ApplyAmbientPalette()
-    {
-        BackdropGradient.Fill = new LinearGradientBrush
-        {
-            StartPoint = new Point(0, 0),
-            EndPoint = new Point(1, 1),
-            GradientStops =
-            {
-                new GradientStop { Color = ThemePalette.Blend(App.Palette.Background, App.Palette.Accent, 0.08), Offset = 0.0 },
-                new GradientStop { Color = App.Palette.BackgroundAlt, Offset = 0.34 },
-                new GradientStop { Color = ThemePalette.Blend(App.Palette.Background, App.Palette.AccentSecondary, 0.12), Offset = 1.0 }
-            }
-        };
-
-        FabricLayerA.Fill = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentSecondary, 0.08, 0.30);
-        FabricLayerB.Fill = BuildWeaveBrush(App.Palette.AccentTertiary, App.Palette.Accent, 0.05, 0.22);
-        FabricLayerC.Fill = BuildSheenBrush(App.Palette.AccentSecondary, App.Palette.AccentTertiary);
-
-        GlowA.Fill = BuildGlowBrush(App.Palette.Accent, 0.92);
-        GlowB.Fill = BuildGlowBrush(ThemePalette.Blend(App.Palette.AccentSecondary, App.Palette.Text, 0.36), 0.42);
-        GlowC.Fill = BuildGlowBrush(ThemePalette.Blend(App.Palette.AccentTertiary, App.Palette.BackgroundAlt, 0.30), 0.28);
-
-        SplashHalo.Background = BuildGlowBrush(App.Palette.Accent, 0.24);
-        SplashOrbitRing.Stroke = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.AccentSecondary, 0.78));
-
-        PaletteSwatchPrimary.Background = new SolidColorBrush(App.Palette.Accent);
-        PaletteSwatchPrimary.BorderBrush = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.Text, 0.10));
-        PaletteSwatchPrimary.BorderThickness = new Thickness(1);
-
-        PaletteSwatchSecondary.Background = new SolidColorBrush(App.Palette.AccentSecondary);
-        PaletteSwatchSecondary.BorderBrush = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.Text, 0.10));
-        PaletteSwatchSecondary.BorderThickness = new Thickness(1);
-
-        PaletteSwatchTertiary.Background = new SolidColorBrush(App.Palette.AccentTertiary);
-        PaletteSwatchTertiary.BorderBrush = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.Text, 0.10));
-        PaletteSwatchTertiary.BorderThickness = new Thickness(1);
-    }
-
-    private void ApplyChromeCopy()
-    {
-        ThemeModeLabel.Text = App.Palette.IsDark ? "Тёмный режим" : "Светлый режим";
-        PaletteModeHeaderLabel.Text = App.Palette.SourceLabel;
-        VersionLabel.Text = $"Windows {_currentVersion}";
-
-        PaletteSourceLabel.Text = App.Palette.Source switch
-        {
-            PaletteSource.Wallpaper => "Цвета взяты из обоев.",
-            PaletteSource.WindowsAccent => "Цвета взяты из системного акцента Windows.",
-            _ => "Активна безопасная резервная палитра."
-        };
-        PaletteSeedLabel.Text = $"Акцент {App.Palette.AccentHex}";
-        SettingsPaletteText.Text = $"Палитра: {App.Palette.SourceLabel}. Акцент: {App.Palette.AccentHex}.";
-        SettingsVersionText.Text = $"Версия клиента: {_currentVersion}. Режим: {(App.Palette.IsDark ? "тёмный" : "светлый")}.";
-    }
-
-    private static Brush BuildGlowBrush(UiColor color, double opacity)
-    {
-        return new RadialGradientBrush
-        {
-            GradientStops =
-            {
-                new GradientStop { Color = ThemePalette.WithAlpha(color, opacity), Offset = 0.0 },
-                new GradientStop { Color = ThemePalette.WithAlpha(color, 0.0), Offset = 1.0 }
-            }
-        };
-    }
-
-    private static Brush BuildWeaveBrush(UiColor baseColor, UiColor accentColor, double lowOpacity, double highOpacity)
-    {
-        return new LinearGradientBrush
-        {
-            StartPoint = new Point(0, 0),
-            EndPoint = new Point(1, 1),
-            GradientStops =
-            {
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, lowOpacity), Offset = 0.00 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.05 },
-                new GradientStop { Color = ThemePalette.WithAlpha(accentColor, highOpacity), Offset = 0.10 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.16 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, lowOpacity), Offset = 0.24 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.32 },
-                new GradientStop { Color = ThemePalette.WithAlpha(accentColor, highOpacity * 0.82), Offset = 0.38 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.46 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, lowOpacity), Offset = 0.58 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.66 },
-                new GradientStop { Color = ThemePalette.WithAlpha(accentColor, highOpacity * 0.74), Offset = 0.74 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.82 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, lowOpacity), Offset = 0.92 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 1.00 }
-            }
-        };
-    }
-
-    private static Brush BuildSheenBrush(UiColor first, UiColor second)
-    {
-        return new LinearGradientBrush
-        {
-            StartPoint = new Point(0, 0),
-            EndPoint = new Point(1, 0),
-            GradientStops =
-            {
-                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.0), Offset = 0.00 },
-                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.14), Offset = 0.24 },
-                new GradientStop { Color = ThemePalette.WithAlpha(second, 0.26), Offset = 0.50 },
-                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.12), Offset = 0.74 },
-                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.0), Offset = 1.00 }
-            }
-        };
+        UpdateNetworkUi();
     }
 
     private void BuildLayout()
     {
-        WindowRoot.Children.Clear();
+        _windowRoot.Children.Clear();
+        _floatingShapes.Clear();
 
         var ambientLayer = new Grid();
         BackdropGradient = new UiRectangle();
@@ -417,271 +380,166 @@ public sealed partial class MainWindow : Window
         ambientLayer.Children.Add(GlowA);
         ambientLayer.Children.Add(GlowB);
         ambientLayer.Children.Add(GlowC);
-        WindowRoot.Children.Add(ambientLayer);
+        _windowRoot.Children.Add(ambientLayer);
 
-        ShellFrame = new Grid { Padding = new Thickness(24) };
-        RailColumn = new ColumnDefinition { Width = new GridLength(320) };
-        GutterColumn = new ColumnDefinition { Width = new GridLength(20) };
-        ContentColumn = new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) };
-        ShellFrame.ColumnDefinitions.Add(RailColumn);
-        ShellFrame.ColumnDefinitions.Add(GutterColumn);
-        ShellFrame.ColumnDefinitions.Add(ContentColumn);
-        WindowRoot.Children.Add(ShellFrame);
+        var shell = new Grid
+        {
+            Padding = new Thickness(22)
+        };
+        shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        _windowRoot.Children.Add(shell);
 
-        BuildRail();
-        BuildContentShell();
+        var topBar = BuildTopBar();
+        shell.Children.Add(topBar);
+
+        StatusBanner = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(14, 10, 14, 10));
+        StatusBanner.Visibility = Visibility.Collapsed;
+        StatusBanner.Margin = new Thickness(0, 0, 0, 14);
+        Grid.SetRow(StatusBanner, 1);
+        StatusBannerText = CreateBodyText("AppTextBrush");
+        StatusBanner.Child = StatusBannerText;
+        shell.Children.Add(StatusBanner);
+
+        ScreenHost = new Grid();
+        Grid.SetRow(ScreenHost, 2);
+        shell.Children.Add(ScreenHost);
+
+        SplashView = BuildSplashView();
+        WelcomeView = BuildWelcomeView();
+        LoginView = BuildLoginView();
+        RegisterView = BuildRegisterView();
+        CodeView = BuildCodeView();
+        HomeView = BuildHomeView();
+        HistoryView = BuildHistoryView();
+        SettingsView = BuildSettingsView();
+
+        ScreenHost.Children.Add(SplashView);
+        ScreenHost.Children.Add(WelcomeView);
+        ScreenHost.Children.Add(LoginView);
+        ScreenHost.Children.Add(RegisterView);
+        ScreenHost.Children.Add(CodeView);
+        ScreenHost.Children.Add(HomeView);
+        ScreenHost.Children.Add(HistoryView);
+        ScreenHost.Children.Add(SettingsView);
+
+        ScanOverlay = BuildScanOverlay();
+        Panel.SetZIndex(ScanOverlay, 40);
+        ScreenHost.Children.Add(ScanOverlay);
+
+        DrawerScrim = new Border
+        {
+            Background = ThemeBrush("AppOverlayScrimBrush"),
+            Visibility = Visibility.Collapsed
+        };
+        DrawerScrim.Tapped += (_, _) => SetDrawerState(false);
+        Panel.SetZIndex(DrawerScrim, 60);
+        _windowRoot.Children.Add(DrawerScrim);
+
+        DrawerPanel = BuildDrawerPanel();
+        DrawerPanel.Visibility = Visibility.Collapsed;
+        Panel.SetZIndex(DrawerPanel, 61);
+        _windowRoot.Children.Add(DrawerPanel);
+
+        BusyOverlay = new Border
+        {
+            Background = ThemeBrush("AppOverlayScrimBrush"),
+            Visibility = Visibility.Collapsed
+        };
+        Panel.SetZIndex(BusyOverlay, 80);
+        var busyCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineStrongBrush", 22, new Thickness(22));
+        busyCard.Width = 320;
+        busyCard.HorizontalAlignment = HorizontalAlignment.Center;
+        busyCard.VerticalAlignment = VerticalAlignment.Center;
+        BusyText = new TextBlock
+        {
+            Foreground = ThemeBrush("AppTextBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Center,
+            FontSize = 18,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Text = "Загрузка"
+        };
+        busyCard.Child = BusyText;
+        BusyOverlay.Child = busyCard;
+        _windowRoot.Children.Add(BusyOverlay);
+
+        ApplyAmbientPalette();
     }
 
-    private void BuildRail()
+    private Grid BuildTopBar()
     {
-        RailPanel = CreateCardBorder("AppSurfaceStrongBrush", "AppOutlineBrush", 28, new Thickness(20));
-        Grid.SetColumn(RailPanel, 0);
-        ShellFrame.Children.Add(RailPanel);
+        var topBar = new Grid { Margin = new Thickness(0, 0, 0, 14) };
+        topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        var railScroll = new ScrollViewer
+        var drawerButton = CreateIconButton("☰", OnToggleDrawerClick);
+        topBar.Children.Add(drawerButton);
+
+        var titleStack = new StackPanel
         {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+            Margin = new Thickness(16, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center
         };
-        RailPanel.Child = railScroll;
-
-        var railStack = new StackPanel();
-        railScroll.Content = railStack;
-
-        var brandGrid = new Grid { Margin = new Thickness(0, 0, 0, 18) };
-        brandGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        brandGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-        var logoShell = CreateCardBorder("AppSurfaceHighBrush", "AppOutlineBrush", 18, new Thickness(12));
-        logoShell.Width = 64;
-        logoShell.Height = 64;
-        logoShell.Child = CreateLogoElement();
-        brandGrid.Children.Add(logoShell);
-
-        var brandText = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        Grid.SetColumn(brandText, 1);
-        brandText.Children.Add(new TextBlock
+        Grid.SetColumn(titleStack, 1);
+        HeaderTitleText = new TextBlock
         {
             Text = "NeuralV",
             Foreground = ThemeBrush("AppTextBrush"),
             FontSize = 28,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
-        });
-        brandText.Children.Add(new TextBlock
-        {
-            Text = "Windows-клиент",
-            Foreground = ThemeBrush("AppMutedTextBrush")
-        });
-        brandGrid.Children.Add(brandText);
-        railStack.Children.Add(brandGrid);
-
-        var badgePill = CreateCardBorder("AppSecondaryContainerBrush", "AppOutlineBrush", 16, new Thickness(10, 6, 10, 6));
-        badgePill.HorizontalAlignment = HorizontalAlignment.Left;
-        badgePill.Margin = new Thickness(0, 0, 0, 12);
-        RailBadgeText = new TextBlock { Foreground = ThemeBrush("AppTextBrush") };
-        badgePill.Child = RailBadgeText;
-        railStack.Children.Add(badgePill);
-
-        RailHeadlineText = new TextBlock
-        {
-            Foreground = ThemeBrush("AppTextBrush"),
-            FontSize = 30,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 8)
         };
-        railStack.Children.Add(RailHeadlineText);
+        HeaderSubtitleText = CreateBodyText("AppMutedTextBrush");
+        titleStack.Children.Add(HeaderTitleText);
+        titleStack.Children.Add(HeaderSubtitleText);
+        topBar.Children.Add(titleStack);
 
-        RailDescriptionText = new TextBlock
-        {
-            Foreground = ThemeBrush("AppMutedTextBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 18)
-        };
-        railStack.Children.Add(RailDescriptionText);
+        var accountChip = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(14, 10, 14, 10));
+        accountChip.HorizontalAlignment = HorizontalAlignment.Right;
+        AccountChipText = new TextBlock { Foreground = ThemeBrush("AppTextBrush") };
+        accountChip.Child = AccountChipText;
+        Grid.SetColumn(accountChip, 2);
+        topBar.Children.Add(accountChip);
 
-        var paletteCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 22, new Thickness(18));
-        paletteCard.Margin = new Thickness(0, 0, 0, 16);
-        var paletteStack = new StackPanel();
-        paletteStack.Children.Add(CreateSectionTitle("Палитра"));
-        PaletteSourceLabel = CreateBodyText("AppMutedTextBrush");
-        PaletteSourceLabel.Margin = new Thickness(0, 0, 0, 10);
-        paletteStack.Children.Add(PaletteSourceLabel);
-        var swatches = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
-        PaletteSwatchPrimary = CreateSwatch();
-        PaletteSwatchSecondary = CreateSwatch();
-        PaletteSwatchSecondary.Margin = new Thickness(10, 0, 0, 0);
-        PaletteSwatchTertiary = CreateSwatch();
-        PaletteSwatchTertiary.Margin = new Thickness(10, 0, 0, 0);
-        swatches.Children.Add(PaletteSwatchPrimary);
-        swatches.Children.Add(PaletteSwatchSecondary);
-        swatches.Children.Add(PaletteSwatchTertiary);
-        paletteStack.Children.Add(swatches);
-        PaletteSeedLabel = CreateBodyText("AppSubtleTextBrush");
-        paletteStack.Children.Add(PaletteSeedLabel);
-        paletteCard.Child = paletteStack;
-        railStack.Children.Add(paletteCard);
-
-        var accountCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 22, new Thickness(18));
-        var accountStack = new StackPanel();
-        accountStack.Children.Add(CreateSectionTitle("Аккаунт"));
-        RailUserNameText = new TextBlock
-        {
-            Foreground = ThemeBrush("AppTextBrush"),
-            FontSize = 18,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 6)
-        };
-        accountStack.Children.Add(RailUserNameText);
-        RailUserMetaText = CreateBodyText("AppMutedTextBrush");
-        RailUserMetaText.Margin = new Thickness(0, 0, 0, 10);
-        accountStack.Children.Add(RailUserMetaText);
-        var accountPill = CreateCardBorder("AppSecondaryContainerBrush", "AppOutlineBrush", 16, new Thickness(10, 6, 10, 6));
-        accountPill.HorizontalAlignment = HorizontalAlignment.Left;
-        RailUserStateText = new TextBlock { Foreground = ThemeBrush("AppTextBrush") };
-        accountPill.Child = RailUserStateText;
-        accountStack.Children.Add(accountPill);
-        accountCard.Child = accountStack;
-        railStack.Children.Add(accountCard);
+        return topBar;
     }
 
-    private void BuildContentShell()
+    private Border BuildDrawerPanel()
     {
-        ContentShell = new Grid();
-        Grid.SetColumn(ContentShell, 2);
-        ContentShell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        ContentShell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        ShellFrame.Children.Add(ContentShell);
+        var panel = CreateCardBorder("AppSurfaceBrush", "AppOutlineStrongBrush", 28, new Thickness(18));
+        panel.Width = 300;
+        panel.HorizontalAlignment = HorizontalAlignment.Left;
+        panel.VerticalAlignment = VerticalAlignment.Stretch;
+        panel.Margin = new Thickness(22);
+        panel.Child = BuildDrawerContent();
+        return panel;
+    }
 
-        HeaderMetaBar = new Grid { Margin = new Thickness(0, 0, 0, 18) };
-        HeaderMetaBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        HeaderMetaBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        HeaderMetaBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        HeaderMetaBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        ContentShell.Children.Add(HeaderMetaBar);
+    private UIElement BuildDrawerContent()
+    {
+        var stack = new StackPanel { Spacing = 16 };
 
-        ThemeModeLabel = AddHeaderPill(HeaderMetaBar, 0, new Thickness(0, 0, 12, 0));
-        PaletteModeHeaderLabel = AddHeaderPill(HeaderMetaBar, 1, new Thickness(0, 0, 12, 0));
-        VersionLabel = AddHeaderPill(HeaderMetaBar, 3, new Thickness(0));
-
-        var frameCard = CreateCardBorder("AppSurfaceStrongBrush", "AppOutlineBrush", 28, new Thickness(22));
-        Grid.SetRow(frameCard, 1);
-        ContentShell.Children.Add(frameCard);
-
-        var frameGrid = new Grid();
-        frameGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        frameGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        frameGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        frameCard.Child = frameGrid;
-
-        AppNavigationBar = new Grid { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 0, 18) };
-        AppNavigationBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        AppNavigationBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        frameGrid.Children.Add(AppNavigationBar);
-
-        var navStack = new StackPanel { Orientation = Orientation.Horizontal };
-        HomeNavButton = CreateButton("Обзор", OnHomeClick, "NavTabButtonStyle");
-        HomeNavButton.Margin = new Thickness(0, 0, 10, 0);
-        HistoryNavButton = CreateButton("История", OnHistoryClick, "NavTabButtonStyle");
-        HistoryNavButton.Margin = new Thickness(0, 0, 10, 0);
-        SettingsNavButton = CreateButton("Настройки", OnSettingsClick, "NavTabButtonStyle");
-        navStack.Children.Add(HomeNavButton);
-        navStack.Children.Add(HistoryNavButton);
-        navStack.Children.Add(SettingsNavButton);
-        AppNavigationBar.Children.Add(navStack);
-
-        var userPillShell = CreateCardBorder("AppSecondaryContainerBrush", "AppOutlineBrush", 14, new Thickness(12, 8, 12, 8));
-        Grid.SetColumn(userPillShell, 1);
-        UserLabel = new TextBlock { Foreground = ThemeBrush("AppTextBrush") };
-        userPillShell.Child = UserLabel;
-        AppNavigationBar.Children.Add(userPillShell);
-
-        StatusBanner = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(14));
-        StatusBanner.Visibility = Visibility.Collapsed;
-        StatusBanner.Margin = new Thickness(0, 0, 0, 16);
-        Grid.SetRow(StatusBanner, 1);
-        StatusBannerText = CreateBodyText("AppTextBrush");
-        StatusBanner.Child = StatusBannerText;
-        frameGrid.Children.Add(StatusBanner);
-
-        var stageGrid = new Grid();
-        Grid.SetRow(stageGrid, 2);
-        frameGrid.Children.Add(stageGrid);
-
-        SplashView = BuildSplashView();
-        stageGrid.Children.Add(SplashView);
-
-        WelcomeView = BuildWelcomeView();
-        stageGrid.Children.Add(WelcomeView);
-
-        LoginView = BuildLoginView();
-        stageGrid.Children.Add(LoginView);
-
-        RegisterView = BuildRegisterView();
-        stageGrid.Children.Add(RegisterView);
-
-        CodeView = BuildCodeView();
-        stageGrid.Children.Add(CodeView);
-
-        HomeView = BuildHomeView();
-        stageGrid.Children.Add(HomeView);
-
-        ScanView = BuildScanView();
-        stageGrid.Children.Add(ScanView);
-
-        HistoryView = BuildHistoryView();
-        stageGrid.Children.Add(HistoryView);
-
-        SettingsView = BuildSettingsView();
-        stageGrid.Children.Add(SettingsView);
-
-        BusyOverlay = new Border
+        var userCard = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineBrush", 22, new Thickness(16));
+        var userStack = new StackPanel { Spacing = 6 };
+        DrawerUserNameText = new TextBlock
         {
-            Background = ThemeBrush("AppOverlayScrimBrush"),
-            CornerRadius = new CornerRadius(28),
-            Visibility = Visibility.Collapsed
-        };
-        Grid.SetRowSpan(BusyOverlay, 3);
-        frameGrid.Children.Add(BusyOverlay);
-
-        var busyHost = new Grid();
-        BusyOverlay.Child = busyHost;
-        var busyCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineStrongBrush", 18, new Thickness(18));
-        busyCard.Width = 320;
-        busyCard.HorizontalAlignment = HorizontalAlignment.Center;
-        busyCard.VerticalAlignment = VerticalAlignment.Center;
-        busyHost.Children.Add(busyCard);
-        var busyStack = new StackPanel();
-        var busyGlyphShell = new Border
-        {
-            Width = 72,
-            Height = 72,
-            CornerRadius = new CornerRadius(36),
-            Background = ThemeBrush("AppAccentSoftBrush"),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 0, 0, 14)
-        };
-        var busyGlyph = new Grid();
-        busyGlyph.Children.Add(new UiEllipse
-        {
-            Width = 44,
-            Height = 44,
-            Stroke = ThemeBrush("AppAccentBrush"),
-            StrokeThickness = 2,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
-        });
-        busyGlyphShell.Child = busyGlyph;
-        busyStack.Children.Add(busyGlyphShell);
-        BusyText = new TextBlock
-        {
-            Text = "Загрузка",
             Foreground = ThemeBrush("AppTextBrush"),
-            TextAlignment = TextAlignment.Center,
-            TextWrapping = TextWrapping.Wrap
+            FontSize = 20,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
         };
-        busyStack.Children.Add(BusyText);
-        busyCard.Child = busyStack;
+        DrawerUserMetaText = CreateBodyText("AppMutedTextBrush");
+        userStack.Children.Add(DrawerUserNameText);
+        userStack.Children.Add(DrawerUserMetaText);
+        userCard.Child = userStack;
+        stack.Children.Add(userCard);
+
+        stack.Children.Add(CreateDrawerButton("Главная", OnHomeClick));
+        stack.Children.Add(CreateDrawerButton("История", OnHistoryClick));
+        stack.Children.Add(CreateDrawerButton("Настройки", OnSettingsClick));
+        stack.Children.Add(CreateDrawerButton("Закрыть меню", (_, _) => SetDrawerState(false), false));
+        return stack;
     }
 
     private FrameworkElement BuildSplashView()
@@ -691,720 +549,559 @@ public sealed partial class MainWindow : Window
         {
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 540
+            Spacing = 14,
+            MaxWidth = 520
         };
         host.Children.Add(stack);
 
-        var splashGrid = new Grid
-        {
-            Width = 132,
-            Height = 132,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 0, 0, 18)
-        };
-        SplashHalo = new Border
-        {
-            Width = 132,
-            Height = 132,
-            CornerRadius = new CornerRadius(66),
-            Background = ThemeBrush("AppAccentSoftBrush")
-        };
-        SplashOrbitRing = new UiEllipse
-        {
-            Width = 112,
-            Height = 112,
-            Stroke = ThemeBrush("AppAccentBrush"),
-            StrokeThickness = 2,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        var splashBadge = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 24, new Thickness(12));
-        splashBadge.Width = 84;
-        splashBadge.Height = 84;
-        splashBadge.HorizontalAlignment = HorizontalAlignment.Center;
-        splashBadge.VerticalAlignment = VerticalAlignment.Center;
-        splashBadge.Child = CreateLogoElement();
-        splashGrid.Children.Add(SplashHalo);
-        splashGrid.Children.Add(SplashOrbitRing);
-        splashGrid.Children.Add(splashBadge);
-        stack.Children.Add(splashGrid);
-        stack.Children.Add(new TextBlock
-        {
-            Text = "Запускаем NeuralV",
-            Foreground = ThemeBrush("AppTextBrush"),
-            FontSize = 34,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            TextAlignment = TextAlignment.Center,
-            Margin = new Thickness(0, 0, 0, 10)
-        });
-        stack.Children.Add(new TextBlock
-        {
-            Text = "Поднимаем палитру, сессию и основной экран.",
-            Foreground = ThemeBrush("AppMutedTextBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            TextAlignment = TextAlignment.Center
-        });
+        var logoCard = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 32, new Thickness(18));
+        logoCard.Width = 132;
+        logoCard.Height = 132;
+        logoCard.HorizontalAlignment = HorizontalAlignment.Center;
+        logoCard.Child = CreateLogoElement();
+        stack.Children.Add(logoCard);
+        stack.Children.Add(CreateTitleText("Запускаем NeuralV", 36));
+        stack.Children.Add(CreateSubtitleText("Поднимаем палитру, сессию и Windows-интерфейс."));
         return host;
     }
 
     private FrameworkElement BuildWelcomeView()
     {
-        var view = CreatePageScroll();
-        var stack = CreatePageStack(880);
-        stack.Children.Add(CreatePageTitle("NeuralV для Windows"));
-        stack.Children.Add(CreatePageSubtitle("Нативный клиент для входа, проверки, истории и обновления."));
-        var actions = new StackPanel { Orientation = Orientation.Horizontal };
-        var loginButton = CreateButton("Войти в аккаунт", OnShowLoginClick, "NeuralVButtonStyle");
-        loginButton.Margin = new Thickness(0, 0, 12, 0);
+        var host = new Grid();
+        host.Children.Add(BuildWelcomeShapeLayer());
+
+        var card = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 32, new Thickness(28));
+        card.MaxWidth = 620;
+        card.HorizontalAlignment = HorizontalAlignment.Center;
+        card.VerticalAlignment = VerticalAlignment.Center;
+
+        var stack = new StackPanel { Spacing = 14 };
+        var logoShell = new Border
+        {
+            Width = 112,
+            Height = 112,
+            Background = ThemeBrush("AppAccentSoftBrush"),
+            CornerRadius = new CornerRadius(56),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Padding = new Thickness(14)
+        };
+        logoShell.Child = CreateLogoElement();
+        stack.Children.Add(logoShell);
+        stack.Children.Add(CreateTitleText("NeuralV", 40, TextAlignment.Center));
+        stack.Children.Add(CreateSubtitleText("Войди в аккаунт или создай новый, чтобы управлять защитой Windows, историей и серверными проверками.", TextAlignment.Center));
+
+        var actions = new Grid { Margin = new Thickness(0, 8, 0, 0) };
+        actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+        actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var loginButton = CreateFilledButton("Войти", OnShowLoginClick);
+        loginButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        Grid.SetColumn(loginButton, 0);
         actions.Children.Add(loginButton);
-        actions.Children.Add(CreateButton("Создать аккаунт", OnShowRegisterClick, "SecondaryButtonStyle"));
+
+        var registerButton = CreateTonalButton("Зарегистрироваться", OnShowRegisterClick);
+        registerButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        Grid.SetColumn(registerButton, 2);
+        actions.Children.Add(registerButton);
         stack.Children.Add(actions);
-        view.Content = stack;
-        view.Visibility = Visibility.Collapsed;
-        return view;
+
+        card.Child = stack;
+        host.Children.Add(card);
+        return host;
+    }
+
+    private Grid BuildWelcomeShapeLayer()
+    {
+        var host = new Grid();
+        host.Children.Add(CreateFloatingShape(0, HorizontalAlignment.Left, VerticalAlignment.Top, new Thickness(90, 90, 0, 0), 168, 92));
+        host.Children.Add(CreateFloatingShape(1, HorizontalAlignment.Right, VerticalAlignment.Top, new Thickness(0, 120, 140, 0), 118, 118));
+        host.Children.Add(CreateFloatingShape(2, HorizontalAlignment.Left, VerticalAlignment.Bottom, new Thickness(150, 0, 0, 140), 106, 146));
+        host.Children.Add(CreateFloatingShape(3, HorizontalAlignment.Right, VerticalAlignment.Bottom, new Thickness(0, 0, 110, 110), 168, 96));
+        host.Children.Add(CreateFloatingShape(4, HorizontalAlignment.Center, VerticalAlignment.Top, new Thickness(0, 90, 0, 0), 120, 120));
+        host.Children.Add(CreateFloatingShape(5, HorizontalAlignment.Center, VerticalAlignment.Bottom, new Thickness(0, 0, 0, 110), 150, 84));
+        return host;
+    }
+
+    private Border CreateFloatingShape(int variant, HorizontalAlignment horizontal, VerticalAlignment vertical, Thickness margin, double width, double height)
+    {
+        var shape = new Border
+        {
+            Width = width,
+            Height = height,
+            HorizontalAlignment = horizontal,
+            VerticalAlignment = vertical,
+            Margin = margin,
+            Background = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentSecondary, 0.08, 0.28),
+            BorderBrush = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.Text, 0.08)),
+            BorderThickness = new Thickness(1),
+            Opacity = 0.82,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new RotateTransform { Angle = variant * 8 }
+        };
+        ApplyShapeVariant(shape, variant);
+        shape.Tapped += OnWelcomeShapeTapped;
+        _floatingShapes.Add(new FloatingShape
+        {
+            Element = shape,
+            Variant = variant,
+            Angle = variant * 8,
+            Velocity = 1.2 + _random.NextDouble() * 1.4
+        });
+        return shape;
     }
 
     private FrameworkElement BuildLoginView()
     {
-        var view = CreatePageScroll();
-        var stack = CreatePageStack(760);
-        stack.Children.Add(CreatePageTitle("Вход", 32));
-        stack.Children.Add(CreatePageSubtitle("Введи почту и пароль. Потом придёт код подтверждения."));
-        stack.Children.Add(CreateFieldLabel("E-mail"));
+        var cardStack = new StackPanel { Spacing = 12 };
+        cardStack.Children.Add(CreateTitleText("Вход", 34));
+        cardStack.Children.Add(CreateSubtitleText("Введи почту и пароль. После этого придёт код подтверждения."));
+        cardStack.Children.Add(CreateFieldLabel("E-mail"));
         LoginEmailBox = CreateTextBox("name@example.com");
-        LoginEmailBox.Margin = new Thickness(0, 0, 0, 12);
-        stack.Children.Add(LoginEmailBox);
-        stack.Children.Add(CreateFieldLabel("Пароль"));
+        cardStack.Children.Add(LoginEmailBox);
+        cardStack.Children.Add(CreateFieldLabel("Пароль"));
         LoginPasswordBox = CreatePasswordBox();
-        LoginPasswordBox.Margin = new Thickness(0, 0, 0, 18);
-        stack.Children.Add(LoginPasswordBox);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal };
-        var backButton = CreateButton("Назад", OnBackToWelcomeClick, "SecondaryButtonStyle");
-        backButton.Margin = new Thickness(0, 0, 12, 0);
-        actions.Children.Add(backButton);
-        actions.Children.Add(CreateButton("Продолжить", OnStartLoginClick, "NeuralVButtonStyle"));
-        stack.Children.Add(actions);
-        view.Content = stack;
-        view.Visibility = Visibility.Collapsed;
-        return view;
+        cardStack.Children.Add(LoginPasswordBox);
+        cardStack.Children.Add(CreateActionRow(
+            CreateTonalButton("Назад", OnBackToWelcomeClick),
+            CreateFilledButton("Продолжить", OnStartLoginClick)));
+        return BuildCenteredStage(cardStack);
     }
 
     private FrameworkElement BuildRegisterView()
     {
-        var view = CreatePageScroll();
-        var stack = CreatePageStack(760);
-        stack.Children.Add(CreatePageTitle("Регистрация", 32));
-        stack.Children.Add(CreatePageSubtitle("Создай аккаунт и подтверди почту кодом."));
-        stack.Children.Add(CreateFieldLabel("Имя"));
+        var cardStack = new StackPanel { Spacing = 12 };
+        cardStack.Children.Add(CreateTitleText("Регистрация", 34));
+        cardStack.Children.Add(CreateSubtitleText("Создай аккаунт и подтверди почту кодом."));
+        cardStack.Children.Add(CreateFieldLabel("Имя"));
         RegisterNameBox = CreateTextBox();
-        RegisterNameBox.Margin = new Thickness(0, 0, 0, 12);
-        stack.Children.Add(RegisterNameBox);
-        stack.Children.Add(CreateFieldLabel("E-mail"));
+        cardStack.Children.Add(RegisterNameBox);
+        cardStack.Children.Add(CreateFieldLabel("E-mail"));
         RegisterEmailBox = CreateTextBox("name@example.com");
-        RegisterEmailBox.Margin = new Thickness(0, 0, 0, 12);
-        stack.Children.Add(RegisterEmailBox);
-        stack.Children.Add(CreateFieldLabel("Пароль"));
+        cardStack.Children.Add(RegisterEmailBox);
+        cardStack.Children.Add(CreateFieldLabel("Пароль"));
         RegisterPasswordBox = CreatePasswordBox();
-        RegisterPasswordBox.Margin = new Thickness(0, 0, 0, 12);
-        stack.Children.Add(RegisterPasswordBox);
-        stack.Children.Add(CreateFieldLabel("Повтори пароль"));
+        cardStack.Children.Add(RegisterPasswordBox);
+        cardStack.Children.Add(CreateFieldLabel("Повтори пароль"));
         RegisterPasswordRepeatBox = CreatePasswordBox();
-        RegisterPasswordRepeatBox.Margin = new Thickness(0, 0, 0, 18);
-        stack.Children.Add(RegisterPasswordRepeatBox);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal };
-        var backButton = CreateButton("Назад", OnBackToWelcomeClick, "SecondaryButtonStyle");
-        backButton.Margin = new Thickness(0, 0, 12, 0);
-        actions.Children.Add(backButton);
-        actions.Children.Add(CreateButton("Создать аккаунт", OnStartRegisterClick, "NeuralVButtonStyle"));
-        stack.Children.Add(actions);
-        view.Content = stack;
-        view.Visibility = Visibility.Collapsed;
-        return view;
+        cardStack.Children.Add(RegisterPasswordRepeatBox);
+        cardStack.Children.Add(CreateActionRow(
+            CreateTonalButton("Назад", OnBackToWelcomeClick),
+            CreateFilledButton("Создать аккаунт", OnStartRegisterClick)));
+        return BuildCenteredStage(cardStack);
     }
 
     private FrameworkElement BuildCodeView()
     {
-        var view = CreatePageScroll();
-        var stack = CreatePageStack(760);
-        stack.Children.Add(CreatePageTitle("Подтверждение", 32));
-        CodeHintText = CreatePageSubtitle(string.Empty);
-        stack.Children.Add(CodeHintText);
-        stack.Children.Add(CreateFieldLabel("Код"));
+        var cardStack = new StackPanel { Spacing = 12 };
+        cardStack.Children.Add(CreateTitleText("Подтверждение", 34));
+        CodeHintText = CreateSubtitleText(string.Empty);
+        cardStack.Children.Add(CodeHintText);
+        cardStack.Children.Add(CreateFieldLabel("Код"));
         VerificationCodeBox = CreateTextBox("123456");
-        VerificationCodeBox.Margin = new Thickness(0, 0, 0, 18);
-        stack.Children.Add(VerificationCodeBox);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal };
-        var backButton = CreateButton("Назад", OnBackFromCodeClick, "SecondaryButtonStyle");
-        backButton.Margin = new Thickness(0, 0, 12, 0);
-        actions.Children.Add(backButton);
-        actions.Children.Add(CreateButton("Войти", OnVerifyCodeClick, "NeuralVButtonStyle"));
-        stack.Children.Add(actions);
-        view.Content = stack;
-        view.Visibility = Visibility.Collapsed;
-        return view;
+        cardStack.Children.Add(VerificationCodeBox);
+        cardStack.Children.Add(CreateActionRow(
+            CreateTonalButton("Назад", OnBackFromCodeClick),
+            CreateFilledButton("Войти", OnVerifyCodeClick)));
+        return BuildCenteredStage(cardStack);
+    }
+
+    private FrameworkElement BuildCenteredStage(UIElement content)
+    {
+        var host = new Grid();
+        var card = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 30, new Thickness(26));
+        card.MaxWidth = 620;
+        card.HorizontalAlignment = HorizontalAlignment.Center;
+        card.VerticalAlignment = VerticalAlignment.Center;
+        card.Child = content;
+        host.Children.Add(card);
+        return host;
     }
 
     private FrameworkElement BuildHomeView()
     {
-        var view = CreatePageScroll();
-        var stack = CreatePageStack(960);
-        stack.Children.Add(CreatePageTitle("Панель проверки"));
-        HomeStatusText = CreatePageSubtitle(string.Empty);
-        stack.Children.Add(HomeStatusText);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 18) };
-        QuickScanButton = CreateButton("Быстрая проверка", OnQuickScanClick, "NeuralVButtonStyle");
-        QuickScanButton.Margin = new Thickness(0, 0, 12, 0);
-        DeepScanButton = CreateButton("Глубокая проверка", OnDeepScanClick, "SecondaryButtonStyle");
-        actions.Children.Add(QuickScanButton);
-        actions.Children.Add(DeepScanButton);
-        stack.Children.Add(actions);
-
-        var updateCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(14));
-        updateCard.Margin = new Thickness(0, 0, 0, 16);
-        var updateStack = new StackPanel();
-        updateStack.Children.Add(CreateSectionTitle("Обновления", 20));
-        UpdateStatusText = CreateBodyText("AppMutedTextBrush");
-        UpdateStatusText.Margin = new Thickness(0, 0, 0, 10);
-        updateStack.Children.Add(UpdateStatusText);
-        UpdateButton = CreateButton("Скачать обновление", OnDownloadUpdateClick, "NeuralVButtonStyle");
-        UpdateButton.Visibility = Visibility.Collapsed;
-        UpdateButton.HorizontalAlignment = HorizontalAlignment.Left;
-        updateStack.Children.Add(UpdateButton);
-        updateCard.Child = updateStack;
-        stack.Children.Add(updateCard);
-
-        var timelineCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(14));
-        var timelineStack = new StackPanel();
-        timelineStack.Children.Add(CreateSectionTitle("Последние события", 20));
-        HomeTimelineList = CreateListView();
-        HomeTimelineList.MinHeight = 340;
-        timelineStack.Children.Add(HomeTimelineList);
-        timelineCard.Child = timelineStack;
-        stack.Children.Add(timelineCard);
-
-        view.Content = stack;
-        view.Visibility = Visibility.Collapsed;
-        return view;
-    }
-
-    private FrameworkElement BuildScanView()
-    {
-        var view = CreatePageScroll();
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(330) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-        var leftCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(18));
-        Grid.SetColumn(leftCard, 0);
-        var leftStack = new StackPanel();
-        var scanGlyphShell = new Border
-        {
-            Width = 96,
-            Height = 96,
-            CornerRadius = new CornerRadius(48),
-            Background = ThemeBrush("AppAccentSoftBrush"),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Margin = new Thickness(0, 0, 0, 18)
-        };
-        var scanGlyphGrid = new Grid();
-        scanGlyphGrid.Children.Add(new UiEllipse
-        {
-            Width = 72,
-            Height = 72,
-            Stroke = ThemeBrush("AppAccentBrush"),
-            StrokeThickness = 2,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
-        });
-        scanGlyphGrid.Children.Add(new TextBlock
-        {
-            Text = "NV",
-            Foreground = ThemeBrush("AppTextBrush"),
-            FontSize = 22,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
-        });
-        scanGlyphShell.Child = scanGlyphGrid;
-        leftStack.Children.Add(scanGlyphShell);
-        ScanPrimaryText = new TextBlock
-        {
-            Foreground = ThemeBrush("AppTextBrush"),
-            FontSize = 24,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 10),
-            TextWrapping = TextWrapping.Wrap
-        };
-        leftStack.Children.Add(ScanPrimaryText);
-        ScanSecondaryText = CreateBodyText("AppMutedTextBrush");
-        ScanSecondaryText.Margin = new Thickness(0, 0, 0, 18);
-        leftStack.Children.Add(ScanSecondaryText);
-        var cancelButton = CreateButton("Отменить проверку", OnCancelScanClick, "NeuralVButtonStyle");
-        cancelButton.Margin = new Thickness(0, 0, 0, 10);
-        leftStack.Children.Add(cancelButton);
-        leftStack.Children.Add(CreateButton("Назад", OnBackToHomeClick, "SecondaryButtonStyle"));
-        leftCard.Child = leftStack;
-        grid.Children.Add(leftCard);
-
-        var rightCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(18));
-        Grid.SetColumn(rightCard, 2);
-        var rightStack = new StackPanel();
-        rightStack.Children.Add(CreateSectionTitle("Что происходит сейчас", 20));
-        ScanTimelineList = CreateListView();
-        ScanTimelineList.MinHeight = 440;
-        rightStack.Children.Add(ScanTimelineList);
-        rightCard.Child = rightStack;
-        grid.Children.Add(rightCard);
-
-        view.Content = grid;
-        view.Visibility = Visibility.Collapsed;
-        return view;
-    }
-
-    private FrameworkElement BuildHistoryView()
-    {
-        var view = CreatePageScroll();
-        var stack = CreatePageStack();
-        stack.Children.Add(CreatePageTitle("История"));
-        stack.Children.Add(CreatePageSubtitle("Последние завершённые проверки сохраняются локально."));
-        HistoryList = CreateListView();
-        stack.Children.Add(HistoryList);
-        view.Content = stack;
-        view.Visibility = Visibility.Collapsed;
-        return view;
-    }
-
-    private FrameworkElement BuildSettingsView()
-    {
-        var view = CreatePageScroll();
-        var stack = CreatePageStack(760);
-        stack.Children.Add(CreatePageTitle("Настройки"));
-
-        var paletteCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(18));
-        paletteCard.Margin = new Thickness(0, 0, 0, 16);
-        var paletteStack = new StackPanel();
-        paletteStack.Children.Add(CreateSectionTitle("Визуальная система", 20));
-        SettingsPaletteText = CreateBodyText("AppMutedTextBrush");
-        SettingsPaletteText.Margin = new Thickness(0, 0, 0, 8);
-        SettingsVersionText = CreateBodyText("AppMutedTextBrush");
-        paletteStack.Children.Add(SettingsPaletteText);
-        paletteStack.Children.Add(SettingsVersionText);
-        paletteCard.Child = paletteStack;
-        stack.Children.Add(paletteCard);
-
-        var sessionCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(18));
-        var sessionStack = new StackPanel();
-        sessionStack.Children.Add(CreateSectionTitle("Сессия", 20));
-        SettingsSessionText = CreateBodyText("AppMutedTextBrush");
-        SettingsSessionText.Margin = new Thickness(0, 0, 0, 12);
-        sessionStack.Children.Add(SettingsSessionText);
-        var logoutButton = CreateButton("Выйти из аккаунта", OnLogoutClick, "SecondaryButtonStyle");
-        logoutButton.HorizontalAlignment = HorizontalAlignment.Left;
-        sessionStack.Children.Add(logoutButton);
-        sessionCard.Child = sessionStack;
-        stack.Children.Add(sessionCard);
-
-        view.Content = stack;
-        view.Visibility = Visibility.Collapsed;
-        return view;
-    }
-
-    private static ScrollViewer CreatePageScroll()
-    {
-        return new ScrollViewer
+        var scroll = new ScrollViewer
         {
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto
         };
+
+        var stack = new StackPanel
+        {
+            Spacing = 18,
+            MaxWidth = 1160
+        };
+
+        var hero = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 30, new Thickness(24));
+        var heroStack = new StackPanel { Spacing = 8 };
+        HomeHeroTitleText = CreateTitleText("Главное меню", 36);
+        HomeHeroSubtitleText = CreateSubtitleText("Запускай нужный режим проверки или включай защиту в сети.");
+        heroStack.Children.Add(HomeHeroTitleText);
+        heroStack.Children.Add(HomeHeroSubtitleText);
+        hero.Child = heroStack;
+        stack.Children.Add(hero);
+
+        ActiveScanCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineStrongBrush", 24, new Thickness(18));
+        ActiveScanCard.Visibility = Visibility.Collapsed;
+        var activeGrid = new Grid();
+        activeGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        activeGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var activeText = new StackPanel { Spacing = 4 };
+        ActiveScanCardTitleText = CreateSectionTitle("Проверка продолжается", 22);
+        ActiveScanCardMetaText = CreateBodyText("AppMutedTextBrush");
+        activeText.Children.Add(ActiveScanCardTitleText);
+        activeText.Children.Add(ActiveScanCardMetaText);
+        activeGrid.Children.Add(activeText);
+        var openScanButton = CreateFilledButton("Вернуться", OnOpenScanOverlayClick);
+        Grid.SetColumn(openScanButton, 1);
+        activeGrid.Children.Add(openScanButton);
+        ActiveScanCard.Child = activeGrid;
+        stack.Children.Add(ActiveScanCard);
+
+        var modes = new Grid();
+        modes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        modes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
+        modes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        modes.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        modes.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
+        modes.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var quickCard = CreateModeCard("⚡", "Быстрая", "Локальный быстрый проход по частым зонам риска.", OnQuickScanClick, true);
+        Grid.SetColumn(quickCard, 0);
+        Grid.SetRow(quickCard, 0);
+        modes.Children.Add(quickCard);
+
+        var fullCard = CreateModeCard("◎", "Глубокая", "Серверный проход по системе, программам и связанным корням.", OnDeepScanClick, false);
+        Grid.SetColumn(fullCard, 2);
+        Grid.SetRow(fullCard, 0);
+        modes.Children.Add(fullCard);
+
+        var selectiveCard = CreateModeCard("◌", "Выборочная", "Таргетированный проход по ключевым путям и компонентам.", OnSelectiveScanClick, false);
+        Grid.SetColumn(selectiveCard, 0);
+        Grid.SetRow(selectiveCard, 2);
+        modes.Children.Add(selectiveCard);
+
+        var artifactCard = CreateModeCard("▣", "Проверить программу", "Выбери корневую папку программы для отдельного анализа.", OnProgramScanClick, false);
+        Grid.SetColumn(artifactCard, 2);
+        Grid.SetRow(artifactCard, 2);
+        modes.Children.Add(artifactCard);
+        stack.Children.Add(modes);
+
+        var networkCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 26, new Thickness(20));
+        var networkStack = new StackPanel { Spacing = 10 };
+        networkStack.Children.Add(CreateSectionTitle("Защита в сети", 24));
+        networkStack.Children.Add(CreateSubtitleText("Включи сетевую защиту, блокировку рекламы и опасных сайтов."));
+        NetworkProtectionToggle = new ToggleSwitch { Header = "Включить защиту в сети" };
+        NetworkProtectionToggle.Toggled += OnNetworkProtectionToggled;
+        AdBlockToggle = new ToggleSwitch { Header = "Блокировать рекламу" };
+        AdBlockToggle.Toggled += OnAdBlockToggled;
+        UnsafeSitesToggle = new ToggleSwitch { Header = "Блокировать опасные сайты" };
+        UnsafeSitesToggle.Toggled += OnUnsafeSitesToggled;
+        NetworkCountersText = CreateBodyText("AppMutedTextBrush");
+        networkStack.Children.Add(NetworkProtectionToggle);
+        networkStack.Children.Add(AdBlockToggle);
+        networkStack.Children.Add(UnsafeSitesToggle);
+        networkStack.Children.Add(NetworkCountersText);
+        networkCard.Child = networkStack;
+        stack.Children.Add(networkCard);
+
+        scroll.Content = stack;
+        return scroll;
     }
 
-    private static StackPanel CreatePageStack(double maxWidth = 0)
+    private FrameworkElement BuildHistoryView()
     {
-        var stack = new StackPanel();
-        if (maxWidth > 0)
+        var scroll = new ScrollViewer
         {
-            stack.MaxWidth = maxWidth;
-        }
-        return stack;
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+        };
+
+        var stack = new StackPanel
+        {
+            Spacing = 16,
+            MaxWidth = 1000
+        };
+        stack.Children.Add(CreateTitleText("История", 36));
+        stack.Children.Add(CreateSubtitleText("Старые завершённые проверки и их краткие результаты."));
+        var card = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 26, new Thickness(18));
+        HistoryList = CreateListView();
+        HistoryList.ItemsSource = _historyItems;
+        card.Child = HistoryList;
+        stack.Children.Add(card);
+        scroll.Content = stack;
+        return scroll;
     }
 
-    private static TextBlock CreatePageTitle(string text, double size = 34)
+    private FrameworkElement BuildSettingsView()
     {
-        return new TextBlock
+        var scroll = new ScrollViewer
         {
-            Text = text,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+        };
+
+        var stack = new StackPanel
+        {
+            Spacing = 16,
+            MaxWidth = 860
+        };
+        stack.Children.Add(CreateTitleText("Настройки", 36));
+
+        var accountCard = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 26, new Thickness(20));
+        var accountStack = new StackPanel { Spacing = 8 };
+        accountStack.Children.Add(CreateSectionTitle("Аккаунт", 24));
+        SettingsAccountText = CreateBodyText("AppMutedTextBrush");
+        accountStack.Children.Add(SettingsAccountText);
+        var logoutButton = CreateTonalButton("Выйти", OnLogoutClick);
+        accountStack.Children.Add(logoutButton);
+        accountCard.Child = accountStack;
+        stack.Children.Add(accountCard);
+
+        var lookCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 26, new Thickness(20));
+        var lookStack = new StackPanel { Spacing = 10 };
+        lookStack.Children.Add(CreateSectionTitle("Оформление", 24));
+        ThemeModeCombo = new ComboBox
+        {
+            ItemsSource = new[] { "Как в системе", "Светлая", "Тёмная" },
+            SelectedIndex = ThemeModeToIndex(_preferences.ThemeMode),
+            MinWidth = 220
+        };
+        ThemeModeCombo.SelectionChanged += OnThemeModeSelectionChanged;
+        DynamicColorsToggle = new ToggleSwitch { Header = "Динамические цвета", IsOn = _preferences.DynamicColorsEnabled };
+        DynamicColorsToggle.Toggled += OnDynamicColorsToggled;
+        lookStack.Children.Add(CreateFieldLabel("Тема"));
+        lookStack.Children.Add(ThemeModeCombo);
+        lookStack.Children.Add(DynamicColorsToggle);
+        lookCard.Child = lookStack;
+        stack.Children.Add(lookCard);
+
+        var protectionCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 26, new Thickness(20));
+        var protectionStack = new StackPanel { Spacing = 10 };
+        protectionStack.Children.Add(CreateSectionTitle("Защита", 24));
+        SettingsDeveloperText = CreateBodyText("AppMutedTextBrush");
+        SettingsNetworkToggle = new ToggleSwitch { Header = "Защита в сети" };
+        SettingsNetworkToggle.Toggled += OnSettingsNetworkToggled;
+        SettingsAdToggle = new ToggleSwitch { Header = "Блокировать рекламу" };
+        SettingsAdToggle.Toggled += OnSettingsAdToggled;
+        SettingsUnsafeToggle = new ToggleSwitch { Header = "Блокировать опасные сайты" };
+        SettingsUnsafeToggle.Toggled += OnSettingsUnsafeToggled;
+        protectionStack.Children.Add(SettingsDeveloperText);
+        protectionStack.Children.Add(SettingsNetworkToggle);
+        protectionStack.Children.Add(SettingsAdToggle);
+        protectionStack.Children.Add(SettingsUnsafeToggle);
+        protectionCard.Child = protectionStack;
+        stack.Children.Add(protectionCard);
+
+        scroll.Content = stack;
+        return scroll;
+    }
+
+    private Grid BuildScanOverlay()
+    {
+        var overlay = new Grid
+        {
+            Background = ThemeBrush("AppOverlayScrimBrush"),
+            Visibility = Visibility.Collapsed
+        };
+
+        var frame = CreateCardBorder("AppSurfaceStrongBrush", "AppOutlineStrongBrush", 30, new Thickness(22));
+        frame.MaxWidth = 1220;
+        frame.MaxHeight = 760;
+        frame.HorizontalAlignment = HorizontalAlignment.Center;
+        frame.VerticalAlignment = VerticalAlignment.Center;
+        overlay.Children.Add(frame);
+
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(360) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        frame.Child = grid;
+
+        var leftCard = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 26, new Thickness(20));
+        Grid.SetColumn(leftCard, 0);
+        var leftStack = new StackPanel { Spacing = 12 };
+        leftStack.Children.Add(CreateSectionTitle("Проверка", 24));
+        ScanModeText = CreateTitleText("NeuralV", 28);
+        ScanStageText = CreateBodyText("AppMutedTextBrush");
+        leftStack.Children.Add(ScanModeText);
+        leftStack.Children.Add(ScanStageText);
+
+        var ringShell = new Grid
+        {
+            Width = 220,
+            Height = 220,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 10, 0, 6)
+        };
+        ScanProgressRing = new ProgressRing
+        {
+            IsActive = true,
+            Width = 190,
+            Height = 190,
+            Foreground = ThemeBrush("AppAccentBrush"),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        ScanProgressText = new TextBlock
+        {
             Foreground = ThemeBrush("AppTextBrush"),
-            FontSize = size,
+            FontSize = 34,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 10)
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
         };
-    }
+        ringShell.Children.Add(ScanProgressRing);
+        ringShell.Children.Add(ScanProgressText);
+        leftStack.Children.Add(ringShell);
 
-    private static TextBlock CreatePageSubtitle(string text)
-    {
-        return new TextBlock
+        ScanCountsText = CreateBodyText("AppMutedTextBrush");
+        leftStack.Children.Add(ScanCountsText);
+
+        ScanProgressBar = new ProgressBar
         {
-            Text = text,
-            Foreground = ThemeBrush("AppMutedTextBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 18)
+            Minimum = 0,
+            Maximum = 100,
+            Height = 10,
+            Margin = new Thickness(0, 4, 0, 8)
         };
+        leftStack.Children.Add(ScanProgressBar);
+        leftStack.Children.Add(CreateActionRow(
+            CreateFilledButton("Отменить проверку", OnCancelScanClick),
+            CreateTonalButton("Скрыть панель", OnHideScanOverlayClick)));
+        leftCard.Child = leftStack;
+        grid.Children.Add(leftCard);
+
+        var rightCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 26, new Thickness(18));
+        Grid.SetColumn(rightCard, 2);
+        var rightStack = new StackPanel { Spacing = 10 };
+        rightStack.Children.Add(CreateSectionTitle("Что происходит сейчас", 22));
+        ScanTimelineList = CreateListView();
+        ScanTimelineList.ItemsSource = _scanTimeline;
+        ScanTimelineList.MinHeight = 520;
+        rightStack.Children.Add(ScanTimelineList);
+        rightCard.Child = rightStack;
+        grid.Children.Add(rightCard);
+
+        return overlay;
     }
 
-    private static TextBlock CreateSectionTitle(string text, double size = 22)
+    private void ApplyAmbientPalette()
     {
-        return new TextBlock
+        BackdropGradient.Fill = new LinearGradientBrush
         {
-            Text = text,
-            Foreground = ThemeBrush("AppTextBrush"),
-            FontSize = size,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 10)
-        };
-    }
-
-    private static TextBlock CreateFieldLabel(string text)
-    {
-        return new TextBlock
-        {
-            Text = text,
-            Foreground = ThemeBrush("AppMutedTextBrush"),
-            Margin = new Thickness(0, 0, 0, 6)
-        };
-    }
-
-    private static TextBlock CreateBodyText(string brushKey)
-    {
-        return new TextBlock
-        {
-            Foreground = ThemeBrush(brushKey),
-            TextWrapping = TextWrapping.Wrap
-        };
-    }
-
-    private static Border CreateCardBorder(string backgroundKey, string borderKey, double cornerRadius, Thickness padding)
-    {
-        return new Border
-        {
-            Background = ThemeBrush(backgroundKey),
-            BorderBrush = ThemeBrush(borderKey),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(cornerRadius),
-            Padding = padding
-        };
-    }
-
-    private static Border CreateSwatch()
-    {
-        return new Border
-        {
-            Width = 48,
-            Height = 48,
-            CornerRadius = new CornerRadius(14)
-        };
-    }
-
-    private TextBlock AddHeaderPill(Grid parent, int column, Thickness margin)
-    {
-        var shell = CreateCardBorder("AppSecondaryContainerBrush", "AppOutlineBrush", 14, new Thickness(12, 8, 12, 8));
-        shell.Margin = margin;
-        Grid.SetColumn(shell, column);
-        var label = new TextBlock { Foreground = ThemeBrush("AppTextBrush") };
-        shell.Child = label;
-        parent.Children.Add(shell);
-        return label;
-    }
-
-    private Button CreateButton(string text, RoutedEventHandler handler, string styleKey)
-    {
-        var button = new Button { Content = text };
-        ApplyAppStyle(button, styleKey);
-        button.Foreground = ThemeBrush("AppTextBrush");
-        button.BorderBrush = ThemeBrush("AppOutlineBrush");
-        button.BorderThickness = new Thickness(1);
-        button.Padding = new Thickness(18, 12, 18, 12);
-        button.MinHeight = 48;
-        button.MinWidth = 148;
-        button.CornerRadius = new CornerRadius(20);
-        button.HorizontalAlignment = HorizontalAlignment.Left;
-
-        if (string.Equals(styleKey, "NeuralVButtonStyle", StringComparison.Ordinal))
-        {
-            button.Background = ThemeBrush("AppPrimaryContainerBrush");
-            button.Foreground = ThemeBrush("AppOnAccentBrush");
-            button.BorderBrush = ThemeBrush("AppPrimaryContainerBrush");
-        }
-        else if (string.Equals(styleKey, "NavTabButtonStyle", StringComparison.Ordinal))
-        {
-            button.Background = ThemeBrush("AppSurfaceHighBrush");
-        }
-        else
-        {
-            button.Background = ThemeBrush("AppSurfaceBrush");
-        }
-
-        button.Click += handler;
-        return button;
-    }
-
-    private TextBox CreateTextBox(string? placeholderText = null)
-    {
-        var textBox = new TextBox();
-        if (!string.IsNullOrWhiteSpace(placeholderText))
-        {
-            textBox.PlaceholderText = placeholderText;
-        }
-        ApplyAppStyle(textBox, "FieldTextBoxStyle");
-        textBox.Background = ThemeBrush("AppSurfaceBrush");
-        textBox.Foreground = ThemeBrush("AppTextBrush");
-        textBox.BorderBrush = ThemeBrush("AppOutlineBrush");
-        textBox.BorderThickness = new Thickness(1);
-        textBox.Padding = new Thickness(16, 14, 16, 14);
-        textBox.MinHeight = 56;
-        textBox.CornerRadius = new CornerRadius(18);
-        return textBox;
-    }
-
-    private PasswordBox CreatePasswordBox()
-    {
-        var passwordBox = new PasswordBox();
-        ApplyAppStyle(passwordBox, "FieldPasswordBoxStyle");
-        passwordBox.Background = ThemeBrush("AppSurfaceBrush");
-        passwordBox.Foreground = ThemeBrush("AppTextBrush");
-        passwordBox.BorderBrush = ThemeBrush("AppOutlineBrush");
-        passwordBox.BorderThickness = new Thickness(1);
-        passwordBox.Padding = new Thickness(16, 14, 16, 14);
-        passwordBox.MinHeight = 56;
-        passwordBox.CornerRadius = new CornerRadius(18);
-        return passwordBox;
-    }
-
-    private ListView CreateListView()
-    {
-        var listView = new ListView
-        {
-            SelectionMode = ListViewSelectionMode.None,
-            BorderThickness = new Thickness(0),
-            Background = new SolidColorBrush(UiColor.FromArgb(0, 0, 0, 0)),
-            Foreground = ThemeBrush("AppTextBrush")
-        };
-        ApplyAppStyle(listView, "TertiaryListViewStyle");
-        if (App.Current.Resources.TryGetValue("FlatListViewItemStyle", out var containerStyle) && containerStyle is Style itemStyle)
-        {
-            listView.ItemContainerStyle = itemStyle;
-        }
-        return listView;
-    }
-
-    private static void ApplyAppStyle(Control control, string styleKey)
-    {
-        if (App.Current.Resources.TryGetValue(styleKey, out var style) && style is Style typedStyle)
-        {
-            control.Style = typedStyle;
-        }
-    }
-
-    private static Brush ThemeBrush(string key)
-    {
-        if (App.Current.Resources.TryGetValue(key, out var value) && value is Brush brush)
-        {
-            return brush;
-        }
-
-        return new SolidColorBrush(UiColor.FromArgb(255, 255, 255, 255));
-    }
-
-    private static UIElement CreateLogoElement()
-    {
-        try
-        {
-            return new Image
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(1, 1),
+            GradientStops =
             {
-                Source = new BitmapImage(new Uri("ms-appx:///Assets/NeuralV.png")),
-                Stretch = Stretch.Uniform,
-                Margin = new Thickness(12)
-            };
-        }
-        catch
-        {
-            return new TextBlock
-            {
-                Text = "NV",
-                Foreground = ThemeBrush("AppTextBrush"),
-                FontSize = 22,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextAlignment = TextAlignment.Center
-            };
-        }
-    }
-
-    private async Task InitializeAsync()
-    {
-        SetBusy(true, "Поднимаем новый Windows-клиент");
-        WindowsLog.Info("InitializeAsync started");
-
-        try
-        {
-            if (App.IsSmokeTest)
-            {
-                WindowsLog.Info("Smoke test mode entered");
-                ShowScreen(AppScreen.Welcome);
-                SetStatus("Smoke test completed.");
-                await Task.Delay(250);
-                Environment.ExitCode = 0;
-                App.Current.Exit();
-                return;
+                new GradientStop { Color = ThemePalette.Blend(App.Palette.Background, App.Palette.Accent, 0.08), Offset = 0.0 },
+                new GradientStop { Color = App.Palette.BackgroundAlt, Offset = 0.34 },
+                new GradientStop { Color = ThemePalette.Blend(App.Palette.Background, App.Palette.AccentSecondary, 0.12), Offset = 1.0 }
             }
+        };
 
-            _session = await SessionStore.LoadSessionAsync();
-            if (_session is { IsValid: true })
-            {
-                var refresh = await _apiClient.RefreshSessionAsync(_session);
-                if (refresh.session is { IsValid: true } refreshed)
-                {
-                    _session = refreshed;
-                    await SessionStore.SaveSessionAsync(refreshed);
-                }
-            }
-            else
-            {
-                _session = null;
-            }
-
-            await LoadHistoryAsync();
-            ApplySessionState();
-            ShowScreen(_session is null ? AppScreen.Welcome : AppScreen.Home);
-            _ = CheckForUpdatesAsync();
-        }
-        catch (Exception ex)
-        {
-            WindowsLog.Error("InitializeAsync failed", ex);
-            SetStatus(ex.Message);
-            ShowScreen(AppScreen.Welcome);
-        }
-        finally
-        {
-            SetBusy(false);
-        }
+        FabricLayerA.Fill = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentSecondary, 0.08, 0.30);
+        FabricLayerB.Fill = BuildWeaveBrush(App.Palette.AccentTertiary, App.Palette.Accent, 0.05, 0.22);
+        FabricLayerC.Fill = BuildSheenBrush(App.Palette.AccentSecondary, App.Palette.AccentTertiary);
+        GlowA.Fill = BuildGlowBrush(App.Palette.Accent, 0.92);
+        GlowB.Fill = BuildGlowBrush(ThemePalette.Blend(App.Palette.AccentSecondary, App.Palette.Text, 0.36), 0.42);
+        GlowC.Fill = BuildGlowBrush(ThemePalette.Blend(App.Palette.AccentTertiary, App.Palette.BackgroundAlt, 0.30), 0.28);
     }
 
-    private async Task CheckForUpdatesAsync()
+    private static Brush BuildGlowBrush(UiColor color, double opacity)
     {
-        try
+        return new RadialGradientBrush
         {
-            _updateInfo = await _apiClient.CheckForUpdateAsync(_currentVersion);
-            ApplyUpdateState();
-            if (_updateInfo.Available)
+            GradientStops =
             {
-                WindowsLog.Info($"Update available: {_updateInfo.LatestVersion}");
-                SetStatus($"Доступно обновление Windows {_updateInfo.LatestVersion}.");
+                new GradientStop { Color = ThemePalette.WithAlpha(color, opacity), Offset = 0.0 },
+                new GradientStop { Color = ThemePalette.WithAlpha(color, 0.0), Offset = 1.0 }
             }
-        }
-        catch (Exception ex)
+        };
+    }
+
+    private static Brush BuildWeaveBrush(UiColor baseColor, UiColor accentColor, double lowOpacity, double highOpacity)
+    {
+        return new LinearGradientBrush
         {
-            WindowsLog.Error("CheckForUpdatesAsync failed", ex);
-            _updateInfo = new UpdateInfo { Error = ex.Message };
-            ApplyUpdateState();
-        }
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(1, 1),
+            GradientStops =
+            {
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, lowOpacity), Offset = 0.00 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.08 },
+                new GradientStop { Color = ThemePalette.WithAlpha(accentColor, highOpacity), Offset = 0.14 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.24 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, lowOpacity), Offset = 0.34 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.48 },
+                new GradientStop { Color = ThemePalette.WithAlpha(accentColor, highOpacity * 0.72), Offset = 0.62 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.76 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, lowOpacity), Offset = 1.00 }
+            }
+        };
+    }
+
+    private static Brush BuildSheenBrush(UiColor first, UiColor second)
+    {
+        return new LinearGradientBrush
+        {
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(1, 0),
+            GradientStops =
+            {
+                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.0), Offset = 0.00 },
+                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.14), Offset = 0.24 },
+                new GradientStop { Color = ThemePalette.WithAlpha(second, 0.24), Offset = 0.50 },
+                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.12), Offset = 0.74 },
+                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.0), Offset = 1.00 }
+            }
+        };
     }
 
     private void ShowScreen(AppScreen screen)
     {
         _screen = screen;
-
-        AppNavigationBar.Visibility = screen is AppScreen.Home or AppScreen.Scan or AppScreen.History or AppScreen.Settings
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-
         SplashView.Visibility = screen == AppScreen.Splash ? Visibility.Visible : Visibility.Collapsed;
         WelcomeView.Visibility = screen == AppScreen.Welcome ? Visibility.Visible : Visibility.Collapsed;
         LoginView.Visibility = screen == AppScreen.Login ? Visibility.Visible : Visibility.Collapsed;
         RegisterView.Visibility = screen == AppScreen.Register ? Visibility.Visible : Visibility.Collapsed;
         CodeView.Visibility = screen == AppScreen.Code ? Visibility.Visible : Visibility.Collapsed;
         HomeView.Visibility = screen == AppScreen.Home ? Visibility.Visible : Visibility.Collapsed;
-        ScanView.Visibility = screen == AppScreen.Scan ? Visibility.Visible : Visibility.Collapsed;
         HistoryView.Visibility = screen == AppScreen.History ? Visibility.Visible : Visibility.Collapsed;
         SettingsView.Visibility = screen == AppScreen.Settings ? Visibility.Visible : Visibility.Collapsed;
 
+        SetDrawerState(false);
+        UpdateHeader();
         ApplySessionState();
-        UpdateNavigationState(screen);
-        UpdateScreenContext(screen);
+        UpdateHomeState();
+        UpdateHistoryState();
+        UpdateSettingsState();
     }
 
-    private void UpdateNavigationState(AppScreen screen)
+    private void UpdateHeader()
     {
-        ApplyNavButtonStyle(HomeNavButton, screen is AppScreen.Home or AppScreen.Scan);
-        ApplyNavButtonStyle(HistoryNavButton, screen == AppScreen.History);
-        ApplyNavButtonStyle(SettingsNavButton, screen == AppScreen.Settings);
-    }
-
-    private void ApplyNavButtonStyle(Button button, bool active)
-    {
-        if (App.Current.Resources.TryGetValue(active ? "SelectedNavTabButtonStyle" : "NavTabButtonStyle", out var value) && value is Style style)
+        HeaderTitleText.Text = _screen switch
         {
-            button.Style = style;
-            return;
-        }
-
-        button.Background = active ? ThemeBrush("AppPrimaryContainerBrush") : ThemeBrush("AppSurfaceHighBrush");
-        button.Foreground = active ? ThemeBrush("AppOnAccentBrush") : ThemeBrush("AppTextBrush");
-        button.BorderBrush = active ? ThemeBrush("AppPrimaryContainerBrush") : ThemeBrush("AppOutlineBrush");
-    }
-
-    private void UpdateScreenContext(AppScreen screen)
-    {
-        var (badge, headline, description) = screen switch
-        {
-            AppScreen.Splash => (
-                "Запуск",
-                "Готовим NeuralV",
-                "Поднимаем палитру, сессию и стартовый экран."),
-            AppScreen.Welcome => (
-                "Добро пожаловать",
-                "Нативный клиент для Windows",
-                "Вход, проверка, история и обновления собраны в один интерфейс."),
-            AppScreen.Login => (
-                "Вход",
-                "Почта, пароль и код",
-                "После входа сразу открывается основной экран."),
-            AppScreen.Register => (
-                "Регистрация",
-                "Создать аккаунт",
-                "Подтверди почту и переходи к проверкам."),
-            AppScreen.Code => (
-                "Подтверждение",
-                "Остался один шаг",
-                "Подтверждение завершит вход."),
-            AppScreen.Home => (
-                "Главный экран",
-                "Проверка, статус и обновления",
-                "Запуск, состояние и события собраны в одном месте."),
-            AppScreen.Scan => (
-                "Проверка",
-                string.IsNullOrWhiteSpace(_activeScan?.Verdict) ? "Серверная проверка уже идёт" : _activeScan!.Verdict,
-                string.IsNullOrWhiteSpace(_activeScan?.Message)
-                    ? "Держим прогресс, ленту событий и отмену на одном экране."
-                    : _activeScan!.Message),
-            AppScreen.History => (
-                "История",
-                "Последние завершённые проверки",
-                "Локальный журнал последних результатов."),
-            AppScreen.Settings => (
-                "Настройки",
-                "Сессия и оформление",
-                "Здесь только активная сессия и параметры клиента."),
-            _ => (
-                "NeuralV",
-                "Windows-клиент",
-                "Защитный клиент NeuralV.")
+            AppScreen.Login => "Вход",
+            AppScreen.Register => "Регистрация",
+            AppScreen.Code => "Подтверждение",
+            AppScreen.Home => "NeuralV",
+            AppScreen.History => "История",
+            AppScreen.Settings => "Настройки",
+            _ => "NeuralV"
         };
 
-        RailBadgeText.Text = badge;
-        RailHeadlineText.Text = headline;
-        RailDescriptionText.Text = description;
+        HeaderSubtitleText.Text = _screen switch
+        {
+            AppScreen.Home when _activeScan is not null && !_activeScan.IsFinished => "Проверка продолжается. Можно вернуться к ней в один клик.",
+            AppScreen.Home => "Защита Windows, история и сетевые переключатели в одном окне.",
+            AppScreen.History => "Последние завершённые проверки.",
+            AppScreen.Settings => "Аккаунт, оформление и параметры защиты.",
+            AppScreen.Login => "Вход по почте, паролю и коду подтверждения.",
+            AppScreen.Register => "Создание аккаунта NeuralV.",
+            AppScreen.Code => "Подтверди вход кодом из письма.",
+            _ => ""
+        };
     }
 
     private void ApplySessionState()
@@ -1414,79 +1111,121 @@ public sealed partial class MainWindow : Window
             ? (!string.IsNullOrWhiteSpace(_session!.User.Name) ? _session.User.Name : _session.User.Email)
             : "Гостевой режим";
 
-        RailUserNameText.Text = displayName;
-        RailUserMetaText.Text = hasSession
+        AccountChipText.Text = hasSession ? _session!.User.Email : "Вход не выполнен";
+        DrawerUserNameText.Text = displayName;
+        DrawerUserMetaText.Text = hasSession
             ? _session!.User.Email
-            : "Войди, чтобы запускать проверки и хранить историю.";
-        RailUserStateText.Text = hasSession
-            ? (_session!.User.IsPremium ? "Активная премиум-сессия" : "Активная сессия")
-            : "Сессия не активна";
-        UserLabel.Text = hasSession ? _session!.User.Email : "Не авторизован";
-        SettingsSessionText.Text = hasSession
+            : "Войди, чтобы запускать серверные проверки и хранить историю.";
+        SettingsAccountText.Text = hasSession
             ? $"Пользователь: {displayName}. Почта: {_session!.User.Email}."
             : "Активной сессии нет.";
+        SettingsDeveloperText.Text = hasSession && _session!.User.IsDeveloperMode
+            ? "Режим разработчика активен. Серверные лимиты отключены."
+            : "Режим разработчика не активен.";
     }
 
-    private async Task LoadHistoryAsync()
+    private void UpdateHomeState()
     {
-        _historyItems.Clear();
-        foreach (var item in await HistoryStore.LoadAsync())
+        HomeHeroTitleText.Text = _activeScan is not null && !_activeScan.IsFinished
+            ? "Проверка уже идёт"
+            : "Главное меню";
+        HomeHeroSubtitleText.Text = _activeScan is not null && !_activeScan.IsFinished
+            ? (_activeScan.Message ?? "Можно вернуться к текущей проверке или запустить сеть.")
+            : (_session is null
+                ? "Войди в аккаунт для серверных режимов или запусти локальную быструю проверку."
+                : "Выбери режим проверки или включи защиту в сети.");
+
+        var running = _activeScan is not null && !_activeScan.IsFinished;
+        ActiveScanCard.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+        if (running && _activeScan is not null)
         {
-            _historyItems.Add($"{item.SavedAt.LocalDateTime:dd.MM HH:mm} | {item.Mode} | {item.Verdict} | {item.Message}");
+            var progress = WindowsTrayProgressService.EstimateProgressPercent(_activeScan);
+            ActiveScanCardTitleText.Text = _activeScan.Mode switch
+            {
+                "FULL" => "Глубокая проверка продолжается",
+                "SELECTIVE" => "Выборочная проверка продолжается",
+                "ARTIFACT" => "Проверка программы продолжается",
+                _ => "Проверка продолжается"
+            };
+            ActiveScanCardMetaText.Text = $"{progress}% · {(_activeScan.Message ?? _activeScan.Status)}";
         }
 
-        if (_historyItems.Count == 0)
-        {
-            _historyItems.Add("История появится после первой завершённой проверки.");
-        }
-
-        SeedHomeTimeline();
+        UpdateNetworkUi();
     }
 
-    private void SeedHomeTimeline()
+    private void UpdateHistoryState()
     {
-        if (_homeTimeline.Count > 0)
+        if (HistoryList is not null)
         {
-            return;
+            HistoryList.ItemsSource = _historyItems;
         }
-
-        if (_historyItems.Count > 0 && !_historyItems[0].StartsWith("История появится", StringComparison.Ordinal))
-        {
-            _homeTimeline.Add("История загружена. Последние завершённые проверки доступны во вкладке истории.");
-            _homeTimeline.Add(_historyItems[0]);
-            return;
-        }
-
-        _homeTimeline.Add("Интерфейс готов. После первой завершённой проверки здесь появится живая лента.");
-        _homeTimeline.Add("Палитра и визуальная система уже инициализированы.");
     }
 
-    private void ApplyUpdateState()
+    private void UpdateSettingsState()
     {
-        if (_updateInfo is null)
+        _preferenceUiSync = true;
+        ThemeModeCombo.SelectedIndex = ThemeModeToIndex(_preferences.ThemeMode);
+        DynamicColorsToggle.IsOn = _preferences.DynamicColorsEnabled;
+        _preferenceUiSync = false;
+        UpdateNetworkUi();
+    }
+
+    private void UpdateNetworkUi()
+    {
+        _networkUiSync = true;
+
+        if (NetworkProtectionToggle is not null)
         {
-            UpdateStatusText.Text = "Статус обновлений пока недоступен.";
-            UpdateButton.Visibility = Visibility.Collapsed;
-            return;
+            NetworkProtectionToggle.IsOn = _networkState.NetworkEnabled;
+        }
+        if (AdBlockToggle is not null)
+        {
+            AdBlockToggle.IsOn = _networkState.AdBlockEnabled;
+            AdBlockToggle.IsEnabled = _networkState.NetworkEnabled;
+        }
+        if (UnsafeSitesToggle is not null)
+        {
+            UnsafeSitesToggle.IsOn = _networkState.UnsafeSitesEnabled;
+            UnsafeSitesToggle.IsEnabled = _networkState.NetworkEnabled;
+        }
+        if (SettingsNetworkToggle is not null)
+        {
+            SettingsNetworkToggle.IsOn = _networkState.NetworkEnabled;
+        }
+        if (SettingsAdToggle is not null)
+        {
+            SettingsAdToggle.IsOn = _networkState.AdBlockEnabled;
+            SettingsAdToggle.IsEnabled = _networkState.NetworkEnabled;
+        }
+        if (SettingsUnsafeToggle is not null)
+        {
+            SettingsUnsafeToggle.IsOn = _networkState.UnsafeSitesEnabled;
+            SettingsUnsafeToggle.IsEnabled = _networkState.NetworkEnabled;
+        }
+        if (NetworkCountersText is not null)
+        {
+            NetworkCountersText.Text = $"Заблокировано угроз в сети: {_networkState.BlockedThreatsPlatform} · рекламы: {_networkState.BlockedAdsPlatform}";
         }
 
-        if (!string.IsNullOrWhiteSpace(_updateInfo.Error))
-        {
-            UpdateStatusText.Text = _updateInfo.Error;
-            UpdateButton.Visibility = Visibility.Collapsed;
-            return;
-        }
+        _networkUiSync = false;
+    }
 
-        if (_updateInfo.Available)
-        {
-            UpdateStatusText.Text = $"Доступна версия {_updateInfo.LatestVersion}.";
-            UpdateButton.Content = $"Установить {_updateInfo.LatestVersion}";
-            UpdateButton.Visibility = Visibility.Visible;
-            return;
-        }
+    private void SetDrawerState(bool isOpen)
+    {
+        _drawerOpen = isOpen;
+        DrawerScrim.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        DrawerPanel.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+    }
 
-        UpdateStatusText.Text = "Установлена актуальная версия Windows-клиента.";
-        UpdateButton.Visibility = Visibility.Collapsed;
+    private void SetScanOverlayState(bool isOpen)
+    {
+        _scanOverlayOpen = isOpen;
+        ScanOverlay.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        if (isOpen)
+        {
+            SetDrawerState(false);
+        }
+        UpdateHomeState();
     }
 
     private void SetBusy(bool isBusy, string? message = null)
@@ -1500,26 +1239,130 @@ public sealed partial class MainWindow : Window
         var visible = !string.IsNullOrWhiteSpace(message);
         StatusBanner.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         StatusBannerText.Text = visible ? message! : string.Empty;
-        HomeStatusText.Text = visible ? message! : GetHomeStatusFallback();
     }
 
-    private void UpdateStatusHomeFallback()
+    private static int ThemeModeToIndex(ThemeModePreference mode)
     {
-        HomeStatusText.Text = GetHomeStatusFallback();
-    }
-
-    private string GetHomeStatusFallback()
-    {
-        if (_activeScan is not null && !_activeScan.IsFinished)
+        return mode switch
         {
-            return string.IsNullOrWhiteSpace(_activeScan.Message)
-                ? "Проверка в процессе. Перейди на экран проверки для подробной ленты."
-                : _activeScan.Message;
+            ThemeModePreference.Light => 1,
+            ThemeModePreference.Dark => 2,
+            _ => 0
+        };
+    }
+
+    private static ThemeModePreference IndexToThemeMode(int index)
+    {
+        return index switch
+        {
+            1 => ThemeModePreference.Light,
+            2 => ThemeModePreference.Dark,
+            _ => ThemeModePreference.System
+        };
+    }
+
+    private async Task SavePreferencesAsync(Action<ClientPreferences> mutate, bool rebuildVisualTree)
+    {
+        mutate(_preferences);
+        _preferences = await ClientPreferencesStateService.SaveAsync(_preferences);
+        App.ApplyClientPreferences(_preferences);
+
+        if (rebuildVisualTree)
+        {
+            RebuildVisualTree();
+        }
+    }
+
+    private void RebuildVisualTree()
+    {
+        var screen = _screen;
+        var overlayOpen = _scanOverlayOpen;
+        BuildLayout();
+        ApplySessionState();
+        ShowScreen(screen);
+        if (_activeScan is not null)
+        {
+            RenderScan(_activeScan);
+        }
+        SetScanOverlayState(overlayOpen && _activeScan is not null);
+        SetStatus(null);
+    }
+
+    private void OnShapeTick(object? sender, object e)
+    {
+        foreach (var shape in _floatingShapes)
+        {
+            shape.Angle += shape.Velocity;
+            if (shape.Element.RenderTransform is RotateTransform rotate)
+            {
+                rotate.Angle = shape.Angle;
+            }
+        }
+    }
+
+    private void OnWelcomeShapeTapped(object sender, TappedRoutedEventArgs e)
+    {
+        if (sender is not Border border)
+        {
+            return;
         }
 
-        return _session is null
-            ? "Войди в аккаунт, чтобы запустить первую проверку."
-            : "Готов к новой проверке.";
+        var shape = _floatingShapes.FirstOrDefault(item => ReferenceEquals(item.Element, border));
+        if (shape is null)
+        {
+            return;
+        }
+
+        shape.Variant = (shape.Variant + 1) % 6;
+        shape.Angle += 16;
+        ApplyShapeVariant(shape.Element, shape.Variant);
+        if (shape.Element.RenderTransform is RotateTransform rotate)
+        {
+            rotate.Angle = shape.Angle;
+        }
+    }
+
+    private void ApplyShapeVariant(Border shape, int variant)
+    {
+        switch (variant % 6)
+        {
+            case 0:
+                shape.Width = 122;
+                shape.Height = 122;
+                shape.CornerRadius = new CornerRadius(61);
+                shape.Background = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentSecondary, 0.08, 0.32);
+                break;
+            case 1:
+                shape.Width = 170;
+                shape.Height = 92;
+                shape.CornerRadius = new CornerRadius(40);
+                shape.Background = BuildWeaveBrush(App.Palette.AccentSecondary, App.Palette.AccentTertiary, 0.08, 0.26);
+                break;
+            case 2:
+                shape.Width = 108;
+                shape.Height = 144;
+                shape.CornerRadius = new CornerRadius(36);
+                shape.Background = BuildWeaveBrush(App.Palette.AccentTertiary, App.Palette.Accent, 0.08, 0.28);
+                break;
+            case 3:
+                shape.Width = 138;
+                shape.Height = 138;
+                shape.CornerRadius = new CornerRadius(28);
+                shape.Background = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentTertiary, 0.08, 0.24);
+                break;
+            case 4:
+                shape.Width = 180;
+                shape.Height = 84;
+                shape.CornerRadius = new CornerRadius(22);
+                shape.Background = BuildWeaveBrush(App.Palette.AccentSecondary, App.Palette.Accent, 0.08, 0.30);
+                break;
+            default:
+                shape.Width = 96;
+                shape.Height = 160;
+                shape.CornerRadius = new CornerRadius(42);
+                shape.Background = BuildWeaveBrush(App.Palette.AccentTertiary, App.Palette.AccentSecondary, 0.08, 0.26);
+                break;
+        }
     }
 
     private void ResetAuthInputs()
@@ -1533,24 +1376,26 @@ public sealed partial class MainWindow : Window
         VerificationCodeBox.Text = string.Empty;
         CodeHintText.Text = string.Empty;
         _challenge = null;
-        SetStatus(null);
     }
 
     private void OnShowLoginClick(object sender, RoutedEventArgs e)
     {
         ResetAuthInputs();
+        SetStatus(null);
         ShowScreen(AppScreen.Login);
     }
 
     private void OnShowRegisterClick(object sender, RoutedEventArgs e)
     {
         ResetAuthInputs();
+        SetStatus(null);
         ShowScreen(AppScreen.Register);
     }
 
     private void OnBackToWelcomeClick(object sender, RoutedEventArgs e)
     {
         ResetAuthInputs();
+        SetStatus(null);
         ShowScreen(AppScreen.Welcome);
     }
 
@@ -1578,9 +1423,14 @@ public sealed partial class MainWindow : Window
             }
 
             _challenge = ticket;
-            SetStatus(null);
             CodeHintText.Text = $"Код подтверждения отправлен на {ticket.Email}.";
+            SetStatus(null);
             ShowScreen(AppScreen.Code);
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("OnStartLoginClick failed", ex);
+            SetStatus(ex.Message);
         }
         finally
         {
@@ -1612,9 +1462,14 @@ public sealed partial class MainWindow : Window
             }
 
             _challenge = ticket;
-            SetStatus(null);
             CodeHintText.Text = $"Код подтверждения отправлен на {ticket.Email}.";
+            SetStatus(null);
             ShowScreen(AppScreen.Code);
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("OnStartRegisterClick failed", ex);
+            SetStatus(ex.Message);
         }
         finally
         {
@@ -1647,10 +1502,16 @@ public sealed partial class MainWindow : Window
 
             _session = result.session;
             await SessionStore.SaveSessionAsync(_session);
+            await LoadNetworkProtectionStateAsync();
             ResetAuthInputs();
             ApplySessionState();
-            SetStatus("Вход выполнен.");
             ShowScreen(AppScreen.Home);
+            SetStatus("Вход выполнен.");
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("OnVerifyCodeClick failed", ex);
+            SetStatus(ex.Message);
         }
         finally
         {
@@ -1660,30 +1521,227 @@ public sealed partial class MainWindow : Window
 
     private async void OnQuickScanClick(object sender, RoutedEventArgs e)
     {
-        await StartScanAsync("quick");
+        await RunLocalQuickScanAsync();
+    }
+
+    private async Task RunLocalQuickScanAsync()
+    {
+        SetBusy(true, "Готовим быструю локальную проверку");
+        try
+        {
+            var initial = new DesktopScanState
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Platform = "windows",
+                Mode = "QUICK",
+                Status = "RUNNING",
+                Verdict = "Локальная быстрая проверка",
+                Message = "Проверяем загрузки, рабочий стол, temp и автозапуск.",
+                StartedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Timeline = new[]
+                {
+                    "Собираем локальные зоны риска.",
+                    "Ищем недавние исполняемые файлы, скрипты и установщики."
+                }
+            };
+            _activeScan = initial;
+            RenderScan(initial);
+            SetScanOverlayState(true);
+            ShowScreen(AppScreen.Home);
+
+            var result = await Task.Run(ExecuteLocalQuickScan);
+            _activeScan = result;
+            RenderScan(result);
+            await HistoryStore.AppendAsync(result);
+            await LoadHistoryAsync();
+            SetStatus(result.PrimarySummary);
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("RunLocalQuickScanAsync failed", ex);
+            SetStatus(ex.Message);
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    private DesktopScanState ExecuteLocalQuickScan()
+    {
+        var startedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var timeline = new List<string> { "Запускаем локальный быстрый проход." };
+        var findings = new List<DesktopScanFinding>();
+        var riskyExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".exe", ".dll", ".msi", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".jar", ".scr", ".hta", ".com"
+        };
+
+        var roots = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
+            Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+            Environment.GetFolderPath(Environment.SpecialFolder.Startup),
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup),
+            Path.GetTempPath(),
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
+        }
+        .Where(path => !string.IsNullOrWhiteSpace(path) && (Directory.Exists(path) || File.Exists(path)))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+        var scanned = 0;
+        foreach (var root in roots)
+        {
+            var recentMatches = EnumerateQuickCandidates(root, riskyExtensions, 32).ToList();
+            scanned += recentMatches.Count;
+            timeline.Add($"{root}: найдено {recentMatches.Count} подходящих объектов для локальной оценки.");
+            foreach (var file in recentMatches.Take(2))
+            {
+                findings.Add(new DesktopScanFinding
+                {
+                    Id = file,
+                    Title = Path.GetFileName(file),
+                    Verdict = "review",
+                    Summary = $"Локальная проверка советует отдельно прогнать: {file}",
+                    Engines = Array.Empty<string>()
+                });
+            }
+        }
+
+        var completedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var surfaced = findings.Count;
+        var message = surfaced > 0
+            ? $"Локально нашли {surfaced} объекта для отдельной проверки."
+            : "Локальных подозрительных совпадений не найдено.";
+
+        return new DesktopScanState
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Platform = "windows",
+            Mode = "QUICK",
+            Status = "COMPLETED",
+            Verdict = surfaced > 0 ? "Требуется дополнительная проверка" : "Совпадений не найдено",
+            Message = message,
+            RiskScore = surfaced > 0 ? Math.Min(60, surfaced * 10) : 0,
+            SurfacedFindings = surfaced,
+            HiddenFindings = 0,
+            StartedAt = startedAt,
+            CompletedAt = completedAt,
+            Timeline = timeline,
+            Findings = findings
+        };
+    }
+
+    private static IEnumerable<string> EnumerateQuickCandidates(string root, HashSet<string> riskyExtensions, int limit)
+    {
+        var results = new List<(string Path, DateTime Timestamp)>();
+        try
+        {
+            var searchOption = Path.GetFileName(root).Equals("Local", StringComparison.OrdinalIgnoreCase)
+                ? SearchOption.TopDirectoryOnly
+                : SearchOption.AllDirectories;
+
+            foreach (var file in Directory.EnumerateFiles(root, "*", searchOption))
+            {
+                var extension = Path.GetExtension(file);
+                if (!riskyExtensions.Contains(extension))
+                {
+                    continue;
+                }
+
+                DateTime timestamp;
+                try
+                {
+                    timestamp = File.GetLastWriteTimeUtc(file);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (timestamp < DateTime.UtcNow.AddDays(-30))
+                {
+                    continue;
+                }
+
+                results.Add((file, timestamp));
+                if (results.Count >= limit)
+                {
+                    break;
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return results
+            .OrderByDescending(item => item.Timestamp)
+            .Select(item => item.Path);
     }
 
     private async void OnDeepScanClick(object sender, RoutedEventArgs e)
     {
-        await StartScanAsync("deep");
+        await StartServerScanAsync("FULL", "FILESYSTEM", Environment.MachineName, Environment.SystemDirectory);
     }
 
-    private async Task StartScanAsync(string mode)
+    private async void OnSelectiveScanClick(object sender, RoutedEventArgs e)
+    {
+        await StartServerScanAsync("SELECTIVE", "FILESYSTEM", Environment.MachineName, Environment.SystemDirectory);
+    }
+
+    private async void OnProgramScanClick(object sender, RoutedEventArgs e)
+    {
+        var target = await PickProgramTargetAsync();
+        if (target is null)
+        {
+            return;
+        }
+
+        await StartServerScanAsync("ARTIFACT", "ARTIFACT", target.Value.TargetName, target.Value.TargetPath);
+    }
+
+    private async Task<(string TargetName, string TargetPath)?> PickProgramTargetAsync()
+    {
+        try
+        {
+            var picker = new FolderPicker();
+            InitializeWithWindow.Initialize(picker, _windowHandle);
+            picker.FileTypeFilter.Add("*");
+            var folder = await picker.PickSingleFolderAsync();
+            if (folder is null)
+            {
+                return null;
+            }
+
+            return (folder.Name, folder.Path);
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("PickProgramTargetAsync failed", ex);
+            SetStatus(ex.Message);
+            return null;
+        }
+    }
+
+    private async Task StartServerScanAsync(string mode, string artifactKind, string targetName, string targetPath)
     {
         if (_session is null)
         {
-            SetStatus("Войди в аккаунт, чтобы запустить проверку.");
+            SetStatus("Войди в аккаунт, чтобы запустить серверную проверку.");
             ShowScreen(AppScreen.Welcome);
             return;
         }
 
         SetBusy(true, "Создаём серверную проверку");
-        WindowsLog.Info($"Start scan requested: {mode}");
+        WindowsLog.Info($"Start scan requested: {mode} / {artifactKind} / {targetPath}");
         try
         {
-            var roots = WindowsEnvironmentService.DetectScanRoots();
-            var installRoots = WindowsEnvironmentService.DetectInstallRoots();
-            var result = await _apiClient.StartDesktopScanAsync(_session, mode, "filesystem", Environment.MachineName, Environment.SystemDirectory, roots, installRoots);
+            var plan = artifactKind == "ARTIFACT"
+                ? WindowsScanPlanService.BuildProgramOrFilePlan(mode, artifactKind, targetPath, targetName, DesktopCoverageMode.SmartCoverage)
+                : WindowsScanPlanService.BuildSmartCoveragePlan(mode, artifactKind, targetName, targetPath);
+            var result = await _apiClient.StartDesktopScanAsync(_session, plan);
             if (result.scan is null)
             {
                 WindowsLog.Error($"Desktop scan creation failed: {result.error}");
@@ -1691,17 +1749,17 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            _activeScan = result.scan;
-            SetStatus(null);
-            RenderScan(result.scan);
-            ShowScreen(AppScreen.Scan);
             _scanPollCts?.Cancel();
             _scanPollCts = new CancellationTokenSource();
+            _activeScan = result.scan;
+            RenderScan(result.scan);
+            SetScanOverlayState(true);
+            ShowScreen(AppScreen.Home);
             _ = PollScanAsync(result.scan.Id, _scanPollCts.Token);
         }
         catch (Exception ex)
         {
-            WindowsLog.Error("StartScanAsync failed", ex);
+            WindowsLog.Error("StartServerScanAsync failed", ex);
             SetStatus(ex.Message);
         }
         finally
@@ -1720,7 +1778,7 @@ public sealed partial class MainWindow : Window
                 if (result.scan is null)
                 {
                     WindowsLog.Error($"Desktop scan poll returned null: {result.error}");
-                    ScanSecondaryText.Text = result.error ?? "Не удалось прочитать статус проверки.";
+                    SetStatus(result.error ?? "Не удалось прочитать статус проверки.");
                     await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
                     continue;
                 }
@@ -1729,12 +1787,12 @@ public sealed partial class MainWindow : Window
                 RenderScan(result.scan);
                 if (result.scan.IsFinished)
                 {
-                    SetStatus(result.scan.PrimarySummary);
                     if (result.scan.IsSuccessful)
                     {
                         await HistoryStore.AppendAsync(result.scan, cancellationToken);
-                        await LoadHistoryAsync();
+                        await LoadHistoryAsync(cancellationToken);
                     }
+                    SetStatus(result.scan.PrimarySummary);
                     WindowsLog.Info($"Desktop scan finished: {result.scan.Status} / {result.scan.Verdict}");
                     return;
                 }
@@ -1747,7 +1805,7 @@ public sealed partial class MainWindow : Window
             catch (Exception ex)
             {
                 WindowsLog.Error("PollScanAsync failed", ex);
-                ScanSecondaryText.Text = ex.Message;
+                SetStatus(ex.Message);
             }
 
             await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
@@ -1756,10 +1814,20 @@ public sealed partial class MainWindow : Window
 
     private void RenderScan(DesktopScanState scan)
     {
-        ScanPrimaryText.Text = string.IsNullOrWhiteSpace(scan.Verdict) ? "Проверка идёт" : scan.Verdict;
-        ScanSecondaryText.Text = string.IsNullOrWhiteSpace(scan.Message)
-            ? $"Статус: {scan.Status}"
-            : scan.Message;
+        var progress = WindowsTrayProgressService.EstimateProgressPercent(scan);
+        ScanModeText.Text = scan.Mode switch
+        {
+            "FULL" => "Глубокая проверка",
+            "SELECTIVE" => "Выборочная проверка",
+            "ARTIFACT" => "Проверка программы",
+            "QUICK" => "Быстрая локальная проверка",
+            _ => "Проверка"
+        };
+        ScanStageText.Text = string.IsNullOrWhiteSpace(scan.Message) ? $"Статус: {scan.Status}" : scan.Message;
+        ScanProgressText.Text = $"{progress}%";
+        ScanCountsText.Text = $"Этапов в ленте: {scan.Timeline.Count} · находок: {scan.SurfacedFindings}";
+        ScanProgressBar.Value = progress;
+        ScanProgressRing.IsActive = !scan.IsFinished;
 
         _scanTimeline.Clear();
         foreach (var item in scan.Timeline.DefaultIfEmpty(string.IsNullOrWhiteSpace(scan.Message) ? "Сервер обрабатывает проверку." : scan.Message))
@@ -1771,18 +1839,28 @@ public sealed partial class MainWindow : Window
             _scanTimeline.Add($"{finding.Title}: {finding.Summary}");
         }
 
-        _homeTimeline.Clear();
-        _homeTimeline.Add($"{DateTime.Now:HH:mm} | {ScanPrimaryText.Text}");
-        foreach (var item in _scanTimeline.Take(7))
+        UpdateHomeState();
+        if (_scanOverlayOpen)
         {
-            _homeTimeline.Add(item);
+            SetScanOverlayState(true);
+        }
+    }
+
+    private static int EstimateScanProgress(DesktopScanState scan)
+    {
+        if (scan.IsFinished)
+        {
+            return 100;
         }
 
-        HomeStatusText.Text = scan.PrimarySummary;
-        if (_screen == AppScreen.Scan)
+        return scan.Status switch
         {
-            UpdateScreenContext(AppScreen.Scan);
-        }
+            "QUEUED" => 10,
+            "PREPARING" => 22,
+            "RUNNING" => Math.Min(94, 34 + (scan.Timeline.Count * 7)),
+            "AWAITING_UPLOAD" => 52,
+            _ => Math.Min(90, 20 + (scan.Timeline.Count * 6))
+        };
     }
 
     private async void OnCancelScanClick(object sender, RoutedEventArgs e)
@@ -1799,8 +1877,32 @@ public sealed partial class MainWindow : Window
             var result = await _apiClient.CancelDesktopScanAsync(_session);
             var message = result.success ? "Проверка остановлена." : result.error ?? "Не удалось отменить проверку.";
             WindowsLog.Info($"Cancel scan result: {message}");
-            ScanSecondaryText.Text = message;
             SetStatus(message);
+            if (_activeScan is not null)
+            {
+                _activeScan = new DesktopScanState
+                {
+                    Id = _activeScan.Id,
+                    Platform = _activeScan.Platform,
+                    Mode = _activeScan.Mode,
+                    Status = "CANCELLED",
+                    Verdict = _activeScan.Verdict,
+                    Message = message,
+                    RiskScore = _activeScan.RiskScore,
+                    SurfacedFindings = _activeScan.SurfacedFindings,
+                    HiddenFindings = _activeScan.HiddenFindings,
+                    StartedAt = _activeScan.StartedAt,
+                    CompletedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    Timeline = _activeScan.Timeline.Append(message).ToArray(),
+                    Findings = _activeScan.Findings
+                };
+                RenderScan(_activeScan);
+            }
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("OnCancelScanClick failed", ex);
+            SetStatus(ex.Message);
         }
         finally
         {
@@ -1808,14 +1910,220 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void OnBackToHomeClick(object sender, RoutedEventArgs e)
+    private void OnHideScanOverlayClick(object sender, RoutedEventArgs e)
+    {
+        SetScanOverlayState(false);
+        ShowScreen(AppScreen.Home);
+    }
+
+    private void OnOpenScanOverlayClick(object sender, RoutedEventArgs e)
+    {
+        if (_activeScan is null)
+        {
+            return;
+        }
+
+        SetScanOverlayState(true);
+        ShowScreen(AppScreen.Home);
+    }
+
+    private void OnHomeClick(object sender, RoutedEventArgs e)
     {
         ShowScreen(AppScreen.Home);
     }
 
-    private void OnHomeClick(object sender, RoutedEventArgs e) => ShowScreen(AppScreen.Home);
-    private void OnHistoryClick(object sender, RoutedEventArgs e) => ShowScreen(AppScreen.History);
-    private void OnSettingsClick(object sender, RoutedEventArgs e) => ShowScreen(AppScreen.Settings);
+    private void OnHistoryClick(object sender, RoutedEventArgs e)
+    {
+        if (_session is null)
+        {
+            SetStatus("Войди в аккаунт, чтобы открыть историю.");
+            ShowScreen(AppScreen.Welcome);
+            return;
+        }
+
+        ShowScreen(AppScreen.History);
+    }
+
+    private void OnSettingsClick(object sender, RoutedEventArgs e)
+    {
+        ShowScreen(AppScreen.Settings);
+    }
+
+    private void OnToggleDrawerClick(object sender, RoutedEventArgs e)
+    {
+        SetDrawerState(!_drawerOpen);
+    }
+
+    private async void OnThemeModeSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_preferenceUiSync)
+        {
+            return;
+        }
+
+        await SavePreferencesAsync(prefs =>
+        {
+            prefs.ThemeMode = IndexToThemeMode(ThemeModeCombo.SelectedIndex);
+        }, rebuildVisualTree: true);
+    }
+
+    private async void OnDynamicColorsToggled(object sender, RoutedEventArgs e)
+    {
+        if (_preferenceUiSync)
+        {
+            return;
+        }
+
+        await SavePreferencesAsync(prefs =>
+        {
+            prefs.DynamicColorsEnabled = DynamicColorsToggle.IsOn;
+        }, rebuildVisualTree: true);
+    }
+
+    private async void OnNetworkProtectionToggled(object sender, RoutedEventArgs e)
+    {
+        if (_networkUiSync)
+        {
+            return;
+        }
+
+        _networkState = new NetworkProtectionState
+        {
+            Platform = "windows",
+            NetworkEnabled = NetworkProtectionToggle.IsOn,
+            AdBlockEnabled = AdBlockToggle.IsOn,
+            UnsafeSitesEnabled = UnsafeSitesToggle.IsOn,
+            BlockedAdsPlatform = _networkState.BlockedAdsPlatform,
+            BlockedThreatsPlatform = _networkState.BlockedThreatsPlatform,
+            BlockedAdsTotal = _networkState.BlockedAdsTotal,
+            BlockedThreatsTotal = _networkState.BlockedThreatsTotal,
+            DeveloperMode = _networkState.DeveloperMode
+        };
+        await PushNetworkStateAsync();
+    }
+
+    private async void OnAdBlockToggled(object sender, RoutedEventArgs e)
+    {
+        if (_networkUiSync)
+        {
+            return;
+        }
+
+        _networkState = new NetworkProtectionState
+        {
+            Platform = "windows",
+            NetworkEnabled = NetworkProtectionToggle.IsOn,
+            AdBlockEnabled = AdBlockToggle.IsOn,
+            UnsafeSitesEnabled = UnsafeSitesToggle.IsOn,
+            BlockedAdsPlatform = _networkState.BlockedAdsPlatform,
+            BlockedThreatsPlatform = _networkState.BlockedThreatsPlatform,
+            BlockedAdsTotal = _networkState.BlockedAdsTotal,
+            BlockedThreatsTotal = _networkState.BlockedThreatsTotal,
+            DeveloperMode = _networkState.DeveloperMode
+        };
+        await PushNetworkStateAsync();
+    }
+
+    private async void OnUnsafeSitesToggled(object sender, RoutedEventArgs e)
+    {
+        if (_networkUiSync)
+        {
+            return;
+        }
+
+        _networkState = new NetworkProtectionState
+        {
+            Platform = "windows",
+            NetworkEnabled = NetworkProtectionToggle.IsOn,
+            AdBlockEnabled = AdBlockToggle.IsOn,
+            UnsafeSitesEnabled = UnsafeSitesToggle.IsOn,
+            BlockedAdsPlatform = _networkState.BlockedAdsPlatform,
+            BlockedThreatsPlatform = _networkState.BlockedThreatsPlatform,
+            BlockedAdsTotal = _networkState.BlockedAdsTotal,
+            BlockedThreatsTotal = _networkState.BlockedThreatsTotal,
+            DeveloperMode = _networkState.DeveloperMode
+        };
+        await PushNetworkStateAsync();
+    }
+
+    private async void OnSettingsNetworkToggled(object sender, RoutedEventArgs e)
+    {
+        if (_networkUiSync)
+        {
+            return;
+        }
+
+        _networkUiSync = true;
+        NetworkProtectionToggle.IsOn = SettingsNetworkToggle.IsOn;
+        _networkUiSync = false;
+        await PushNetworkStateAsync();
+    }
+
+    private async void OnSettingsAdToggled(object sender, RoutedEventArgs e)
+    {
+        if (_networkUiSync)
+        {
+            return;
+        }
+
+        _networkUiSync = true;
+        AdBlockToggle.IsOn = SettingsAdToggle.IsOn;
+        _networkUiSync = false;
+        await PushNetworkStateAsync();
+    }
+
+    private async void OnSettingsUnsafeToggled(object sender, RoutedEventArgs e)
+    {
+        if (_networkUiSync)
+        {
+            return;
+        }
+
+        _networkUiSync = true;
+        UnsafeSitesToggle.IsOn = SettingsUnsafeToggle.IsOn;
+        _networkUiSync = false;
+        await PushNetworkStateAsync();
+    }
+
+    private async Task PushNetworkStateAsync()
+    {
+        _preferences = await ClientPreferencesStateService.UpdateAsync(state =>
+        {
+            state.NetworkProtectionEnabled = NetworkProtectionToggle.IsOn;
+            state.AdBlockEnabled = AdBlockToggle.IsOn;
+            state.UnsafeSitesEnabled = UnsafeSitesToggle.IsOn;
+            return state;
+        });
+
+        if (_session is null)
+        {
+            _networkState = BuildLocalNetworkFallback();
+            UpdateNetworkUi();
+            return;
+        }
+
+        try
+        {
+            var result = await _apiClient.UpdateNetworkProtectionStateAsync(_session, NetworkProtectionToggle.IsOn, AdBlockToggle.IsOn, UnsafeSitesToggle.IsOn, "windows");
+            if (result.state is not null)
+            {
+                _networkState = result.state;
+                _preferences = await ClientPreferencesStateService.ApplyRemoteNetworkStateAsync(result.state);
+                SetStatus("Параметры сетевой защиты обновлены.");
+            }
+            else
+            {
+                SetStatus(result.error ?? "Не удалось обновить параметры сетевой защиты.");
+            }
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("PushNetworkStateAsync failed", ex);
+            SetStatus(ex.Message);
+        }
+
+        UpdateNetworkUi();
+    }
 
     private async void OnLogoutClick(object sender, RoutedEventArgs e)
     {
@@ -1833,47 +2141,278 @@ public sealed partial class MainWindow : Window
         WindowsLog.Info("Logout requested");
         _scanPollCts?.Cancel();
         _session = null;
+        _activeScan = null;
         SessionStore.ClearSession();
         ResetAuthInputs();
+        _networkState = BuildLocalNetworkFallback();
         ApplySessionState();
+        SetScanOverlayState(false);
         ShowScreen(AppScreen.Welcome);
+        SetStatus(null);
     }
 
-    private async void OnDownloadUpdateClick(object sender, RoutedEventArgs e)
+    private Button CreateDrawerButton(string text, RoutedEventHandler handler, bool filled = true)
     {
-        if (_updateInfo is null || string.IsNullOrWhiteSpace(_updateInfo.SetupUrl))
+        var button = filled ? CreateFilledButton(text, handler) : CreateTonalButton(text, handler);
+        button.HorizontalAlignment = HorizontalAlignment.Stretch;
+        return button;
+    }
+
+    private Grid CreateActionRow(Button left, Button right)
+    {
+        var row = new Grid { Margin = new Thickness(0, 8, 0, 0) };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        left.HorizontalAlignment = HorizontalAlignment.Stretch;
+        right.HorizontalAlignment = HorizontalAlignment.Stretch;
+        Grid.SetColumn(left, 0);
+        Grid.SetColumn(right, 2);
+        row.Children.Add(left);
+        row.Children.Add(right);
+        return row;
+    }
+
+    private Button CreateModeCard(string glyph, string title, string description, RoutedEventHandler handler, bool emphasized)
+    {
+        var button = emphasized ? CreateFilledButton(string.Empty, handler) : CreateTonalButton(string.Empty, handler);
+        button.HorizontalAlignment = HorizontalAlignment.Stretch;
+        button.VerticalAlignment = VerticalAlignment.Stretch;
+        button.MinHeight = 194;
+        button.Padding = new Thickness(22);
+        button.Background = emphasized ? ThemeBrush("AppAccentGradientBrush") : ThemeBrush("AppSurfaceGradientBrush");
+        button.BorderBrush = emphasized ? ThemeBrush("AppPrimaryContainerBrush") : ThemeBrush("AppOutlineBrush");
+
+        var stack = new StackPanel
         {
-            return;
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        stack.Children.Add(new TextBlock
+        {
+            Text = glyph,
+            FontSize = 34,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            TextAlignment = TextAlignment.Center,
+            Foreground = emphasized ? ThemeBrush("AppOnAccentBrush") : ThemeBrush("AppTextBrush")
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontSize = 22,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Center,
+            Foreground = emphasized ? ThemeBrush("AppOnAccentBrush") : ThemeBrush("AppTextBrush")
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = description,
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Center,
+            Foreground = emphasized
+                ? new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.OnAccent, 0.82))
+                : ThemeBrush("AppMutedTextBrush")
+        });
+        button.Content = stack;
+        return button;
+    }
+
+    private Button CreateFilledButton(string text, RoutedEventHandler handler)
+    {
+        var button = new Button
+        {
+            Content = text,
+            Background = ThemeBrush("AppPrimaryContainerBrush"),
+            Foreground = ThemeBrush("AppOnAccentBrush"),
+            BorderBrush = ThemeBrush("AppPrimaryContainerBrush"),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(18, 12, 18, 12),
+            MinHeight = 52,
+            MinWidth = 148,
+            CornerRadius = new CornerRadius(22),
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        button.Click += handler;
+        return button;
+    }
+
+    private Button CreateTonalButton(string text, RoutedEventHandler handler)
+    {
+        var button = new Button
+        {
+            Content = text,
+            Background = ThemeBrush("AppSurfaceBrush"),
+            Foreground = ThemeBrush("AppTextBrush"),
+            BorderBrush = ThemeBrush("AppOutlineBrush"),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(18, 12, 18, 12),
+            MinHeight = 52,
+            MinWidth = 148,
+            CornerRadius = new CornerRadius(22),
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        button.Click += handler;
+        return button;
+    }
+
+    private Button CreateIconButton(string glyph, RoutedEventHandler handler)
+    {
+        var button = new Button
+        {
+            Content = glyph,
+            Width = 52,
+            Height = 52,
+            Background = ThemeBrush("AppSurfaceBrush"),
+            Foreground = ThemeBrush("AppTextBrush"),
+            BorderBrush = ThemeBrush("AppOutlineBrush"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(18),
+            FontSize = 20,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        };
+        button.Click += handler;
+        return button;
+    }
+
+    private static Border CreateCardBorder(string backgroundKey, string borderKey, double radius, Thickness padding)
+    {
+        return new Border
+        {
+            Background = ThemeBrush(backgroundKey),
+            BorderBrush = ThemeBrush(borderKey),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(radius),
+            Padding = padding
+        };
+    }
+
+    private static TextBlock CreateTitleText(string text, double size, TextAlignment alignment = TextAlignment.Left)
+    {
+        return new TextBlock
+        {
+            Text = text,
+            Foreground = ThemeBrush("AppTextBrush"),
+            FontSize = size,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextAlignment = alignment,
+            TextWrapping = TextWrapping.Wrap
+        };
+    }
+
+    private static TextBlock CreateSubtitleText(string text, TextAlignment alignment = TextAlignment.Left)
+    {
+        return new TextBlock
+        {
+            Text = text,
+            Foreground = ThemeBrush("AppMutedTextBrush"),
+            TextAlignment = alignment,
+            TextWrapping = TextWrapping.Wrap
+        };
+    }
+
+    private static TextBlock CreateSectionTitle(string text, double size)
+    {
+        return new TextBlock
+        {
+            Text = text,
+            Foreground = ThemeBrush("AppTextBrush"),
+            FontSize = size,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap
+        };
+    }
+
+    private static TextBlock CreateBodyText(string brushKey)
+    {
+        return new TextBlock
+        {
+            Foreground = ThemeBrush(brushKey),
+            TextWrapping = TextWrapping.Wrap
+        };
+    }
+
+    private static TextBlock CreateFieldLabel(string text)
+    {
+        return new TextBlock
+        {
+            Text = text,
+            Foreground = ThemeBrush("AppMutedTextBrush")
+        };
+    }
+
+    private static TextBox CreateTextBox(string? placeholderText = null)
+    {
+        return new TextBox
+        {
+            PlaceholderText = placeholderText ?? string.Empty,
+            Background = ThemeBrush("AppFieldGradientBrush"),
+            Foreground = ThemeBrush("AppTextBrush"),
+            BorderBrush = ThemeBrush("AppOutlineBrush"),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(16, 14, 16, 14),
+            MinHeight = 56,
+            CornerRadius = new CornerRadius(18)
+        };
+    }
+
+    private static PasswordBox CreatePasswordBox()
+    {
+        return new PasswordBox
+        {
+            Background = ThemeBrush("AppFieldGradientBrush"),
+            Foreground = ThemeBrush("AppTextBrush"),
+            BorderBrush = ThemeBrush("AppOutlineBrush"),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(16, 14, 16, 14),
+            MinHeight = 56,
+            CornerRadius = new CornerRadius(18)
+        };
+    }
+
+    private static ListView CreateListView()
+    {
+        return new ListView
+        {
+            SelectionMode = ListViewSelectionMode.None,
+            BorderThickness = new Thickness(0),
+            Background = new SolidColorBrush(UiColor.FromArgb(0, 0, 0, 0)),
+            Foreground = ThemeBrush("AppTextBrush")
+        };
+    }
+
+    private static Brush ThemeBrush(string key)
+    {
+        if (App.Current.Resources.TryGetValue(key, out var value) && value is Brush brush)
+        {
+            return brush;
         }
 
-        await DownloadAndRunUpdateAsync(_updateInfo.SetupUrl, autoMode: false);
+        return new SolidColorBrush(UiColor.FromArgb(255, 255, 255, 255));
     }
 
-    private async Task DownloadAndRunUpdateAsync(string setupUrl, bool autoMode)
+    private static UIElement CreateLogoElement()
     {
         try
         {
-            WindowsLog.Info($"DownloadAndRunUpdateAsync started: auto={autoMode}");
-            SetBusy(true, autoMode ? "Ставим новую Windows-версию" : "Скачиваем обновление");
-            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-            var target = Path.Combine(Path.GetTempPath(), "NeuralVSetup-latest.exe");
-            await using var remote = await http.GetStreamAsync(setupUrl);
-            await using var file = File.Create(target);
-            await remote.CopyToAsync(file);
-            Process.Start(new ProcessStartInfo
+            return new Image
             {
-                FileName = target,
-                Arguments = "--self-update --no-launch",
-                UseShellExecute = true
-            });
-            WindowsLog.Info($"Update installer started: {target}");
-            App.Current.Exit();
+                Source = new BitmapImage(new Uri("ms-appx:///Assets/NeuralV.png")),
+                Stretch = Stretch.Uniform
+            };
         }
-        catch (Exception ex)
+        catch
         {
-            WindowsLog.Error("DownloadAndRunUpdateAsync failed", ex);
-            UpdateStatusText.Text = ex.Message;
-            SetBusy(false);
+            return new TextBlock
+            {
+                Text = "NV",
+                Foreground = ThemeBrush("AppTextBrush"),
+                FontSize = 24,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
         }
     }
 }

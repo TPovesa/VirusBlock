@@ -10,6 +10,7 @@ namespace NeuralV.Windows;
 public partial class App : Application
 {
     public static ThemePalette Palette { get; private set; } = ThemePalette.DefaultDark();
+    public static ClientPreferences Preferences { get; private set; } = new();
     public static bool IsSmokeTest { get; private set; }
     private Window? _window;
 
@@ -39,11 +40,13 @@ public partial class App : Application
         {
             WindowsLog.Info($"Launch arguments: {args.Arguments}");
             WindowsLog.Info($"Smoke test mode: {IsSmokeTest}");
-            Palette = WallpaperPaletteService.Load();
+            Preferences = ClientPreferencesStore.Load();
+            Palette = WallpaperPaletteService.Load(Preferences.ThemeMode, Preferences.DynamicColorsEnabled);
         }
         catch (Exception ex)
         {
             WindowsLog.Error("Wallpaper palette load failed, fallback to default", ex);
+            Preferences = ClientPreferencesStore.Load();
             Palette = ThemePalette.DefaultDark();
         }
 
@@ -168,6 +171,13 @@ public partial class App : Application
                 new GradientStop { Color = palette.SurfaceHigh, Offset = 1.0 }
             }
         };
+    }
+
+    public static void ApplyClientPreferences(ClientPreferences preferences)
+    {
+        Preferences = preferences ?? new ClientPreferences();
+        Palette = WallpaperPaletteService.Load(Preferences.ThemeMode, Preferences.DynamicColorsEnabled);
+        ApplyPalette(Current.Resources, Palette);
     }
 
     private static SolidColorBrush Brush(Color color) => new(color);

@@ -18,23 +18,23 @@ const fallbackRegistry = {
       title: 'NV',
       description: 'Пакетный менеджер для Windows и Linux.',
       homepage: '/nv/',
-      latest_version: '1.3.3',
+      latest_version: '1.3.4',
       variants: [
         {
           id: 'nv-linux',
           label: 'Linux',
           os: 'linux',
-          version: '1.3.3',
+          version: '1.3.4',
           install_command: 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh',
-          download_url: 'https://raw.githubusercontent.com/Perdonus/NV/linux-builds/linux/nv-linux-1.3.3.tar.gz'
+          download_url: 'https://raw.githubusercontent.com/Perdonus/NV/linux-builds/linux/nv-linux-1.3.4.tar.gz'
         },
         {
           id: 'nv-windows',
           label: 'Windows',
           os: 'windows',
-          version: '1.3.3',
+          version: '1.3.4',
           install_command: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1 | iex"',
-          download_url: 'https://raw.githubusercontent.com/Perdonus/NV/windows-builds/windows/nv-1.3.3.exe'
+          download_url: 'https://raw.githubusercontent.com/Perdonus/NV/windows-builds/windows/nv-1.3.4.exe'
         }
       ]
     },
@@ -43,9 +43,9 @@ const fallbackRegistry = {
       title: 'NeuralV',
       description: 'Клиент защиты для Windows и Linux.',
       homepage: '/neuralv/',
-      latest_version: '1.5.0',
+      latest_version: '1.5.6',
       variants: [
-        { id: 'windows', label: 'Windows', os: 'windows', version: '1.5.0' },
+        { id: 'windows', label: 'Windows', os: 'windows', version: '1.5.6' },
         { id: 'linux', label: 'Linux', os: 'linux', version: '1.4.0' }
       ]
     }
@@ -65,6 +65,7 @@ const state = {
     loading: true,
     enabled: false,
     botUsername: '',
+    issues: null,
     user: null,
     creator: null,
     error: null
@@ -104,6 +105,82 @@ function parsePackageName(rawName) {
 
 function normalizeCreatorSlug(value) {
   return String(value || '').trim().replace(/^@+/, '').toLowerCase();
+}
+
+function isTelegramDomainError(message) {
+  return /bot domain invalid|domain invalid|origin invalid/i.test(String(message || ''));
+}
+
+function authConfigStatus() {
+  const issues = state.auth.issues || {};
+  if (issues.missing_bot_username || issues.missing_bot_token) {
+    return {
+      title: 'Telegram login ещё не настроен',
+      body: 'Вход для авторов появится после привязки бота к сайту.',
+      hint: 'Для виджета должен быть разрешён домен sosiskibot.ru.'
+    };
+  }
+  if (issues.missing_session_secret) {
+    return {
+      title: 'Авторизация временно недоступна',
+      body: 'Сайт не может открыть сессию автора.',
+      hint: 'Проверь конфиг NV сайта и секрет сессии.'
+    };
+  }
+  return {
+    title: 'Вход временно недоступен',
+    body: 'Telegram login сейчас отключён.',
+    hint: 'Попробуй позже.'
+  };
+}
+
+function authErrorStatus(rawMessage) {
+  const message = String(rawMessage || '').trim();
+  if (!message) {
+    return {
+      title: 'Вход временно недоступен',
+      body: 'Telegram login сейчас не отвечает.',
+      hint: 'Попробуй позже.'
+    };
+  }
+  if (isTelegramDomainError(message)) {
+    return {
+      title: 'Telegram login настроен не до конца',
+      body: 'Виджет отклонил домен сайта.',
+      hint: 'Для бота должен быть разрешён домен sosiskibot.ru в BotFather.'
+    };
+  }
+  if (/not configured|не настро/i.test(message)) {
+    return {
+      title: 'Telegram login ещё не настроен',
+      body: 'Сайт пока не может открыть вход для авторов.',
+      hint: 'Проверь токен бота, username и домен сайта.'
+    };
+  }
+  if (/telegram/i.test(message)) {
+    return {
+      title: 'Не удалось завершить вход через Telegram',
+      body: 'Telegram не подтвердил логин для сайта.',
+      hint: 'Проверь домен бота и попробуй открыть вход снова.'
+    };
+  }
+  return {
+    title: 'Вход временно недоступен',
+    body: message,
+    hint: 'Попробуй ещё раз чуть позже.'
+  };
+}
+
+function renderTelegramLoginButton(slotId, label = 'Войти') {
+  return `
+    <div class="auth-widget-shell">
+      <div class="auth-widget-button" aria-hidden="true">
+        <span class="auth-widget-button-mark">TG</span>
+        <span class="auth-widget-button-copy">${escapeHtml(label)}</span>
+      </div>
+      <div class="auth-widget-overlay" id="${escapeHtml(slotId)}"></div>
+    </div>
+  `;
 }
 
 function ownerProfileLink() {
@@ -293,6 +370,7 @@ async function loadAuthState() {
 
     state.auth.enabled = Boolean(config.enabled);
     state.auth.botUsername = String(config.bot_username || '').trim();
+    state.auth.issues = config.issues || null;
     state.auth.user = session.authenticated ? session.user || null : null;
     state.auth.creator = session.authenticated ? session.creator || null : null;
     state.auth.error = null;
@@ -300,6 +378,7 @@ async function loadAuthState() {
     console.warn('NV auth bootstrap failed', error);
     state.auth.enabled = false;
     state.auth.botUsername = '';
+    state.auth.issues = null;
     state.auth.user = null;
     state.auth.creator = null;
     state.auth.error = error instanceof Error ? error.message : 'Не удалось загрузить вход';
@@ -342,6 +421,13 @@ function mountTelegramWidget(container) {
   script.setAttribute('data-radius', '999');
   script.setAttribute('data-request-access', 'write');
   script.setAttribute('data-onauth', 'window.NVTelegramAuth(user)');
+  script.addEventListener('error', () => {
+    state.auth.error = 'Telegram login сейчас не загружается';
+    renderAuthSlot();
+    if (state.page === 'profile') {
+      renderProfile();
+    }
+  });
   host.appendChild(script);
   container.appendChild(host);
 }
@@ -373,13 +459,15 @@ function renderAuthSlot() {
   }
 
   if (state.auth.error) {
+    const status = authErrorStatus(state.auth.error);
     slot.innerHTML = `
       <div class="auth-widget-card auth-widget-card-error">
         <div class="auth-widget-copy">
-          <strong>Вход сейчас недоступен</strong>
-          <span>${escapeHtml(state.auth.error)}</span>
+          <strong>${escapeHtml(status.title)}</strong>
+          <span>${escapeHtml(status.body)}</span>
+          <span class="auth-widget-hint">${escapeHtml(status.hint)}</span>
         </div>
-        ${state.auth.enabled ? '<div id="telegram-widget-slot"></div>' : ''}
+        ${state.auth.enabled ? renderTelegramLoginButton('telegram-widget-slot', 'Попробовать ещё раз') : ''}
       </div>
     `;
     if (state.auth.enabled) {
@@ -389,21 +477,18 @@ function renderAuthSlot() {
   }
 
   if (!state.auth.enabled) {
+    const status = authConfigStatus();
     slot.innerHTML = `
       <div class="auth-status-card compact-status">
-        <span>Telegram-вход появится после настройки бота</span>
+        <span>${escapeHtml(status.title)}</span>
       </div>
     `;
     return;
   }
 
   slot.innerHTML = `
-    <div class="auth-widget-card">
-      <div class="auth-widget-copy">
-        <strong>Войти через Telegram</strong>
-        <span>Чтобы открыть профиль и публиковать пакеты.</span>
-      </div>
-      <div id="telegram-widget-slot"></div>
+    <div class="auth-widget-card auth-widget-card-login">
+      ${renderTelegramLoginButton('telegram-widget-slot', 'Войти через Telegram')}
     </div>
   `;
   mountTelegramWidget(document.getElementById('telegram-widget-slot'));
@@ -503,17 +588,12 @@ function renderCreatorCard(creator) {
 
 function renderHome() {
   const packagesEl = document.getElementById('featured-packages');
-  const creatorsEl = document.getElementById('featured-creators');
-  if (!packagesEl || !creatorsEl) return;
+  if (!packagesEl) return;
 
-  const featuredPackages = state.catalogPackages.slice(0, 6);
-  const featuredCreators = state.creators.slice(0, 4);
+  const featuredPackages = state.catalogPackages.slice(0, 4);
   packagesEl.innerHTML = featuredPackages.length
     ? featuredPackages.map(renderPackageCard).join('')
     : '<p class="empty-state">Пакеты появятся здесь сразу после первой публикации.</p>';
-  creatorsEl.innerHTML = featuredCreators.length
-    ? featuredCreators.map(renderCreatorCard).join('')
-    : '<p class="empty-state">Авторы появятся здесь после первой публикации.</p>';
 }
 
 function resolveNvVariant(platform) {
@@ -835,7 +915,7 @@ function profileAvatarMarkup(creator, { preferAuthAvatar = false } = {}) {
     return authAvatarMarkup('profile-avatar');
   }
   if (creator?.avatar_url) {
-    return `<span class="profile-avatar"><img class="auth-avatar-image" src="${escapeHtml(creator.avatar_url)}" alt="${escapeHtml(creator.display_name || creator.slug || 'Creator')}" /></span>`;
+    return `<span class="profile-avatar"><img class="auth-avatar-image" src="${escapeHtml(creator.avatar_url)}" alt="${escapeHtml(creator.display_name || creator.slug || 'Автор')}" /></span>`;
   }
   const letter = String(creator?.display_name || creator?.slug || '@').trim().charAt(0).toUpperCase() || '@';
   return `<span class="profile-avatar"><span class="auth-avatar-fallback">${escapeHtml(letter)}</span></span>`;
@@ -852,7 +932,7 @@ function renderProfileHeader({ creator, packages, statusLabel, statusNote = '', 
         <div class="profile-head-main">
           ${profileAvatarMarkup(creator, { preferAuthAvatar })}
           <div class="profile-head-copy">
-            <p class="eyebrow">Creator</p>
+            <p class="eyebrow">Профиль автора</p>
             <h1 class="section-title">@${escapeHtml(creator.slug)}</h1>
             ${subtitle}
             <p class="section-copy">${escapeHtml(creator.bio || 'Публичный профиль автора пакетов NV.')}</p>
@@ -897,6 +977,8 @@ function renderProfilePackagesSection(packages, { eyebrow = 'Пакеты', titl
 
 function renderLandingProfile(root) {
   const authenticated = Boolean(state.auth.user && state.auth.creator);
+  const canLogin = !authenticated && state.auth.enabled && !state.auth.error;
+  const authStatus = state.auth.error ? authErrorStatus(state.auth.error) : null;
   const actions = authenticated
     ? `
       <a class="primary-button" href="${ownerProfileLink()}">Открыть owner-зону</a>
@@ -908,20 +990,23 @@ function renderLandingProfile(root) {
       <a class="ghost-button" href="/nv/downloads/">Установить NV</a>
     `;
   const note = authenticated
-    ? `<p class="state-note">Ты уже вошёл как ${escapeHtml(authHandle())}. Управление пакетами и релизами теперь живёт в отдельной owner-зоне.</p>`
-    : `<p class="state-note">Публичные creator-профили и owner-зона теперь разделены. Вход через Telegram нужен только для публикации и редактирования.</p>`;
-  const widgetHost = !authenticated && state.auth.enabled && !state.auth.error
-    ? '<div id="profile-telegram-widget-slot"></div>'
+    ? `<p class="state-note">Ты уже вошёл как ${escapeHtml(authHandle())}. Дальше можно открыть owner-зону или публичный профиль.</p>`
+    : `<p class="state-note">Публичные страницы доступны всем. Вход нужен только для публикации пакетов и релизов.</p>`;
+  const widgetHost = canLogin
+    ? `<div class="state-login-shell">${renderTelegramLoginButton('profile-telegram-widget-slot', 'Войти через Telegram')}</div>`
+    : '';
+  const authNote = authStatus && !authenticated
+    ? `<p class="state-note">${escapeHtml(authStatus.title)}. ${escapeHtml(authStatus.hint)}</p>`
     : '';
 
   root.innerHTML = profileStateMarkup({
     eyebrow: 'Профиль',
-    title: authenticated ? 'Creator-зона готова' : 'Профили NV',
+    title: authenticated ? 'Профиль автора готов' : 'Профили NV',
     copy: authenticated
-      ? 'Используй landing как точку входа, owner-зону для публикации и отдельные public creator pages для внешних ссылок.'
-      : 'Открывай публичные профили авторов отдельно, а свою creator-зону держи в owner-route без смешивания состояний.',
+      ? 'Стартовая страница остаётся точкой входа, а публикация живёт в owner-зоне.'
+      : 'Открывай публичные профили авторов или входи, чтобы публиковать свои пакеты.',
     actions,
-    extra: `${note}${widgetHost}`
+    extra: `${note}${authNote}${widgetHost}`
   });
 
   if (widgetHost) {
@@ -930,20 +1015,23 @@ function renderLandingProfile(root) {
 }
 
 function renderOwnerAccessState(root) {
-  const hasWidget = state.auth.enabled;
+  const hasWidget = state.auth.enabled && !state.auth.error;
+  const authStatus = state.auth.error ? authErrorStatus(state.auth.error) : null;
   root.innerHTML = profileStateMarkup({
     eyebrow: 'Owner',
     title: 'Owner-зона требует вход',
     copy: hasWidget
-      ? (state.auth.error
-          ? `${state.auth.error}. Повтори вход через Telegram, чтобы открыть публикацию пакетов и релизов.`
-          : 'Войди через Telegram, чтобы получить свой creator slug и открыть публикацию пакетов и релизов.')
-      : state.auth.error || 'Telegram-вход сейчас недоступен, поэтому owner-зона временно закрыта.',
+      ? (authStatus
+          ? `${authStatus.title}. ${authStatus.hint}`
+          : 'Войди через Telegram, чтобы открыть публикацию пакетов и релизов.')
+      : authConfigStatus().body,
     actions: `
-      <a class="ghost-button" href="/nv/profile/">Вернуться на landing</a>
+      <a class="ghost-button" href="/nv/profile/">Вернуться к профилям</a>
       <a class="ghost-button" href="/nv/packages/">Открыть каталог</a>
     `,
-    extra: hasWidget ? '<div id="profile-telegram-widget-slot"></div>' : ''
+    extra: hasWidget
+      ? `<div class="state-login-shell">${renderTelegramLoginButton('profile-telegram-widget-slot', 'Войти через Telegram')}</div>`
+      : ''
   });
 
   if (hasWidget) {
@@ -972,7 +1060,7 @@ function renderOwnerProfile(root, profile) {
       packages,
       statusLabel: 'owner',
       statusNote: 'Публикация пакетов и релизов доступна только здесь.',
-      actions: `<a class="ghost-button" href="${creatorLink(creator.slug)}">Открыть public page</a>`,
+      actions: `<a class="ghost-button" href="${creatorLink(creator.slug)}">Открыть публичную страницу</a>`,
       preferAuthAvatar: true
     })}
     ${publishFormMarkup(creator.slug, packages)}
@@ -1009,7 +1097,7 @@ function renderPublicCreatorProfile(root, profile) {
     ${viewerCanEdit
       ? `
         <section class="section-shell section-shell-tight">
-          <p class="state-note">Для редактирования карточки пакетов и публикации релизов используй owner-route, а не публичную страницу.</p>
+          <p class="state-note">Для редактирования карточек пакетов и публикации релизов используй owner-зону, а не публичную страницу.</p>
         </section>
       `
       : ''}
@@ -1059,9 +1147,9 @@ async function renderProfile() {
     if (profile.status === 'not-found') {
       renderProfileErrorState(root, {
         eyebrow: 'Owner',
-        title: 'Creator не найден',
+        title: 'Профиль автора не найден',
         copy: `Профиль @${state.auth.creator.slug} не найден в каталоге. Попробуй выйти и войти снова через Telegram.`,
-        actions: `<a class="ghost-button" href="/nv/profile/">Вернуться на landing</a>`
+        actions: `<a class="ghost-button" href="/nv/profile/">Вернуться к профилям</a>`
       });
       return;
     }
@@ -1070,7 +1158,7 @@ async function renderProfile() {
       eyebrow: 'Owner',
       title: 'Не удалось открыть owner-зону',
       copy: profile.error?.message || 'Профиль временно недоступен. Попробуй обновить страницу позже.',
-      actions: `<a class="ghost-button" href="/nv/profile/">Вернуться на landing</a>`
+      actions: `<a class="ghost-button" href="/nv/profile/">Вернуться к профилям</a>`
     });
     return;
   }
@@ -1078,19 +1166,19 @@ async function renderProfile() {
   if (!route.creatorSlug) {
     if (requestId !== state.profileRequestId) return;
     renderProfileErrorState(root, {
-      eyebrow: 'Creator',
-      title: 'Creator slug не указан',
-      copy: 'Открой public creator page через каталог пакетов или передай slug в URL.',
+      eyebrow: 'Публичный профиль',
+      title: 'Не указан slug автора',
+      copy: 'Открой публичный профиль автора через каталог пакетов или передай slug в URL.',
       actions: `
         <a class="primary-button" href="/nv/packages/">Открыть каталог</a>
-        <a class="ghost-button" href="/nv/profile/">Вернуться на landing</a>
+        <a class="ghost-button" href="/nv/profile/">Вернуться к профилям</a>
       `
     });
     return;
   }
 
   root.innerHTML = profileStateMarkup({
-    eyebrow: 'Creator',
+    eyebrow: 'Публичный профиль',
     title: `Загружаем @${route.creatorSlug}`,
     copy: 'Читаем публичный профиль автора и опубликованные пакеты.'
   });
@@ -1105,24 +1193,24 @@ async function renderProfile() {
 
   if (profile.status === 'not-found') {
     renderProfileErrorState(root, {
-      eyebrow: 'Creator',
+      eyebrow: 'Публичный профиль',
       title: 'Профиль не найден',
       copy: `У creator @${route.creatorSlug} пока нет публичной страницы или такой slug не существует.`,
       actions: `
         <a class="primary-button" href="/nv/packages/">Открыть каталог</a>
-        <a class="ghost-button" href="/nv/profile/">Вернуться на landing</a>
+        <a class="ghost-button" href="/nv/profile/">Вернуться к профилям</a>
       `
     });
     return;
   }
 
   renderProfileErrorState(root, {
-    eyebrow: 'Creator',
+    eyebrow: 'Публичный профиль',
     title: 'Не удалось загрузить профиль',
     copy: profile.error?.message || 'Публичный профиль временно недоступен. Попробуй позже.',
     actions: `
       <a class="ghost-button" href="/nv/packages/">Открыть каталог</a>
-      <a class="ghost-button" href="/nv/profile/">Вернуться на landing</a>
+      <a class="ghost-button" href="/nv/profile/">Вернуться к профилям</a>
     `
   });
 }

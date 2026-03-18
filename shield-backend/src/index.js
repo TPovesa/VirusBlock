@@ -12,6 +12,7 @@ const desktopScansRoutes = require('./routes/desktopScans');
 const packagesRoutes = require('./routes/packages');
 const nvSiteRoutes = require('./routes/nvSite');
 const releasesRoutes = require('./routes/releases');
+const networkProtectionRoutes = require('./routes/networkProtection');
 const scansRoutes = require('./routes/scans');
 const purchasesRoutes = require('./routes/purchases');
 const logsRoutes = require('./routes/logs');
@@ -88,6 +89,7 @@ app.use('/api/nv', nvSiteRoutes);
 app.use('/api/scans', scansRoutes);
 app.use('/api/purchases', purchasesRoutes);
 app.use('/api/logs', logsRoutes);
+app.use('/api/network-protection', networkProtectionRoutes);
 app.use('/api/releases', releasesRoutes);
 
 function buildHealthPayload() {

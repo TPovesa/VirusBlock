@@ -259,9 +259,20 @@ public static class WallpaperPaletteService
 {
     private const uint SpiGetDeskWallpaper = 0x0073;
 
-    public static ThemePalette Load()
+    public static ThemePalette Load(ThemeModePreference mode = ThemeModePreference.System, bool dynamicColorsEnabled = true)
     {
-        var isDark = DetectDarkMode();
+        var isDark = mode switch
+        {
+            ThemeModePreference.Dark => true,
+            ThemeModePreference.Light => false,
+            _ => DetectDarkMode()
+        };
+
+        if (!dynamicColorsEnabled)
+        {
+            return ThemePalette.FromAccent(UiColor.FromArgb(255, 100, 127, 255), isDark, PaletteSource.Default);
+        }
+
         var wallpaperAccent = TryReadWallpaperAccent();
         if (wallpaperAccent.HasValue)
         {

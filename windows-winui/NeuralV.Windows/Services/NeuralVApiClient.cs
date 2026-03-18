@@ -44,8 +44,8 @@ public sealed class NeuralVApiClient : IDisposable
         {
             Mode = AuthMode.Login,
             Email = email,
-            ChallengeId = document.root?.GetPropertyOrDefault("challenge_id")?.GetString() ?? string.Empty,
-            ExpiresAt = document.root?.GetPropertyOrDefault("expires_at")?.GetInt64() ?? 0
+            ChallengeId = document.root.ReadString("challenge_id"),
+            ExpiresAt = document.root.ReadInt64("expires_at")
         };
     }
 
@@ -68,12 +68,18 @@ public sealed class NeuralVApiClient : IDisposable
         {
             Mode = AuthMode.Register,
             Email = email,
-            ChallengeId = document.root?.GetPropertyOrDefault("challenge_id")?.GetString() ?? string.Empty,
-            ExpiresAt = document.root?.GetPropertyOrDefault("expires_at")?.GetInt64() ?? 0
+            ChallengeId = document.root.ReadString("challenge_id"),
+            ExpiresAt = document.root.ReadInt64("expires_at")
         };
     }
 
-    public async Task<(SessionData? session, string? error)> VerifyChallengeAsync(AuthMode mode, string challengeId, string email, string code, string deviceId, CancellationToken cancellationToken = default)
+    public async Task<(SessionData? session, string? error)> VerifyChallengeAsync(
+        AuthMode mode,
+        string challengeId,
+        string email,
+        string code,
+        string deviceId,
+        CancellationToken cancellationToken = default)
     {
         var path = mode == AuthMode.Register ? "api/auth/register/verify" : "api/auth/login/verify";
         var response = await PostJsonAsync(path, new
@@ -83,6 +89,7 @@ public sealed class NeuralVApiClient : IDisposable
             code,
             device_id = deviceId
         }, cancellationToken);
+
         return response.error is not null
             ? (null, response.error)
             : (ParseSession(response.root, deviceId), null);
@@ -96,6 +103,7 @@ public sealed class NeuralVApiClient : IDisposable
             session_id = current.SessionId,
             device_id = current.DeviceId
         }, cancellationToken);
+
         return response.error is not null
             ? (null, response.error)
             : (ParseSession(response.root, current.DeviceId), null);
@@ -103,7 +111,7 @@ public sealed class NeuralVApiClient : IDisposable
 
     public async Task<bool> LogoutAsync(SessionData current, CancellationToken cancellationToken = default)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, "api/auth/logout")
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/auth/logout")
         {
             Content = new StringContent("{}", Encoding.UTF8, "application/json")
         };
@@ -112,26 +120,77 @@ public sealed class NeuralVApiClient : IDisposable
         return response.IsSuccessStatusCode;
     }
 
-    public async Task<(DesktopScanState? scan, string? error)> StartDesktopScanAsync(SessionData current, string mode, string artifactKind, string targetName, string targetPath, IReadOnlyList<string> scanRoots, IReadOnlyList<string> installRoots, CancellationToken cancellationToken = default)
+    public async Task<(DesktopScanState? scan, string? error)> StartDesktopScanAsync(
+        SessionData current,
+        string mode,
+        string artifactKind,
+        string targetName,
+        string targetPath,
+        IReadOnlyList<string> scanRoots,
+        IReadOnlyList<string> installRoots,
+        CancellationToken cancellationToken = default)
+    {
+        var plan = new WindowsScanPlan
+        {
+            Mode = mode,
+            ArtifactKind = artifactKind,
+            TargetName = targetName,
+            TargetPath = targetPath,
+            CoverageMode = DesktopCoverageMode.SmartCoverage,
+            CoverageRoots = scanRoots
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => new WindowsScanRoot
+                {
+                    Kind = WindowsScanRootKind.Custom,
+                    Path = path,
+                    Label = path,
+                    Exists = true
+                })
+                .ToArray(),
+            InstallRoots = installRoots
+        };
+
+        return await StartDesktopScanAsync(current, plan, cancellationToken);
+    }
+
+    public async Task<(DesktopScanState? scan, string? error)> StartDesktopScanAsync(
+        SessionData current,
+        WindowsScanPlan plan,
+        CancellationToken cancellationToken = default)
     {
         var response = await PostJsonAsync("api/scans/desktop/start", new
         {
             platform = "windows",
-            mode,
-            artifact_kind = artifactKind,
+            mode = plan.Mode,
+            artifact_kind = plan.ArtifactKind,
             artifact_metadata = new
             {
-                target_name = targetName,
-                target_path = targetPath,
-                scan_roots = scanRoots,
-                install_roots = installRoots,
-                package_count = 0,
-                candidate_count = 0
+                target_name = plan.TargetName,
+                target_path = plan.TargetPath,
+                coverage_mode = plan.CoverageModeValue,
+                scan_roots = plan.ScanRoots,
+                install_roots = plan.InstallRoots,
+                related_binary_roots = plan.RelatedBinaryRoots,
+                metadata_roots = plan.MetadataRoots.Select(item => new
+                {
+                    kind = item.Kind.ToString(),
+                    path = item.Path,
+                    label = item.Label
+                }).ToArray(),
+                coverage_roots = plan.CoverageRoots.Select(item => new
+                {
+                    kind = item.Kind.ToString(),
+                    path = item.Path,
+                    label = item.Label,
+                    exists = item.Exists,
+                    is_metadata_only = item.IsMetadataOnly
+                }).ToArray()
             }
         }, cancellationToken, current.AccessToken);
+
         return response.error is not null
             ? (null, response.error)
-            : (ParseScan(response.root?.GetPropertyOrDefault("scan")), null);
+            : (ParseScan(response.root.GetPropertyOrDefault("scan")), null);
     }
 
     public async Task<(DesktopScanState? scan, string? error)> GetDesktopScanAsync(SessionData current, string scanId, CancellationToken cancellationToken = default)
@@ -139,7 +198,7 @@ public sealed class NeuralVApiClient : IDisposable
         var response = await GetJsonAsync($"api/scans/desktop/{scanId}", cancellationToken, current.AccessToken);
         return response.error is not null
             ? (null, response.error)
-            : (ParseScan(response.root?.GetPropertyOrDefault("scan")), null);
+            : (ParseScan(response.root.GetPropertyOrDefault("scan")), null);
     }
 
     public async Task<(bool success, string? error)> CancelDesktopScanAsync(SessionData current, CancellationToken cancellationToken = default)
@@ -149,7 +208,40 @@ public sealed class NeuralVApiClient : IDisposable
         {
             return (false, response.error);
         }
-        return (response.root?.GetPropertyOrDefault("success")?.GetBoolean() ?? false, null);
+
+        return (response.root.ReadBoolean("success"), null);
+    }
+
+    public async Task<(NetworkProtectionState? state, string? error)> GetNetworkProtectionStateAsync(SessionData current, string platform = "windows", CancellationToken cancellationToken = default)
+    {
+        var response = await GetJsonAsync($"api/network-protection/state?platform={Uri.EscapeDataString(platform)}", cancellationToken, current.AccessToken);
+        return response.error is not null
+            ? (null, response.error)
+            : (ParseNetworkProtectionState(response.root.GetPropertyOrDefault("state")), null);
+    }
+
+    public async Task<(NetworkProtectionState? state, string? error)> UpdateNetworkProtectionStateAsync(
+        SessionData current,
+        bool networkEnabled,
+        bool adBlockEnabled,
+        bool unsafeSitesEnabled,
+        string platform = "windows",
+        CancellationToken cancellationToken = default)
+    {
+        var response = await SendJsonAsync(HttpMethod.Put, "api/network-protection/state", new
+        {
+            platform,
+            toggles = new
+            {
+                protection_enabled = networkEnabled,
+                ad_block_enabled = adBlockEnabled,
+                unsafe_sites_enabled = unsafeSitesEnabled
+            }
+        }, cancellationToken, current.AccessToken);
+
+        return response.error is not null
+            ? (null, response.error)
+            : (ParseNetworkProtectionState(response.root.GetPropertyOrDefault("state")), null);
     }
 
     public async Task<UpdateInfo> CheckForUpdateAsync(string currentVersion, CancellationToken cancellationToken = default)
@@ -160,36 +252,44 @@ public sealed class NeuralVApiClient : IDisposable
             return new UpdateInfo { Error = response.error };
         }
 
-        var root = response.root;
-        var latest = root?.GetPropertyOrDefault("version")?.GetString() ?? string.Empty;
-        var setupUrl = root?.GetPropertyOrDefault("setupUrl")?.GetString()
-            ?? root?.GetPropertyOrDefault("metadata")?.GetPropertyOrDefault("setupUrl")?.GetString()
-            ?? string.Empty;
-        var portableUrl = root?.GetPropertyOrDefault("download_url")?.GetString() ?? string.Empty;
+        var latest = response.root.ReadString("version");
+        var metadata = response.root.GetPropertyOrDefault("metadata");
+        var setupUrl = response.root.ReadString("setupUrl");
+        if (string.IsNullOrWhiteSpace(setupUrl))
+        {
+            setupUrl = metadata.ReadString("setupUrl");
+        }
+
         return new UpdateInfo
         {
             Available = !string.IsNullOrWhiteSpace(latest) && !string.Equals(latest, currentVersion, StringComparison.OrdinalIgnoreCase),
             LatestVersion = latest,
             SetupUrl = setupUrl,
-            PortableUrl = portableUrl
+            PortableUrl = response.root.ReadString("download_url")
         };
     }
 
     private static SessionData ParseSession(JsonElement? root, string deviceId)
     {
-        var element = root ?? throw new InvalidOperationException("Session payload is missing");
-        var session = JsonSerializer.Deserialize<SessionData>(element.GetRawText(), JsonOptions) ?? new SessionData();
+        if (root is null)
+        {
+            throw new InvalidOperationException("Сервер не вернул сессию");
+        }
+
+        var session = JsonSerializer.Deserialize<SessionData>(root.Value.GetRawText(), JsonOptions) ?? new SessionData();
         session.DeviceId = deviceId;
         session.User ??= new SessionUser();
-        session.User.Id = element.GetPropertyOrDefault("id")?.GetString() ?? session.User.Id;
-        session.User.Name = element.GetPropertyOrDefault("name")?.GetString() ?? session.User.Name;
-        session.User.Email = element.GetPropertyOrDefault("email")?.GetString() ?? session.User.Email;
-        session.User.IsPremium = element.GetPropertyOrDefault("is_premium")?.GetBoolean() ?? session.User.IsPremium;
-        session.User.IsDeveloperMode = element.GetPropertyOrDefault("is_developer_mode")?.GetBoolean() ?? session.User.IsDeveloperMode;
+        session.User.Id = root.ReadString("id", session.User.Id);
+        session.User.Name = root.ReadString("name", session.User.Name);
+        session.User.Email = root.ReadString("email", session.User.Email);
+        session.User.IsPremium = root.ReadBoolean("is_premium", session.User.IsPremium);
+        session.User.IsDeveloperMode = root.ReadBoolean("is_developer_mode", session.User.IsDeveloperMode);
+
         if (!session.IsValid)
         {
             throw new InvalidOperationException("Сервер вернул неполную сессию");
         }
+
         return session;
     }
 
@@ -200,22 +300,52 @@ public sealed class NeuralVApiClient : IDisposable
             throw new InvalidOperationException("Сервер не вернул desktop-задачу");
         }
 
-        var item = root.Value;
         return new DesktopScanState
         {
-            Id = item.GetPropertyOrDefault("id")?.GetString() ?? string.Empty,
-            Platform = item.GetPropertyOrDefault("platform")?.GetString() ?? string.Empty,
-            Mode = item.GetPropertyOrDefault("mode")?.GetString() ?? string.Empty,
-            Status = item.GetPropertyOrDefault("status")?.GetString() ?? string.Empty,
-            Verdict = item.GetPropertyOrDefault("verdict")?.GetString() ?? string.Empty,
-            Message = item.GetPropertyOrDefault("message")?.GetString() ?? string.Empty,
-            RiskScore = item.GetPropertyOrDefault("risk_score")?.GetInt32() ?? 0,
-            SurfacedFindings = item.GetPropertyOrDefault("surfaced_findings")?.GetInt32() ?? 0,
-            HiddenFindings = item.GetPropertyOrDefault("hidden_findings")?.GetInt32() ?? 0,
-            StartedAt = item.GetPropertyOrDefault("started_at")?.GetInt64() ?? 0,
-            CompletedAt = item.GetPropertyOrDefault("completed_at")?.GetInt64() ?? 0,
-            Timeline = item.GetPropertyOrDefault("timeline")?.ToStringList() ?? Array.Empty<string>(),
-            Findings = item.GetPropertyOrDefault("findings")?.ToFindingList() ?? Array.Empty<DesktopScanFinding>()
+            Id = root.ReadString("id"),
+            Platform = root.ReadString("platform"),
+            Mode = root.ReadString("mode"),
+            Status = root.ReadString("status"),
+            Verdict = root.ReadString("verdict"),
+            Message = root.ReadString("message"),
+            RiskScore = root.ReadInt32("risk_score"),
+            SurfacedFindings = root.ReadInt32("surfaced_findings"),
+            HiddenFindings = root.ReadInt32("hidden_findings"),
+            StartedAt = root.ReadInt64("started_at"),
+            CompletedAt = root.ReadInt64("completed_at"),
+            Timeline = root.GetPropertyOrDefault("timeline").ToStringList(),
+            Findings = root.GetPropertyOrDefault("findings").ToFindingList()
+        };
+    }
+
+    private static NetworkProtectionState ParseNetworkProtectionState(JsonElement? root)
+    {
+        if (root is null)
+        {
+            throw new InvalidOperationException("Сервер не вернул состояние сетевой защиты");
+        }
+
+        var toggles = root.GetPropertyOrDefault("toggles");
+        var totalCounters = root.GetPropertyOrDefault("counters").GetPropertyOrDefault("total");
+        var platformCounters = root.GetPropertyOrDefault("counters").GetPropertyOrDefault("platform");
+        var limits = root.GetPropertyOrDefault("limits");
+        return new NetworkProtectionState
+        {
+            Platform = root.ReadString("platform", "windows"),
+            NetworkEnabled = toggles is not null
+                ? toggles.ReadBoolean("protection_enabled")
+                : (root.ReadBoolean("protection_enabled") || root.ReadBoolean("network_enabled")),
+            AdBlockEnabled = toggles is not null
+                ? toggles.ReadBoolean("ad_block_enabled")
+                : root.ReadBoolean("ad_block_enabled"),
+            UnsafeSitesEnabled = toggles is not null
+                ? toggles.ReadBoolean("unsafe_sites_enabled")
+                : root.ReadBoolean("unsafe_sites_enabled"),
+            BlockedAdsTotal = totalCounters.ReadInt32("blocked_ads", root.ReadInt32("blocked_ads_total")),
+            BlockedThreatsTotal = totalCounters.ReadInt32("blocked_threats", root.ReadInt32("blocked_threats_total")),
+            BlockedAdsPlatform = platformCounters.ReadInt32("blocked_ads", root.ReadInt32("blocked_ads_platform")),
+            BlockedThreatsPlatform = platformCounters.ReadInt32("blocked_threats", root.ReadInt32("blocked_threats_platform")),
+            DeveloperMode = root.ReadBoolean("developer_mode") || limits.ReadBoolean("developer_mode")
         };
     }
 
@@ -226,13 +356,28 @@ public sealed class NeuralVApiClient : IDisposable
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
         }
+
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         return await ParseResponseAsync(response, cancellationToken);
     }
 
-    private async Task<(JsonElement? root, string? error)> PostJsonAsync(string relativePath, object payload, CancellationToken cancellationToken, string? bearerToken = null)
+    private async Task<(JsonElement? root, string? error)> PostJsonAsync(
+        string relativePath,
+        object payload,
+        CancellationToken cancellationToken,
+        string? bearerToken = null)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, relativePath)
+        return await SendJsonAsync(HttpMethod.Post, relativePath, payload, cancellationToken, bearerToken);
+    }
+
+    private async Task<(JsonElement? root, string? error)> SendJsonAsync(
+        HttpMethod method,
+        string relativePath,
+        object payload,
+        CancellationToken cancellationToken,
+        string? bearerToken = null)
+    {
+        using var request = new HttpRequestMessage(method, relativePath)
         {
             Content = new StringContent(JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json")
         };
@@ -240,6 +385,7 @@ public sealed class NeuralVApiClient : IDisposable
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
         }
+
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         return await ParseResponseAsync(response, cancellationToken);
     }
@@ -261,7 +407,7 @@ public sealed class NeuralVApiClient : IDisposable
 
         if (!response.IsSuccessStatusCode)
         {
-            var errorText = document?.RootElement.GetPropertyOrDefault("error")?.GetString();
+            var errorText = document?.RootElement.GetPropertyOrDefault("error").ReadString();
             return (null, string.IsNullOrWhiteSpace(errorText) ? $"HTTP {(int)response.StatusCode}" : errorText);
         }
 
@@ -271,43 +417,120 @@ public sealed class NeuralVApiClient : IDisposable
 
 internal static class JsonElementExtensions
 {
-    public static JsonElement? GetPropertyOrDefault(this JsonElement element, string propertyName)
+    public static JsonElement? GetPropertyOrDefault(this JsonElement? element, string propertyName)
     {
-        return element.TryGetProperty(propertyName, out var value) ? value : null;
+        if (element is null)
+        {
+            return null;
+        }
+
+        return element.Value.TryGetProperty(propertyName, out var value) ? value : null;
     }
 
-    public static IReadOnlyList<string> ToStringList(this JsonElement element)
+    public static string ReadString(this JsonElement? element, string propertyName = "", string fallback = "")
     {
-        if (element.ValueKind != JsonValueKind.Array)
+        var target = string.IsNullOrEmpty(propertyName) ? element : element.GetPropertyOrDefault(propertyName);
+        if (target is null)
+        {
+            return fallback;
+        }
+
+        return target.Value.ValueKind switch
+        {
+            JsonValueKind.String => target.Value.GetString() ?? fallback,
+            JsonValueKind.Number => target.Value.ToString(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => fallback
+        };
+    }
+
+    public static bool ReadBoolean(this JsonElement? element, string propertyName = "", bool fallback = false)
+    {
+        var target = string.IsNullOrEmpty(propertyName) ? element : element.GetPropertyOrDefault(propertyName);
+        if (target is null)
+        {
+            return fallback;
+        }
+
+        return target.Value.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String when bool.TryParse(target.Value.GetString(), out var parsed) => parsed,
+            JsonValueKind.Number => target.Value.TryGetInt32(out var numeric) && numeric != 0,
+            _ => fallback
+        };
+    }
+
+    public static int ReadInt32(this JsonElement? element, string propertyName = "", int fallback = 0)
+    {
+        var target = string.IsNullOrEmpty(propertyName) ? element : element.GetPropertyOrDefault(propertyName);
+        if (target is null)
+        {
+            return fallback;
+        }
+
+        return target.Value.ValueKind switch
+        {
+            JsonValueKind.Number when target.Value.TryGetInt32(out var parsed) => parsed,
+            JsonValueKind.String when int.TryParse(target.Value.GetString(), out var parsed) => parsed,
+            JsonValueKind.Null => fallback,
+            _ => fallback
+        };
+    }
+
+    public static long ReadInt64(this JsonElement? element, string propertyName = "", long fallback = 0)
+    {
+        var target = string.IsNullOrEmpty(propertyName) ? element : element.GetPropertyOrDefault(propertyName);
+        if (target is null)
+        {
+            return fallback;
+        }
+
+        return target.Value.ValueKind switch
+        {
+            JsonValueKind.Number when target.Value.TryGetInt64(out var parsed) => parsed,
+            JsonValueKind.String when long.TryParse(target.Value.GetString(), out var parsed) => parsed,
+            JsonValueKind.Null => fallback,
+            _ => fallback
+        };
+    }
+
+    public static IReadOnlyList<string> ToStringList(this JsonElement? element)
+    {
+        if (element is null || element.Value.ValueKind != JsonValueKind.Array)
         {
             return Array.Empty<string>();
         }
-        return element.EnumerateArray()
-            .Where(item => item.ValueKind == JsonValueKind.String)
-            .Select(item => item.GetString() ?? string.Empty)
+
+        return element.Value.EnumerateArray()
+            .Select(item => item.ValueKind == JsonValueKind.String ? item.GetString() : item.ToString())
             .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Cast<string>()
             .ToArray();
     }
 
-    public static IReadOnlyList<DesktopScanFinding> ToFindingList(this JsonElement element)
+    public static IReadOnlyList<DesktopScanFinding> ToFindingList(this JsonElement? element)
     {
-        if (element.ValueKind != JsonValueKind.Array)
+        if (element is null || element.Value.ValueKind != JsonValueKind.Array)
         {
             return Array.Empty<DesktopScanFinding>();
         }
 
         var items = new List<DesktopScanFinding>();
-        foreach (var item in element.EnumerateArray())
+        foreach (var item in element.Value.EnumerateArray())
         {
             items.Add(new DesktopScanFinding
             {
-                Id = item.GetPropertyOrDefault("id")?.GetString() ?? string.Empty,
-                Title = item.GetPropertyOrDefault("title")?.GetString() ?? string.Empty,
-                Verdict = item.GetPropertyOrDefault("verdict")?.GetString() ?? string.Empty,
-                Summary = item.GetPropertyOrDefault("summary")?.GetString() ?? string.Empty,
-                Engines = item.GetPropertyOrDefault("engines")?.ToStringList() ?? Array.Empty<string>()
+                Id = item.ReadString("id"),
+                Title = item.ReadString("title"),
+                Verdict = item.ReadString("verdict"),
+                Summary = item.ReadString("summary"),
+                Engines = item.GetPropertyOrDefault("engines").ToStringList()
             });
         }
+
         return items;
     }
 }

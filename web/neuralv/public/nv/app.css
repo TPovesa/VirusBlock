@@ -12,7 +12,7 @@
   --accent: #6f84ff;
   --accent-strong: #3fd2ff;
   --accent-soft: rgba(111, 132, 255, 0.12);
-  --shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+  --shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
   --radius-xl: 28px;
   --radius-lg: 22px;
   --radius-md: 16px;
@@ -32,8 +32,7 @@ body {
   font-family: Inter, "Segoe UI", system-ui, sans-serif;
   color: var(--text);
   background:
-    radial-gradient(circle at 20% 0%, rgba(111, 132, 255, 0.08), transparent 22%),
-    radial-gradient(circle at 82% 8%, rgba(63, 210, 255, 0.06), transparent 16%),
+    radial-gradient(circle at 18% 0%, rgba(111, 132, 255, 0.06), transparent 24%),
     linear-gradient(180deg, var(--bg), var(--bg-alt));
 }
 
@@ -74,12 +73,12 @@ a {
 .nv-shell {
   width: min(1040px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 20px 0 56px;
+  padding: 18px 0 48px;
 }
 
 .page-stack {
   display: grid;
-  gap: 20px;
+  gap: 16px;
 }
 
 .topbar,
@@ -107,7 +106,7 @@ a {
   gap: 16px;
   padding: 12px 14px;
   border-radius: 999px;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
 .brand {
@@ -143,7 +142,7 @@ a {
 }
 
 .brand-copy {
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .creator-shell code {
@@ -206,13 +205,76 @@ a {
   flex-wrap: wrap;
 }
 
+.auth-widget-card-login {
+  justify-content: flex-end;
+}
+
 .auth-widget-copy {
   display: grid;
   gap: 4px;
 }
 
+.auth-widget-hint {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .auth-widget-card-error {
   align-items: flex-start;
+}
+
+.auth-widget-shell {
+  position: relative;
+  min-width: 188px;
+  min-height: 52px;
+}
+
+.auth-widget-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 188px;
+  min-height: 52px;
+  border-radius: 18px;
+  padding: 0 18px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  box-shadow: 0 14px 30px rgba(69, 108, 255, 0.24);
+  color: white;
+}
+
+.auth-widget-button-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.auth-widget-button-copy {
+  font-weight: 700;
+}
+
+.auth-widget-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  opacity: 0.025;
+  border-radius: 18px;
+}
+
+.state-login-shell {
+  display: flex;
+  justify-content: flex-start;
 }
 
 .auth-user-link {
@@ -264,7 +326,7 @@ a {
 .hero-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.14fr) minmax(320px, 0.86fr);
-  gap: 18px;
+  gap: 16px;
 }
 
 .hero-card,
@@ -282,11 +344,11 @@ a {
 .section-shell,
 .download-main,
 .download-side {
-  padding: 28px;
+  padding: 24px;
 }
 
 .section-shell-tight {
-  padding: 24px 28px;
+  padding: 20px 24px;
 }
 
 .hero-card-main h1,
@@ -296,21 +358,21 @@ a {
 }
 
 .hero-card-main h1 {
-  font-size: clamp(56px, 10vw, 110px);
-  margin-bottom: 14px;
+  font-size: clamp(48px, 9vw, 96px);
+  margin-bottom: 12px;
 }
 
 .section-title {
-  font-size: clamp(34px, 6vw, 60px);
-  margin-bottom: 12px;
+  font-size: clamp(30px, 5.5vw, 52px);
+  margin-bottom: 10px;
 }
 
 .hero-text,
 .section-copy,
 .simple-list,
 .package-description {
-  line-height: 1.7;
-  font-size: 16px;
+  line-height: 1.6;
+  font-size: 15px;
 }
 
 .hero-text code,
@@ -322,7 +384,7 @@ a {
 }
 
 .hero-actions {
-  margin-top: 20px;
+  margin-top: 16px;
 }
 
 .console-head {
@@ -341,7 +403,7 @@ a {
 .hero-card-console pre,
 .command-box pre {
   color: #cfe4ff;
-  line-height: 1.8;
+  line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -377,7 +439,7 @@ a {
 .package-card,
 .creator-card,
 .publish-form {
-  padding: 20px;
+  padding: 18px;
 }
 
 .metric-value {
@@ -420,7 +482,7 @@ a {
 }
 
 .section-head {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .mini-card,
@@ -470,7 +532,7 @@ a {
   cursor: pointer;
   background: transparent;
   color: var(--text);
-  transition: transform 140ms ease, background 140ms ease, border-color 140ms ease;
+  transition: background 140ms ease, border-color 140ms ease, opacity 140ms ease;
 }
 
 .primary-button,
@@ -503,7 +565,7 @@ a {
 .filter-button:hover,
 #copy-command:hover,
 .text-button:hover {
-  transform: translateY(-1px);
+  opacity: 0.92;
 }
 
 .badge,
@@ -530,15 +592,15 @@ a {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
   gap: 16px;
-  margin-top: 18px;
+  margin-top: 14px;
 }
 
 .command-box {
-  margin-top: 16px;
-  padding: 18px;
+  margin-top: 14px;
+  padding: 16px;
   border-radius: 20px;
-  background: rgba(8, 12, 18, 0.86);
-  border: 1px solid rgba(160, 184, 255, 0.12);
+  background: rgba(14, 18, 26, 0.9);
+  border: 1px solid rgba(160, 184, 255, 0.1);
 }
 
 .command-box-head {
@@ -572,7 +634,7 @@ a {
 }
 
 .publish-grid {
-  margin-top: 18px;
+  margin-top: 14px;
 }
 
 .form-status {
@@ -646,7 +708,11 @@ a {
 }
 
 .telegram-widget-host {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 52px;
+  min-width: 188px;
 }
 
 @media (max-width: 980px) {
@@ -696,7 +762,7 @@ a {
   .section-shell,
   .download-main,
   .download-side {
-    padding: 22px;
+    padding: 20px;
   }
 
   .hero-card-main h1 {

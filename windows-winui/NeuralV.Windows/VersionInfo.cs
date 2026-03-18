@@ -17,7 +17,7 @@ public static class VersionInfo
             }
 
             var version = Assembly.GetExecutingAssembly().GetName().Version;
-            return version is null ? "1.5.5" : $"{version.Major}.{version.Minor}.{version.Build}";
+            return version is null ? "1.5.6" : $"{version.Major}.{version.Minor}.{version.Build}";
         }
     }
 }
