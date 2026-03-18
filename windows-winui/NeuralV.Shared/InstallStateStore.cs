@@ -86,7 +86,6 @@ public static class InstallStateStore
             if (string.IsNullOrWhiteSpace(state.GuiBinary)) state.GuiBinary = InstallLayout.GuiBinaryName;
             if (string.IsNullOrWhiteSpace(state.CliBinary)) state.CliBinary = InstallLayout.CliBinaryName;
             if (string.IsNullOrWhiteSpace(state.UpdaterBinary)) state.UpdaterBinary = InstallLayout.UpdaterBinaryName;
-            if (string.IsNullOrWhiteSpace(state.CliHostBinary)) state.CliHostBinary = InstallLayout.CliHostBinaryName;
             if (string.IsNullOrWhiteSpace(state.UpdaterHostBinary)) state.UpdaterHostBinary = InstallLayout.UpdaterHostBinaryName;
             return state;
         }
@@ -141,7 +140,6 @@ public static class InstallStateStore
             || File.Exists(InstallLayout.CliPath(installRoot))
             || File.Exists(InstallLayout.UpdaterPath(installRoot));
         var hasPayload = File.Exists(InstallLayout.GuiPath(installRoot))
-            || File.Exists(InstallLayout.CliHostPath(installRoot))
             || File.Exists(InstallLayout.UpdaterHostPath(installRoot));
         return hasPublicEntry && hasPayload;
     }

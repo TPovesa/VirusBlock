@@ -27,7 +27,12 @@ public sealed partial class MainWindow : Window
         public Border Element { get; init; } = default!;
         public int Variant { get; set; }
         public double Angle { get; set; }
-        public double Velocity { get; set; }
+        public double AngularVelocity { get; set; }
+        public double VelocityX { get; set; }
+        public double VelocityY { get; set; }
+        public double Width { get; set; }
+        public double Height { get; set; }
+        public bool Positioned { get; set; }
     }
 
     private readonly NeuralVApiClient _apiClient = new();
@@ -52,9 +57,12 @@ public sealed partial class MainWindow : Window
     private bool _scanOverlayOpen;
     private bool _networkUiSync;
     private bool _preferenceUiSync;
+    private bool _scanOverlayFallbackPreferred = true;
     private AppScreen _screen = AppScreen.Splash;
     private IntPtr _windowHandle;
     private AppWindow? _appWindow;
+    private Canvas? _welcomeShapeCanvas;
+    private Point? _welcomePointer;
 
     private UiRectangle BackdropGradient = default!;
     private UiRectangle FabricLayerA = default!;
@@ -70,6 +78,7 @@ public sealed partial class MainWindow : Window
     private Border StatusBanner = default!;
     private Grid ScreenHost = default!;
     private Grid TopBar = default!;
+    private Grid AuthBackdropLayer = default!;
     private Grid ScanOverlay = default!;
     private Grid HistoryDetailOverlay = default!;
     private TextBlock HeaderTitleText = default!;
@@ -116,7 +125,6 @@ public sealed partial class MainWindow : Window
     private TextBlock ScanCountsText = default!;
     private TextBlock ScanTargetText = default!;
     private ProgressBar ScanProgressBar = default!;
-    private ProgressRing ScanProgressRing = default!;
     private StackPanel ScanTimelineHost = default!;
 
     private StackPanel HistoryItemsHost = default!;
@@ -142,9 +150,11 @@ public sealed partial class MainWindow : Window
             Content = _windowRoot;
             _windowRoot.Background = ThemeBrush("AppBackgroundBrush");
             _windowRoot.Loaded += OnRootLoaded;
+            _windowRoot.PointerMoved += OnAuthBackdropPointerMoved;
+            _windowRoot.PointerExited += OnAuthBackdropPointerExited;
             Closed += OnClosed;
 
-            _shapeTimer.Interval = TimeSpan.FromMilliseconds(900);
+            _shapeTimer.Interval = TimeSpan.FromMilliseconds(16);
             _shapeTimer.Tick += OnShapeTick;
 
             BuildLayout();
@@ -193,7 +203,7 @@ public sealed partial class MainWindow : Window
             HookWindowLifecycle();
             WindowsLog.Info("Applying ambient palette on load");
             ApplyAmbientPalette();
-            WindowsLog.Info("Skipping floating shape animation startup for stability");
+            WindowsLog.Info("Preparing interactive auth background");
             await InitializeAsync();
         }
         catch (Exception ex)
@@ -373,6 +383,8 @@ public sealed partial class MainWindow : Window
     {
         _windowRoot.Children.Clear();
         _floatingShapes.Clear();
+        _welcomePointer = null;
+        _welcomeShapeCanvas = null;
         _windowRoot.MinWidth = 1180;
         _windowRoot.MinHeight = 820;
 
@@ -442,11 +454,15 @@ public sealed partial class MainWindow : Window
         ambientLayer.Children.Add(GlowC);
         _windowRoot.Children.Add(ambientLayer);
 
+        AuthBackdropLayer = BuildAuthBackdropLayer();
+        AuthBackdropLayer.Visibility = Visibility.Collapsed;
+        Canvas.SetZIndex(AuthBackdropLayer, 5);
+        _windowRoot.Children.Add(AuthBackdropLayer);
+
         var shell = new Grid
         {
-            Padding = new Thickness(24, 20, 24, 24),
-            MaxWidth = 1180,
-            HorizontalAlignment = HorizontalAlignment.Center,
+            Padding = new Thickness(32, 22, 32, 28),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch
         };
         shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -539,14 +555,15 @@ public sealed partial class MainWindow : Window
         var topBar = new Grid
         {
             Margin = new Thickness(0, 0, 0, 14),
-            MaxWidth = 1180,
-            HorizontalAlignment = HorizontalAlignment.Center
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
-        topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
         topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
 
         var drawerButton = CreateIconButton("☰", OnToggleDrawerClick);
+        drawerButton.HorizontalAlignment = HorizontalAlignment.Center;
+        drawerButton.VerticalAlignment = VerticalAlignment.Center;
         topBar.Children.Add(drawerButton);
 
         var titleStack = new Grid
@@ -570,8 +587,8 @@ public sealed partial class MainWindow : Window
 
         var rightSpacer = new Border
         {
-            Width = 52,
-            Height = 52,
+            Width = 56,
+            Height = 56,
             Opacity = 0
         };
         Grid.SetColumn(rightSpacer, 2);
@@ -640,7 +657,6 @@ public sealed partial class MainWindow : Window
     private FrameworkElement BuildWelcomeView()
     {
         var host = new Grid();
-        host.Children.Add(BuildWelcomeShapeLayer());
 
         var centerStack = new StackPanel
         {
@@ -681,44 +697,68 @@ public sealed partial class MainWindow : Window
         return host;
     }
 
-    private Grid BuildWelcomeShapeLayer()
+    private Grid BuildAuthBackdropLayer()
     {
-        var host = new Grid();
-        host.Children.Add(CreateFloatingShape(0, HorizontalAlignment.Left, VerticalAlignment.Top, new Thickness(90, 90, 0, 0), 168, 92));
-        host.Children.Add(CreateFloatingShape(1, HorizontalAlignment.Right, VerticalAlignment.Top, new Thickness(0, 120, 140, 0), 118, 118));
-        host.Children.Add(CreateFloatingShape(2, HorizontalAlignment.Left, VerticalAlignment.Bottom, new Thickness(150, 0, 0, 140), 106, 146));
-        host.Children.Add(CreateFloatingShape(3, HorizontalAlignment.Right, VerticalAlignment.Bottom, new Thickness(0, 0, 110, 110), 168, 96));
-        host.Children.Add(CreateFloatingShape(4, HorizontalAlignment.Center, VerticalAlignment.Top, new Thickness(0, 90, 0, 0), 120, 120));
-        host.Children.Add(CreateFloatingShape(5, HorizontalAlignment.Center, VerticalAlignment.Bottom, new Thickness(0, 0, 0, 110), 150, 84));
+        var host = new Grid
+        {
+            IsHitTestVisible = true,
+            Background = new SolidColorBrush(UiColor.FromArgb(1, 0, 0, 0))
+        };
+        host.PointerMoved += OnAuthBackdropPointerMoved;
+        host.PointerExited += OnAuthBackdropPointerExited;
+        host.SizeChanged += OnAuthBackdropSizeChanged;
+
+        _welcomeShapeCanvas = new Canvas
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+        host.Children.Add(_welcomeShapeCanvas);
+
+        EnsureFloatingShapes();
         return host;
     }
 
-    private Border CreateFloatingShape(int variant, HorizontalAlignment horizontal, VerticalAlignment vertical, Thickness margin, double width, double height)
+    private void EnsureFloatingShapes()
+    {
+        if (_welcomeShapeCanvas is null || _floatingShapes.Count > 0)
+        {
+            return;
+        }
+
+        for (var index = 0; index < 14; index++)
+        {
+            var shape = CreateFloatingShape(index % 6);
+            _floatingShapes.Add(shape);
+            _welcomeShapeCanvas.Children.Add(shape.Element);
+        }
+    }
+
+    private FloatingShape CreateFloatingShape(int variant)
     {
         var shape = new Border
         {
-            Width = width,
-            Height = height,
-            HorizontalAlignment = horizontal,
-            VerticalAlignment = vertical,
-            Margin = margin,
             Background = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentSecondary, 0.08, 0.28),
             BorderBrush = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.Text, 0.08)),
             BorderThickness = new Thickness(1),
             Opacity = 0.82,
             RenderTransformOrigin = new Point(0.5, 0.5),
-            RenderTransform = new RotateTransform { Angle = variant * 8 }
+            RenderTransform = new RotateTransform { Angle = variant * 12 }
         };
-        ApplyShapeVariant(shape, variant);
-        shape.Tapped += OnWelcomeShapeTapped;
-        _floatingShapes.Add(new FloatingShape
+
+        var model = new FloatingShape
         {
             Element = shape,
             Variant = variant,
-            Angle = variant * 8,
-            Velocity = 1.2 + _random.NextDouble() * 1.4
-        });
-        return shape;
+            Angle = variant * 12,
+            AngularVelocity = (_random.NextDouble() - 0.5) * 1.4,
+            VelocityX = (_random.NextDouble() - 0.5) * 2.6,
+            VelocityY = (_random.NextDouble() - 0.5) * 2.6
+        };
+
+        ApplyShapeVariant(model, variant);
+        shape.Tapped += OnWelcomeShapeTapped;
+        return model;
     }
 
     private FrameworkElement BuildLoginView()
@@ -777,7 +817,6 @@ public sealed partial class MainWindow : Window
     private FrameworkElement BuildCenteredStage(UIElement content)
     {
         var host = new Grid();
-        host.Children.Add(BuildWelcomeShapeLayer());
         var card = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", new CornerRadius(30, 30, 24, 24), new Thickness(26));
         card.MaxWidth = 620;
         card.HorizontalAlignment = HorizontalAlignment.Center;
@@ -797,7 +836,7 @@ public sealed partial class MainWindow : Window
         };
         var centeredHost = new Grid
         {
-            MaxWidth = 1080,
+            MaxWidth = 1120,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Top
         };
@@ -873,12 +912,16 @@ public sealed partial class MainWindow : Window
         content.Children.Add(artifactCard);
 
         HomeNetworkCard = CreateCardBorder("AppAccentSoftGradientBrush", "AppOutlineStrongBrush", 26, new Thickness(20));
+        HomeNetworkCard.MaxWidth = 720;
+        HomeNetworkCard.HorizontalAlignment = HorizontalAlignment.Stretch;
         var networkGrid = new Grid();
         networkGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         networkGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var networkText = new StackPanel { Spacing = 8 };
         networkText.Children.Add(CreateSectionTitle("Защита в сети", 24));
         NetworkCountersText = CreateBodyText("AppMutedTextBrush");
+        NetworkCountersText.TextWrapping = TextWrapping.Wrap;
+        NetworkCountersText.MaxWidth = 460;
         networkText.Children.Add(NetworkCountersText);
         networkGrid.Children.Add(networkText);
         NetworkProtectionToggle = new ToggleSwitch
@@ -892,8 +935,14 @@ public sealed partial class MainWindow : Window
         networkGrid.Children.Add(NetworkProtectionToggle);
         HomeNetworkCard.Child = networkGrid;
         HomeNetworkCard.Margin = new Thickness(0, 18, 0, 0);
-        Grid.SetRow(HomeNetworkCard, 2);
-        content.Children.Add(HomeNetworkCard);
+        var networkHost = new Grid
+        {
+            MaxWidth = 720,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        networkHost.Children.Add(HomeNetworkCard);
+        Grid.SetRow(networkHost, 2);
+        content.Children.Add(networkHost);
 
         return host;
     }
@@ -1017,7 +1066,6 @@ public sealed partial class MainWindow : Window
             BorderThickness = new Thickness(3),
             Background = ThemeBrush("AppAccentSoftGradientBrush")
         };
-        ScanProgressRing = null!;
         ScanProgressText = new TextBlock
         {
             Foreground = ThemeBrush("AppTextBrush"),
@@ -1124,7 +1172,8 @@ public sealed partial class MainWindow : Window
         {
             MaxWidth = maxWidth,
             HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Top
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 0, 12, 0)
         };
         presenter.Children.Add(content);
         scroll.Content = presenter;
@@ -1217,6 +1266,12 @@ public sealed partial class MainWindow : Window
 
     private Grid BuildScanOverlaySafe()
     {
+        if (_scanOverlayFallbackPreferred)
+        {
+            WindowsLog.Info("Using safe fallback scan overlay");
+            return BuildFallbackScanOverlay();
+        }
+
         try
         {
             return BuildScanOverlay();
@@ -1226,6 +1281,22 @@ public sealed partial class MainWindow : Window
             WindowsLog.Error("BuildScanOverlay failed, switching to fallback overlay", ex);
             return BuildFallbackScanOverlay();
         }
+    }
+
+    private void RebuildScanOverlayAsFallback(Exception? ex = null)
+    {
+        if (ex is not null)
+        {
+            WindowsLog.Error("Rebuilding scan overlay as fallback", ex);
+        }
+
+        _scanOverlayFallbackPreferred = true;
+        if (ScanOverlay is not null && _windowRoot.Children.Contains(ScanOverlay))
+        {
+            _windowRoot.Children.Remove(ScanOverlay);
+        }
+        ScanOverlay = null!;
+        EnsureScanOverlayReady();
     }
 
     private Grid BuildFallbackScanOverlay()
@@ -1317,7 +1388,9 @@ public sealed partial class MainWindow : Window
         if (SettingsView is not null) SettingsView.Visibility = screen == AppScreen.Settings ? Visibility.Visible : Visibility.Collapsed;
 
         var chromeVisible = screen is AppScreen.Home or AppScreen.History or AppScreen.Settings;
+        var authBackdropVisible = screen is AppScreen.Welcome or AppScreen.Login or AppScreen.Register or AppScreen.Code;
         TopBar.Visibility = chromeVisible ? Visibility.Visible : Visibility.Collapsed;
+        AuthBackdropLayer.Visibility = authBackdropVisible ? Visibility.Visible : Visibility.Collapsed;
         if (screen is AppScreen.Welcome or AppScreen.Login or AppScreen.Register or AppScreen.Code)
         {
             _shapeTimer.Start();
@@ -1384,7 +1457,7 @@ public sealed partial class MainWindow : Window
         if (SettingsDeveloperText is not null)
         {
             SettingsDeveloperText.Text = (_preferences.DeveloperModeEnabled || (hasSession && _session!.User.IsDeveloperMode))
-                ? "Режим разработчика активен. Серверные лимиты отключены."
+                ? "Режим разработчика включён"
                 : string.Empty;
             SettingsDeveloperText.Visibility = string.IsNullOrWhiteSpace(SettingsDeveloperText.Text) ? Visibility.Collapsed : Visibility.Visible;
         }
@@ -1458,6 +1531,12 @@ public sealed partial class MainWindow : Window
         DynamicColorsToggle.IsOn = _preferences.DynamicColorsEnabled;
         AutoStartToggle.IsOn = _preferences.AutoStartEnabled;
         _preferenceUiSync = false;
+        if (SettingsDeveloperText is not null)
+        {
+            var enabled = _preferences.DeveloperModeEnabled || (_session?.User.IsDeveloperMode ?? false);
+            SettingsDeveloperText.Text = enabled ? "Режим разработчика включён" : string.Empty;
+            SettingsDeveloperText.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     private void UpdateNetworkUi()
@@ -1471,7 +1550,7 @@ public sealed partial class MainWindow : Window
         if (HomeNetworkCard is not null)
         {
             HomeNetworkCard.Background = _networkState.NetworkEnabled
-                ? ThemeBrush("AppAccentSoftGradientBrush")
+                ? ThemeBrush("AppSurfaceStrongGradientBrush")
                 : ThemeBrush("AppSurfaceBrush");
             HomeNetworkCard.BorderBrush = _networkState.NetworkEnabled
                 ? ThemeBrush("AppOutlineStrongBrush")
@@ -1534,27 +1613,42 @@ public sealed partial class MainWindow : Window
 
     private void SetScanOverlayState(bool isOpen)
     {
-        if (isOpen)
+        try
         {
-            EnsureScanOverlayReady();
-        }
-        if (ScanOverlay is null)
-        {
-            return;
-        }
+            if (isOpen)
+            {
+                EnsureScanOverlayReady();
+            }
+            if (ScanOverlay is null)
+            {
+                return;
+            }
 
-        _scanOverlayOpen = isOpen;
-        ScanOverlay.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        if (isOpen)
-        {
-            SetDrawerState(false);
-            SetHistoryDetailState(false);
+            _scanOverlayOpen = isOpen;
+            ScanOverlay.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+            if (isOpen)
+            {
+                SetDrawerState(false);
+                SetHistoryDetailState(false);
+            }
+            else
+            {
+                App.WindowLifecycle?.RefreshTrayState();
+            }
+            UpdateHomeState();
         }
-        else
+        catch (Exception ex)
         {
-            App.WindowLifecycle?.RefreshTrayState();
+            RebuildScanOverlayAsFallback(ex);
+            if (ScanOverlay is null)
+            {
+                return;
+            }
+
+            _scanOverlayOpen = isOpen;
+            ScanOverlay.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+            UpdateHomeState();
         }
-        UpdateHomeState();
     }
 
     private void ShowActiveScanOverlay()
@@ -1564,9 +1658,22 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        ShowScreen(AppScreen.Home);
-        RenderScan(_activeScan);
-        SetScanOverlayState(true);
+        try
+        {
+            ShowScreen(AppScreen.Home);
+            RenderScan(_activeScan);
+            SetScanOverlayState(true);
+        }
+        catch (Exception ex)
+        {
+            RebuildScanOverlayAsFallback(ex);
+            SetStatus("Окно проверки переведено в безопасный режим.");
+            if (_activeScan is not null)
+            {
+                RenderScan(_activeScan);
+                SetScanOverlayState(true);
+            }
+        }
     }
 
     private void SetBusy(bool isBusy, string? message = null)
@@ -1632,14 +1739,52 @@ public sealed partial class MainWindow : Window
 
     private void OnShapeTick(object? sender, object e)
     {
+        if (_welcomeShapeCanvas is null)
+        {
+            return;
+        }
+
+        var boundsWidth = _welcomeShapeCanvas.ActualWidth;
+        var boundsHeight = _welcomeShapeCanvas.ActualHeight;
+        if (boundsWidth < 200 || boundsHeight < 200)
+        {
+            return;
+        }
+
+        EnsureFloatingShapePositions(boundsWidth, boundsHeight);
+
         foreach (var shape in _floatingShapes)
         {
-            shape.Angle += shape.Velocity;
+            ApplyPointerRepulsion(shape, boundsWidth, boundsHeight);
+
+            shape.Angle += shape.AngularVelocity;
             if (shape.Element.RenderTransform is RotateTransform rotate)
             {
                 rotate.Angle = shape.Angle;
             }
+
+            var left = Canvas.GetLeft(shape.Element) + shape.VelocityX;
+            var top = Canvas.GetTop(shape.Element) + shape.VelocityY;
+
+            if (left <= 0 || left + shape.Width >= boundsWidth)
+            {
+                shape.VelocityX *= -1;
+                left = Math.Clamp(left, 0, Math.Max(0, boundsWidth - shape.Width));
+            }
+            if (top <= 0 || top + shape.Height >= boundsHeight)
+            {
+                shape.VelocityY *= -1;
+                top = Math.Clamp(top, 0, Math.Max(0, boundsHeight - shape.Height));
+            }
+
+            shape.VelocityX = Math.Clamp(shape.VelocityX * 0.998, -4.4, 4.4);
+            shape.VelocityY = Math.Clamp(shape.VelocityY * 0.998, -4.4, 4.4);
+
+            Canvas.SetLeft(shape.Element, left);
+            Canvas.SetTop(shape.Element, top);
         }
+
+        ResolveFloatingShapeCollisions(boundsWidth, boundsHeight);
     }
 
     private void OnWelcomeShapeTapped(object sender, TappedRoutedEventArgs e)
@@ -1656,54 +1801,171 @@ public sealed partial class MainWindow : Window
         }
 
         shape.Variant = (shape.Variant + 1) % 6;
-        shape.Angle += 16;
-        ApplyShapeVariant(shape.Element, shape.Variant);
+        shape.Angle += 18;
+        shape.VelocityX += (_random.NextDouble() - 0.5) * 3.2;
+        shape.VelocityY += (_random.NextDouble() - 0.5) * 3.2;
+        shape.AngularVelocity += (_random.NextDouble() - 0.5) * 1.6;
+        ApplyShapeVariant(shape, shape.Variant);
         if (shape.Element.RenderTransform is RotateTransform rotate)
         {
             rotate.Angle = shape.Angle;
         }
     }
 
-    private void ApplyShapeVariant(Border shape, int variant)
+    private void ApplyShapeVariant(FloatingShape model, int variant)
     {
+        var shape = model.Element;
         switch (variant % 6)
         {
             case 0:
-                shape.Width = 122;
-                shape.Height = 122;
+                model.Width = 122;
+                model.Height = 122;
                 shape.CornerRadius = new CornerRadius(61);
                 shape.Background = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentSecondary, 0.08, 0.32);
                 break;
             case 1:
-                shape.Width = 170;
-                shape.Height = 92;
+                model.Width = 170;
+                model.Height = 92;
                 shape.CornerRadius = new CornerRadius(40);
                 shape.Background = BuildWeaveBrush(App.Palette.AccentSecondary, App.Palette.AccentTertiary, 0.08, 0.26);
                 break;
             case 2:
-                shape.Width = 108;
-                shape.Height = 144;
+                model.Width = 108;
+                model.Height = 144;
                 shape.CornerRadius = new CornerRadius(36);
                 shape.Background = BuildWeaveBrush(App.Palette.AccentTertiary, App.Palette.Accent, 0.08, 0.28);
                 break;
             case 3:
-                shape.Width = 138;
-                shape.Height = 138;
+                model.Width = 138;
+                model.Height = 138;
                 shape.CornerRadius = new CornerRadius(28);
                 shape.Background = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentTertiary, 0.08, 0.24);
                 break;
             case 4:
-                shape.Width = 180;
-                shape.Height = 84;
+                model.Width = 180;
+                model.Height = 84;
                 shape.CornerRadius = new CornerRadius(22);
                 shape.Background = BuildWeaveBrush(App.Palette.AccentSecondary, App.Palette.Accent, 0.08, 0.30);
                 break;
             default:
-                shape.Width = 96;
-                shape.Height = 160;
+                model.Width = 96;
+                model.Height = 160;
                 shape.CornerRadius = new CornerRadius(42);
                 shape.Background = BuildWeaveBrush(App.Palette.AccentTertiary, App.Palette.AccentSecondary, 0.08, 0.26);
                 break;
+        }
+
+        shape.Width = model.Width;
+        shape.Height = model.Height;
+    }
+
+    private void OnAuthBackdropPointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (_welcomeShapeCanvas is null)
+        {
+            return;
+        }
+
+        _welcomePointer = e.GetCurrentPoint(_welcomeShapeCanvas).Position;
+    }
+
+    private void OnAuthBackdropPointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        _welcomePointer = null;
+    }
+
+    private void OnAuthBackdropSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        EnsureFloatingShapePositions(e.NewSize.Width, e.NewSize.Height, repositionAll: false);
+    }
+
+    private void EnsureFloatingShapePositions(double boundsWidth, double boundsHeight, bool repositionAll = false)
+    {
+        foreach (var shape in _floatingShapes)
+        {
+            if (!shape.Positioned || repositionAll)
+            {
+                PositionFloatingShape(shape, boundsWidth, boundsHeight, repositionAll);
+            }
+        }
+    }
+
+    private void PositionFloatingShape(FloatingShape shape, double boundsWidth, double boundsHeight, bool keepVelocity)
+    {
+        var left = _random.NextDouble() * Math.Max(12, boundsWidth - shape.Width - 12);
+        var top = _random.NextDouble() * Math.Max(12, boundsHeight - shape.Height - 12);
+        Canvas.SetLeft(shape.Element, left);
+        Canvas.SetTop(shape.Element, top);
+        shape.Positioned = true;
+        if (!keepVelocity)
+        {
+            shape.VelocityX = (_random.NextDouble() - 0.5) * 3.2;
+            shape.VelocityY = (_random.NextDouble() - 0.5) * 3.2;
+        }
+    }
+
+    private void ApplyPointerRepulsion(FloatingShape shape, double boundsWidth, double boundsHeight)
+    {
+        if (_welcomePointer is null)
+        {
+            return;
+        }
+
+        var pointer = _welcomePointer.Value;
+        var centerX = Canvas.GetLeft(shape.Element) + (shape.Width / 2d);
+        var centerY = Canvas.GetTop(shape.Element) + (shape.Height / 2d);
+        var deltaX = centerX - pointer.X;
+        var deltaY = centerY - pointer.Y;
+        var distance = Math.Sqrt((deltaX * deltaX) + (deltaY * deltaY));
+        if (distance < 0.001 || distance > 220)
+        {
+            return;
+        }
+
+        var force = (220 - distance) / 220d;
+        shape.VelocityX += (deltaX / distance) * force * 0.9;
+        shape.VelocityY += (deltaY / distance) * force * 0.9;
+    }
+
+    private void ResolveFloatingShapeCollisions(double boundsWidth, double boundsHeight)
+    {
+        for (var index = 0; index < _floatingShapes.Count; index++)
+        {
+            var current = _floatingShapes[index];
+            for (var nextIndex = index + 1; nextIndex < _floatingShapes.Count; nextIndex++)
+            {
+                var other = _floatingShapes[nextIndex];
+                var currentCenterX = Canvas.GetLeft(current.Element) + (current.Width / 2d);
+                var currentCenterY = Canvas.GetTop(current.Element) + (current.Height / 2d);
+                var otherCenterX = Canvas.GetLeft(other.Element) + (other.Width / 2d);
+                var otherCenterY = Canvas.GetTop(other.Element) + (other.Height / 2d);
+                var deltaX = otherCenterX - currentCenterX;
+                var deltaY = otherCenterY - currentCenterY;
+                var distance = Math.Sqrt((deltaX * deltaX) + (deltaY * deltaY));
+                var minDistance = (Math.Max(current.Width, current.Height) + Math.Max(other.Width, other.Height)) * 0.36;
+                if (distance <= 0.001 || distance >= minDistance)
+                {
+                    continue;
+                }
+
+                var normalX = deltaX / distance;
+                var normalY = deltaY / distance;
+                var overlap = minDistance - distance;
+                var currentLeft = Canvas.GetLeft(current.Element) - (normalX * overlap * 0.5);
+                var currentTop = Canvas.GetTop(current.Element) - (normalY * overlap * 0.5);
+                var otherLeft = Canvas.GetLeft(other.Element) + (normalX * overlap * 0.5);
+                var otherTop = Canvas.GetTop(other.Element) + (normalY * overlap * 0.5);
+
+                Canvas.SetLeft(current.Element, Math.Clamp(currentLeft, 0, Math.Max(0, boundsWidth - current.Width)));
+                Canvas.SetTop(current.Element, Math.Clamp(currentTop, 0, Math.Max(0, boundsHeight - current.Height)));
+                Canvas.SetLeft(other.Element, Math.Clamp(otherLeft, 0, Math.Max(0, boundsWidth - other.Width)));
+                Canvas.SetTop(other.Element, Math.Clamp(otherTop, 0, Math.Max(0, boundsHeight - other.Height)));
+
+                current.VelocityX -= normalX * 0.42;
+                current.VelocityY -= normalY * 0.42;
+                other.VelocityX += normalX * 0.42;
+                other.VelocityY += normalY * 0.42;
+            }
         }
     }
 
@@ -2099,54 +2361,62 @@ public sealed partial class MainWindow : Window
 
     private void RenderScan(DesktopScanState scan)
     {
-        EnsureScanOverlayReady();
-        var progress = WindowsTrayProgressService.EstimateProgressPercent(scan);
-        ScanModeText.Text = scan.Mode switch
+        try
         {
-            "FULL" => "Глубокая проверка",
-            "SELECTIVE" => "Выборочная проверка",
-            "ARTIFACT" => "Проверка программы",
-            "QUICK" => "Быстрая локальная проверка",
-            _ => "Проверка"
-        };
-        ScanStageText.Text = string.IsNullOrWhiteSpace(scan.Message) ? $"Статус: {scan.Status}" : scan.Message;
-        if (ScanTargetText is not null)
-        {
-            ScanTargetText.Text = scan.Platform.Equals("windows", StringComparison.OrdinalIgnoreCase)
-                ? $"Статус: {WindowsTrayProgressService.ResolveStatusLabel(scan.Status)}"
-                : scan.Platform;
-        }
-        ScanProgressText.Text = $"{progress}%";
-        ScanCountsText.Text = $"Этапов в ленте: {scan.Timeline.Count} · находок: {scan.SurfacedFindings}";
-        ScanProgressBar.Value = progress;
-
-        _scanTimeline.Clear();
-        foreach (var item in scan.Timeline.DefaultIfEmpty(string.IsNullOrWhiteSpace(scan.Message) ? "Сервер обрабатывает проверку." : scan.Message))
-        {
-            _scanTimeline.Add(item);
-        }
-        foreach (var finding in scan.Findings)
-        {
-            _scanTimeline.Add($"{finding.Title}: {finding.Summary}");
-        }
-
-        if (ScanTimelineHost is not null)
-        {
-            ScanTimelineHost.Children.Clear();
-            foreach (var line in _scanTimeline)
+            EnsureScanOverlayReady();
+            var progress = WindowsTrayProgressService.EstimateProgressPercent(scan);
+            ScanModeText.Text = scan.Mode switch
             {
-                var card = CreateCardBorder("AppSurfaceRaisedBrush", "AppOutlineBrush", 18, new Thickness(14, 12, 14, 12));
-                card.Child = CreateBodyText("AppTextBrush");
-                ((TextBlock)card.Child).Text = line;
-                ScanTimelineHost.Children.Add(card);
+                "FULL" => "Глубокая проверка",
+                "SELECTIVE" => "Выборочная проверка",
+                "ARTIFACT" => "Проверка программы",
+                "QUICK" => "Быстрая локальная проверка",
+                _ => "Проверка"
+            };
+            ScanStageText.Text = string.IsNullOrWhiteSpace(scan.Message) ? $"Статус: {scan.Status}" : scan.Message;
+            if (ScanTargetText is not null)
+            {
+                ScanTargetText.Text = scan.Platform.Equals("windows", StringComparison.OrdinalIgnoreCase)
+                    ? $"Статус: {WindowsTrayProgressService.ResolveStatusLabel(scan.Status)}"
+                    : scan.Platform;
+            }
+            ScanProgressText.Text = $"{progress}%";
+            ScanCountsText.Text = $"Этапов в ленте: {scan.Timeline.Count} · находок: {scan.SurfacedFindings}";
+            ScanProgressBar.Value = progress;
+
+            _scanTimeline.Clear();
+            foreach (var item in scan.Timeline.DefaultIfEmpty(string.IsNullOrWhiteSpace(scan.Message) ? "Сервер обрабатывает проверку." : scan.Message))
+            {
+                _scanTimeline.Add(item);
+            }
+            foreach (var finding in scan.Findings)
+            {
+                _scanTimeline.Add($"{finding.Title}: {finding.Summary}");
+            }
+
+            if (ScanTimelineHost is not null)
+            {
+                ScanTimelineHost.Children.Clear();
+                foreach (var line in _scanTimeline)
+                {
+                    var card = CreateCardBorder("AppSurfaceRaisedBrush", "AppOutlineBrush", 18, new Thickness(14, 12, 14, 12));
+                    card.Child = CreateBodyText("AppTextBrush");
+                    ((TextBlock)card.Child).Text = line;
+                    ScanTimelineHost.Children.Add(card);
+                }
+            }
+
+            UpdateHomeState();
+            App.WindowLifecycle?.UpdateTray(WindowsTrayProgressService.FromScan(scan));
+            if (_scanOverlayOpen)
+            {
+                SetScanOverlayState(true);
             }
         }
-
-        UpdateHomeState();
-        App.WindowLifecycle?.UpdateTray(WindowsTrayProgressService.FromScan(scan));
-        if (_scanOverlayOpen)
+        catch (Exception ex)
         {
-            SetScanOverlayState(true);
+            RebuildScanOverlayAsFallback(ex);
+            SetStatus("Окно проверки переведено в безопасный режим.");
         }
     }
 
@@ -2400,19 +2670,32 @@ public sealed partial class MainWindow : Window
 
         WindowsLog.Info("Logout requested");
         _scanPollCts?.Cancel();
-        SetDrawerState(false);
-        SetScanOverlayState(false);
-        SetHistoryDetailState(false);
-        _session = null;
-        _activeScan = null;
-        SessionStore.ClearSession();
-        ResetAuthInputs();
-        _networkState = BuildLocalNetworkFallback();
-        App.WindowLifecycle?.SetShouldMinimizeToTray(() => _preferences.MinimizeToTrayOnClose);
-        ApplySessionState();
-        App.WindowLifecycle?.UpdateTray(WindowsTrayProgressService.CreateIdle());
-        ShowScreen(AppScreen.Welcome);
-        SetStatus(null);
+        try
+        {
+            SetDrawerState(false);
+            SetScanOverlayState(false);
+            SetHistoryDetailState(false);
+            _session = null;
+            _activeScan = null;
+            SessionStore.ClearSession();
+            ResetAuthInputs();
+            _networkState = BuildLocalNetworkFallback();
+            App.WindowLifecycle?.SetShouldMinimizeToTray(() => _preferences.MinimizeToTrayOnClose);
+            ApplySessionState();
+            App.WindowLifecycle?.UpdateTray(WindowsTrayProgressService.CreateIdle());
+            ShowScreen(AppScreen.Welcome);
+            SetStatus(null);
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("Logout UI reset failed, rebuilding visual tree", ex);
+            _session = null;
+            _activeScan = null;
+            _networkState = BuildLocalNetworkFallback();
+            RebuildVisualTree();
+            ShowScreen(AppScreen.Welcome);
+            SetStatus(null);
+        }
     }
 
     private void HookWindowLifecycle()
@@ -2619,7 +2902,9 @@ public sealed partial class MainWindow : Window
             FontSize = 24,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
         };
         button.Click += handler;
         return button;
@@ -2794,7 +3079,9 @@ public sealed partial class MainWindow : Window
             MinHeight = 52,
             MinWidth = 148,
             CornerRadius = new CornerRadius(22),
-            HorizontalAlignment = HorizontalAlignment.Left
+            HorizontalAlignment = HorizontalAlignment.Left,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
         };
         button.Click += handler;
         return button;
@@ -2813,7 +3100,9 @@ public sealed partial class MainWindow : Window
             MinHeight = 52,
             MinWidth = 148,
             CornerRadius = new CornerRadius(22),
-            HorizontalAlignment = HorizontalAlignment.Left
+            HorizontalAlignment = HorizontalAlignment.Left,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
         };
         button.Click += handler;
         return button;
@@ -2832,7 +3121,9 @@ public sealed partial class MainWindow : Window
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(18),
             FontSize = 20,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
         };
         button.Click += handler;
         return button;

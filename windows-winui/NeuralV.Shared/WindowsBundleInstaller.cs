@@ -111,7 +111,6 @@ public static class WindowsBundleInstaller
         installState.GuiBinary = releaseInfo.GuiBinaryName;
         installState.LauncherBinary = releaseInfo.LauncherBinaryName;
         installState.UpdaterBinary = releaseInfo.UpdaterBinaryName;
-        installState.CliHostBinary = releaseInfo.CliHostBinaryName;
         installState.UpdaterHostBinary = releaseInfo.UpdaterHostBinaryName;
         await InstallPreparedBundleAsync(preparedBundle, installState, cancellationToken);
     }
@@ -228,7 +227,7 @@ public static class WindowsBundleInstaller
     {
         foreach (var directory in Directory.EnumerateDirectories(extractRoot, "*", SearchOption.AllDirectories).Prepend(extractRoot))
         {
-            if (File.Exists(InstallLayout.GuiPath(directory)) || File.Exists(InstallLayout.LauncherPath(directory)) || File.Exists(InstallLayout.CliHostPath(directory)))
+            if (File.Exists(InstallLayout.GuiPath(directory)) || File.Exists(InstallLayout.LauncherPath(directory)) || File.Exists(InstallLayout.CliPath(directory)))
             {
                 return directory;
             }
@@ -263,7 +262,6 @@ public static class WindowsBundleInstaller
             GuiBinary = installState.GuiBinary,
             CliBinary = installState.CliBinary,
             UpdaterBinary = installState.UpdaterBinary,
-            CliHostBinary = installState.CliHostBinary,
             UpdaterHostBinary = installState.UpdaterHostBinary,
             AutoStartEnabled = installState.AutoStartEnabled,
             UpdatedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()

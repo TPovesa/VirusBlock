@@ -56,7 +56,6 @@ jobs:
         shell: pwsh
         run: |
           dotnet restore windows-winui/NeuralV.Windows/NeuralV.Windows.csproj
-          dotnet restore windows-winui/NeuralV.CliHost/NeuralV.CliHost.csproj
           dotnet restore windows-winui/NeuralV.Cmd/NeuralV.Cmd.csproj
           dotnet restore windows-winui/NeuralV.Launcher/NeuralV.Launcher.csproj
           dotnet restore windows-winui/NeuralV.UpdateHost/NeuralV.UpdateHost.csproj
@@ -106,27 +105,6 @@ jobs:
             -p:FileVersion=$assemblyVersion `
             -o dist\windows\launcher-temp
           Copy-Item (Resolve-Path 'dist/windows/launcher-temp/NeuralV.exe') 'dist/windows/NeuralV/NeuralV.exe' -Force
-
-      - name: Publish Windows CLI host
-        if: env.WINDOWS_WINUI_BUILD_EXIT == '0'
-        shell: pwsh
-        env:
-          NEURALV_VERSION: ${{ steps.release_version.outputs.semver }}
-        run: |
-          $semver = "${env:NEURALV_VERSION}"
-          $assemblyVersion = "$semver.0"
-          Remove-Item -Recurse -Force dist\windows\cli-host-temp -ErrorAction SilentlyContinue
-          dotnet publish windows-winui/NeuralV.CliHost/NeuralV.CliHost.csproj `
-            -c Release `
-            -r win-x64 `
-            --self-contained true `
-            -p:Version=$semver `
-            -p:InformationalVersion=$semver `
-            -p:AssemblyVersion=$assemblyVersion `
-            -p:FileVersion=$assemblyVersion `
-            -p:PublishSingleFile=false `
-            -o dist\windows\cli-host-temp
-          Copy-Item 'dist/windows/cli-host-temp/*' 'dist/windows/NeuralV/libs/' -Force -Recurse
 
       - name: Publish Windows CLI companion
         if: env.WINDOWS_WINUI_BUILD_EXIT == '0'
@@ -405,14 +383,12 @@ jobs:
                           "layout": "root-bin-libs",
                           "rootEntries": ["NeuralV.exe", "log.txt", "bin", "libs"],
                           "cliBinaryName": "neuralv.exe",
-                          "cliHostBinaryName": "neuralv-host.exe",
                           "guiBinaryName": "NeuralV.Gui.exe",
                           "launcherBinaryName": "NeuralV.exe",
                           "updaterBinaryName": "neuralv-updater.exe",
                           "updaterHostBinaryName": "neuralv-updater-host.exe",
                           "guiRelativePath": "libs/NeuralV.Gui.exe",
                           "cliRelativePath": "bin/neuralv.exe",
-                          "cliHostRelativePath": "libs/neuralv-host.exe",
                           "updaterRelativePath": "bin/neuralv-updater.exe",
                           "updaterHostRelativePath": "libs/neuralv-updater-host.exe",
                           "logRelativePath": "log.txt",

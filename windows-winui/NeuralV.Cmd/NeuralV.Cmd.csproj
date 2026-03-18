@@ -5,9 +5,12 @@
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
-    <PublishAot>true</PublishAot>
-    <StripSymbols>true</StripSymbols>
+    <PublishSingleFile>true</PublishSingleFile>
+    <UseAppHost>true</UseAppHost>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <PublishTrimmed>true</PublishTrimmed>
     <InvariantGlobalization>true</InvariantGlobalization>
     <AssemblyName>neuralv</AssemblyName>
     <RootNamespace>NeuralV.Cmd</RootNamespace>
@@ -19,7 +22,20 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\NeuralV.Windows\Models\AppModels.cs" Link="Shared\AppModels.cs" />
+    <Compile Include="..\NeuralV.Windows\Services\NeuralVApiClient.cs" Link="Shared\NeuralVApiClient.cs" />
+    <Compile Include="..\NeuralV.Windows\Services\SessionStore.cs" Link="Shared\SessionStore.cs" />
+    <Compile Include="..\NeuralV.Windows\Services\HistoryStore.cs" Link="Shared\HistoryStore.cs" />
+    <Compile Include="..\NeuralV.Windows\Services\WindowsEnvironmentService.cs" Link="Shared\WindowsEnvironmentService.cs" />
+    <Compile Include="..\NeuralV.Windows\Services\WindowsNetworkProtectionStateService.cs" Link="Shared\WindowsNetworkProtectionStateService.cs" />
+    <Compile Include="..\NeuralV.Windows\Services\WindowsScanPlanService.cs" Link="Shared\WindowsScanPlanService.cs" />
+    <Compile Include="..\NeuralV.Windows\Services\WindowsLocalQuickScanService.cs" Link="Shared\WindowsLocalQuickScanService.cs" />
     <Compile Include="..\NeuralV.Windows\Services\WindowsLog.cs" Link="Shared\WindowsLog.cs" />
+    <Compile Include="..\NeuralV.Windows\VersionInfo.cs" Link="Shared\VersionInfo.cs" />
     <Compile Include="..\NeuralV.Shared\InstallLayout.cs" Link="Shared\InstallLayout.cs" />
   </ItemGroup>
 </Project>

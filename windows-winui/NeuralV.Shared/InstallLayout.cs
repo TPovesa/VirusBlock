@@ -9,7 +9,6 @@ public static class InstallLayout
     public const string GuiBinaryName = "NeuralV.Gui.exe";
     public const string CliBinaryName = "neuralv.exe";
     public const string UpdaterBinaryName = "neuralv-updater.exe";
-    public const string CliHostBinaryName = "neuralv-host.exe";
     public const string UpdaterHostBinaryName = "neuralv-updater-host.exe";
     public const string MetadataFileName = "install.json";
     public const string LogFileName = "log.txt";
@@ -69,7 +68,6 @@ public static class InstallLayout
     public static string LauncherPath(string installRoot) => Path.Combine(NormalizeInstallRoot(installRoot), LauncherBinaryName);
     public static string GuiPath(string installRoot) => Path.Combine(LibsDirectory(installRoot), GuiBinaryName);
     public static string CliPath(string installRoot) => Path.Combine(BinDirectory(installRoot), CliBinaryName);
-    public static string CliHostPath(string installRoot) => Path.Combine(LibsDirectory(installRoot), CliHostBinaryName);
     public static string UpdaterPath(string installRoot) => Path.Combine(BinDirectory(installRoot), UpdaterBinaryName);
     public static string UpdaterHostPath(string installRoot) => Path.Combine(LibsDirectory(installRoot), UpdaterHostBinaryName);
 
@@ -105,9 +103,6 @@ public sealed class InstallState
 
     [JsonPropertyName("updaterExecutable")]
     public string UpdaterBinary { get; set; } = InstallLayout.UpdaterBinaryName;
-
-    [JsonPropertyName("cliHostExecutable")]
-    public string CliHostBinary { get; set; } = InstallLayout.CliHostBinaryName;
 
     [JsonPropertyName("updaterHostExecutable")]
     public string UpdaterHostBinary { get; set; } = InstallLayout.UpdaterHostBinaryName;

@@ -43,7 +43,6 @@ try
         installState.GuiBinary = releaseInfo.GuiBinaryName;
         installState.LauncherBinary = releaseInfo.LauncherBinaryName;
         installState.UpdaterBinary = releaseInfo.UpdaterBinaryName;
-        installState.CliHostBinary = releaseInfo.CliHostBinaryName;
         installState.UpdaterHostBinary = releaseInfo.UpdaterHostBinaryName;
 
         using var preparedBundle = await WindowsBundleInstaller.PrepareBundleAsync(
