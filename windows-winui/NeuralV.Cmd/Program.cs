@@ -27,8 +27,6 @@ try
         UseShellExecute = false,
         WorkingDirectory = libsDirectory
     };
-    startInfo.Environment["DOTNET_ROOT"] = libsDirectory;
-    startInfo.Environment["DOTNET_MULTILEVEL_LOOKUP"] = "0";
     startInfo.Environment["NEURALV_INSTALL_ROOT"] = installRoot;
     startInfo.Environment["NEURALV_LOG_APPEND"] = "1";
     foreach (var arg in args)

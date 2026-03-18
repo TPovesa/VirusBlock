@@ -28,8 +28,6 @@ try
     };
     startInfo.Environment["NEURALV_INSTALL_ROOT"] = installRoot;
     startInfo.Environment["NEURALV_LOG_APPEND"] = "1";
-    startInfo.Environment["DOTNET_ROOT"] = InstallLayout.LibsDirectory(installRoot);
-    startInfo.Environment["DOTNET_MULTILEVEL_LOOKUP"] = "0";
     foreach (var arg in args)
     {
         startInfo.ArgumentList.Add(arg);
