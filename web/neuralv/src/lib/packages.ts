@@ -56,9 +56,17 @@ function stableVariantDownloadUrl(entry: Record<string, unknown>, fallbackUrl: s
     return fallbackUrl;
   }
 
+  if (fallbackUrl && fallbackUrl.includes('/releases/download/')) {
+    return fallbackUrl;
+  }
+
   const base = `https://raw.githubusercontent.com/${repo}/${branch}`;
+  const version = String(entry.version ?? '').trim();
+  const releaseTag = String(metadata?.releaseTag ?? '').trim() || (version ? `windows-v${version}` : '');
   if (repo === 'Perdonus/fatalerror') {
-    if (platform === 'windows') return `${base}/windows/neuralv-windows.zip`;
+    if (platform === 'windows' && releaseTag) {
+      return `https://github.com/${repo}/releases/download/${releaseTag}/neuralv-windows.zip`;
+    }
     if (platform === 'linux') return `${base}/linux/neuralv-linux.tar.gz`;
     if (platform === 'shell') return `${base}/shell/neuralv-shell-linux.tar.gz`;
   }

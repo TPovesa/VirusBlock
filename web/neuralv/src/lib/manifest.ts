@@ -34,15 +34,22 @@ function stableArtifactDownloadUrl(
   metadata: ArtifactMetadata | undefined,
   fallbackUrl: string | undefined
 ): string | undefined {
+  if (fallbackUrl && fallbackUrl.includes('/releases/download/')) {
+    return fallbackUrl;
+  }
+
   const branch = typeof metadata?.source_branch === 'string' ? metadata.source_branch : '';
   if (!branch) {
     return fallbackUrl;
   }
 
   const base = `https://raw.githubusercontent.com/Perdonus/fatalerror/${branch}`;
+  const releaseTag = typeof metadata?.releaseTag === 'string' ? metadata.releaseTag : '';
   switch (platform) {
     case 'windows':
-      return `${base}/windows/neuralv-windows.zip`;
+      return releaseTag
+        ? `https://github.com/Perdonus/fatalerror/releases/download/${releaseTag}/neuralv-windows.zip`
+        : fallbackUrl;
     case 'linux':
       return `${base}/linux/neuralv-linux.tar.gz`;
     case 'shell':
