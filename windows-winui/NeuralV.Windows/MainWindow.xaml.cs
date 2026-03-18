@@ -223,7 +223,6 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            EnsureInteractiveTreeAttached();
             _preferences = ClientPreferencesStore.Load();
             _networkState = BuildLocalNetworkFallback();
             _session = await SessionStore.LoadSessionAsync();
