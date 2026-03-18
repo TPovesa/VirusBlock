@@ -308,7 +308,10 @@ public static class WindowsLocalQuickScanService
         {
         }
 
-        return tasks;
+        foreach (var task in tasks)
+        {
+            yield return task;
+        }
     }
 
     private static List<PackageInventoryEntry> EnumeratePackageInventory()
