@@ -46,7 +46,6 @@ public sealed partial class MainWindow : Window
     private ClientPreferences _preferences = new();
     private CancellationTokenSource? _scanPollCts;
     private bool _initialized;
-    private bool _interactiveTreeAttached;
     private bool _drawerOpen;
     private bool _scanOverlayOpen;
     private bool _networkUiSync;
@@ -446,20 +445,16 @@ public sealed partial class MainWindow : Window
         shell.Children.Add(ScreenHost);
 
         SplashView = BuildSplashView();
-        WelcomeView = BuildWelcomeView();
-        LoginView = BuildLoginView();
-        RegisterView = BuildRegisterView();
-        CodeView = BuildCodeView();
-        HomeView = BuildHomeView();
-        HistoryView = BuildHistoryView();
-        SettingsView = BuildSettingsView();
+        WelcomeView = null!;
+        LoginView = null!;
+        RegisterView = null!;
+        CodeView = null!;
+        HomeView = null!;
+        HistoryView = null!;
+        SettingsView = null!;
 
         ScreenHost.Children.Add(SplashView);
-
-        ScanOverlay = BuildScanOverlay();
-        Canvas.SetZIndex(ScanOverlay, 40);
-
-        _interactiveTreeAttached = false;
+        ScanOverlay = null!;
 
         DrawerScrim = new Border
         {
@@ -1047,42 +1042,85 @@ public sealed partial class MainWindow : Window
         return new SolidColorBrush(ThemePalette.WithAlpha(ThemePalette.Blend(first, second, 0.5), 0.12));
     }
 
-    private void EnsureInteractiveTreeAttached()
+    private void EnsureScreenReady(AppScreen screen)
     {
-        if (_interactiveTreeAttached)
+        switch (screen)
         {
-            return;
+            case AppScreen.Welcome:
+                EnsureViewAdded(ref WelcomeView, "WelcomeView", BuildWelcomeView);
+                break;
+            case AppScreen.Login:
+                EnsureViewAdded(ref LoginView, "LoginView", BuildLoginView);
+                break;
+            case AppScreen.Register:
+                EnsureViewAdded(ref RegisterView, "RegisterView", BuildRegisterView);
+                break;
+            case AppScreen.Code:
+                EnsureViewAdded(ref CodeView, "CodeView", BuildCodeView);
+                break;
+            case AppScreen.Home:
+                EnsureViewAdded(ref HomeView, "HomeView", BuildHomeView);
+                break;
+            case AppScreen.History:
+                EnsureViewAdded(ref HistoryView, "HistoryView", BuildHistoryView);
+                break;
+            case AppScreen.Settings:
+                EnsureViewAdded(ref SettingsView, "SettingsView", BuildSettingsView);
+                break;
+        }
+    }
+
+    private void EnsureViewAdded(ref FrameworkElement view, string label, Func<FrameworkElement> factory)
+    {
+        if (view is null)
+        {
+            WindowsLog.Info($"Creating deferred screen: {label}");
+            view = factory();
+            WindowsLog.Info($"Deferred screen created: {label}");
         }
 
-        WindowsLog.Info("Attaching deferred interactive screens");
-        ScreenHost.Children.Add(WelcomeView);
-        ScreenHost.Children.Add(LoginView);
-        ScreenHost.Children.Add(RegisterView);
-        ScreenHost.Children.Add(CodeView);
-        ScreenHost.Children.Add(HomeView);
-        ScreenHost.Children.Add(HistoryView);
-        ScreenHost.Children.Add(SettingsView);
-        ScreenHost.Children.Add(ScanOverlay);
-        _interactiveTreeAttached = true;
-        WindowsLog.Info("Deferred interactive screens attached");
+        if (!ScreenHost.Children.Contains(view))
+        {
+            WindowsLog.Info($"Attaching deferred screen: {label}");
+            ScreenHost.Children.Add(view);
+            WindowsLog.Info($"Deferred screen attached: {label}");
+        }
+    }
+
+    private void EnsureScanOverlayReady()
+    {
+        if (ScanOverlay is null)
+        {
+            WindowsLog.Info("Creating deferred scan overlay");
+            ScanOverlay = BuildScanOverlay();
+            Canvas.SetZIndex(ScanOverlay, 40);
+            WindowsLog.Info("Deferred scan overlay created");
+        }
+
+        if (!ScreenHost.Children.Contains(ScanOverlay))
+        {
+            WindowsLog.Info("Attaching deferred scan overlay");
+            ScreenHost.Children.Add(ScanOverlay);
+            WindowsLog.Info("Deferred scan overlay attached");
+        }
     }
 
     private void ShowScreen(AppScreen screen)
     {
         if (screen != AppScreen.Splash)
         {
-            EnsureInteractiveTreeAttached();
+            EnsureScreenReady(screen);
         }
 
         _screen = screen;
         SplashView.Visibility = screen == AppScreen.Splash ? Visibility.Visible : Visibility.Collapsed;
-        WelcomeView.Visibility = screen == AppScreen.Welcome ? Visibility.Visible : Visibility.Collapsed;
-        LoginView.Visibility = screen == AppScreen.Login ? Visibility.Visible : Visibility.Collapsed;
-        RegisterView.Visibility = screen == AppScreen.Register ? Visibility.Visible : Visibility.Collapsed;
-        CodeView.Visibility = screen == AppScreen.Code ? Visibility.Visible : Visibility.Collapsed;
-        HomeView.Visibility = screen == AppScreen.Home ? Visibility.Visible : Visibility.Collapsed;
-        HistoryView.Visibility = screen == AppScreen.History ? Visibility.Visible : Visibility.Collapsed;
-        SettingsView.Visibility = screen == AppScreen.Settings ? Visibility.Visible : Visibility.Collapsed;
+        if (WelcomeView is not null) WelcomeView.Visibility = screen == AppScreen.Welcome ? Visibility.Visible : Visibility.Collapsed;
+        if (LoginView is not null) LoginView.Visibility = screen == AppScreen.Login ? Visibility.Visible : Visibility.Collapsed;
+        if (RegisterView is not null) RegisterView.Visibility = screen == AppScreen.Register ? Visibility.Visible : Visibility.Collapsed;
+        if (CodeView is not null) CodeView.Visibility = screen == AppScreen.Code ? Visibility.Visible : Visibility.Collapsed;
+        if (HomeView is not null) HomeView.Visibility = screen == AppScreen.Home ? Visibility.Visible : Visibility.Collapsed;
+        if (HistoryView is not null) HistoryView.Visibility = screen == AppScreen.History ? Visibility.Visible : Visibility.Collapsed;
+        if (SettingsView is not null) SettingsView.Visibility = screen == AppScreen.Settings ? Visibility.Visible : Visibility.Collapsed;
 
         SetDrawerState(false);
         UpdateHeader();
@@ -1130,16 +1168,28 @@ public sealed partial class MainWindow : Window
         DrawerUserMetaText.Text = hasSession
             ? _session!.User.Email
             : "Войди, чтобы запускать серверные проверки и хранить историю.";
-        SettingsAccountText.Text = hasSession
-            ? $"Пользователь: {displayName}. Почта: {_session!.User.Email}."
-            : "Активной сессии нет.";
-        SettingsDeveloperText.Text = hasSession && _session!.User.IsDeveloperMode
-            ? "Режим разработчика активен. Серверные лимиты отключены."
-            : "Режим разработчика не активен.";
+        if (SettingsAccountText is not null)
+        {
+            SettingsAccountText.Text = hasSession
+                ? $"Пользователь: {displayName}. Почта: {_session!.User.Email}."
+                : "Активной сессии нет.";
+        }
+        if (SettingsDeveloperText is not null)
+        {
+            SettingsDeveloperText.Text = hasSession && _session!.User.IsDeveloperMode
+                ? "Режим разработчика активен. Серверные лимиты отключены."
+                : "Режим разработчика не активен.";
+        }
     }
 
     private void UpdateHomeState()
     {
+        if (HomeHeroTitleText is null || HomeHeroSubtitleText is null || ActiveScanCard is null || ActiveScanCardTitleText is null || ActiveScanCardMetaText is null)
+        {
+            UpdateNetworkUi();
+            return;
+        }
+
         HomeHeroTitleText.Text = _activeScan is not null && !_activeScan.IsFinished
             ? "Проверка уже идёт"
             : "Главное меню";
@@ -1177,6 +1227,12 @@ public sealed partial class MainWindow : Window
 
     private void UpdateSettingsState()
     {
+        if (ThemeModeCombo is null || DynamicColorsToggle is null || AutoStartToggle is null)
+        {
+            UpdateNetworkUi();
+            return;
+        }
+
         _preferenceUiSync = true;
         ThemeModeCombo.SelectedIndex = ThemeModeToIndex(_preferences.ThemeMode);
         DynamicColorsToggle.IsOn = _preferences.DynamicColorsEnabled;
@@ -1234,6 +1290,15 @@ public sealed partial class MainWindow : Window
 
     private void SetScanOverlayState(bool isOpen)
     {
+        if (isOpen)
+        {
+            EnsureScanOverlayReady();
+        }
+        if (ScanOverlay is null)
+        {
+            return;
+        }
+
         _scanOverlayOpen = isOpen;
         ScanOverlay.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         if (isOpen)
@@ -1728,6 +1793,7 @@ public sealed partial class MainWindow : Window
 
     private void RenderScan(DesktopScanState scan)
     {
+        EnsureScanOverlayReady();
         var progress = WindowsTrayProgressService.EstimateProgressPercent(scan);
         ScanModeText.Text = scan.Mode switch
         {
