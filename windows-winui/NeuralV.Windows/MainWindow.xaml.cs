@@ -320,20 +320,20 @@ public sealed partial class MainWindow : Window
 
     private static bool ShouldInvalidateSession(string? error)
     {
-        var message = String(error ?? string.Empty).Trim().ToLowerInvariant();
-        if (string.IsNullOrWhiteSpace(message))
+        var normalizedError = (error ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(normalizedError))
         {
             return false;
         }
 
-        return message.Contains("invalid")
-            || message.Contains("expired")
-            || message.Contains("revoked")
-            || message.Contains("session not found")
-            || message.Contains("device mismatch")
-            || message.Contains("not authorized")
-            || message.Contains("unauthorized")
-            || message.Contains("forbidden");
+        return normalizedError.Contains("invalid")
+            || normalizedError.Contains("expired")
+            || normalizedError.Contains("revoked")
+            || normalizedError.Contains("session not found")
+            || normalizedError.Contains("device mismatch")
+            || normalizedError.Contains("not authorized")
+            || normalizedError.Contains("unauthorized")
+            || normalizedError.Contains("forbidden");
     }
 
     private void BuildLayout()
