@@ -1,6 +1,3 @@
-using System.Diagnostics;
-using System.ServiceProcess;
-using Microsoft.Win32;
 using NeuralV.Windows.Models;
 
 namespace NeuralV.Windows.Services;
@@ -15,86 +12,61 @@ public static class WindowsLocalQuickScanService
     public static DesktopScanState Run()
     {
         var startedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var timeline = new List<string> { "Запускаем локальный быстрый проход по ключевым Windows-зонам." };
+        var timeline = new List<string> { "Запускаем локальный быстрый проход по install roots, автозапуску, сервисам, задачам и связанным Windows-зонам." };
         var findings = new List<DesktopScanFinding>();
         var graphRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var recentCutoff = DateTime.UtcNow.AddDays(-45);
+        var recentCutoff = DateTime.UtcNow.AddDays(-60);
         var scannedObjects = 0;
 
-        foreach (var root in WindowsScanPlanService.BuildSmartCoverageRoots())
-        {
-            if (root.IsMetadataOnly || !root.Exists || string.IsNullOrWhiteSpace(root.Path) || !Directory.Exists(root.Path))
-            {
-                continue;
-            }
+        var seeds = WindowsScanPlanService.BuildSmartCoverageSeeds();
+        var coverageRoots = WindowsScanPlanService.BuildSmartCoverageRoots(seeds)
+            .Where(root => !root.IsMetadataOnly && root.Exists && !string.IsNullOrWhiteSpace(root.Path))
+            .ToArray();
 
-            var topDirectoryOnly = root.Kind is WindowsScanRootKind.LocalAppData or WindowsScanRootKind.RoamingAppData or WindowsScanRootKind.ProgramData or WindowsScanRootKind.ProgramFiles or WindowsScanRootKind.ProgramFilesX86;
-            var matches = EnumerateRecentCandidates(root.Path, recentCutoff, 20, topDirectoryOnly).ToList();
-            scannedObjects += matches.Count;
-            if (matches.Count > 0)
+        AppendSeedSummary(timeline, seeds);
+
+        foreach (var seed in seeds)
+        {
+            scannedObjects++;
+            timeline.Add(BuildSeedTimeline(seed));
+            AddFinding(findings, seenPaths, graphRoots, seed.Path, BuildSeedSummary(seed));
+
+            if (!string.IsNullOrWhiteSpace(seed.RootPath))
             {
-                timeline.Add($"{root.Label}: нашли {matches.Count} недавних исполняемых файлов и скриптов.");
+                AddGraphRoot(graphRoots, seed.RootPath);
+            }
+        }
+
+        foreach (var root in coverageRoots)
+        {
+            var matches = EnumerateCoverageCandidates(root, recentCutoff, 10).ToArray();
+            scannedObjects += matches.Length;
+
+            if (matches.Length > 0)
+            {
+                timeline.Add($"{root.Label}: нашли {matches.Length} релевантных исполняемых файлов, библиотек и скриптов.");
             }
 
             foreach (var match in matches.Take(4))
             {
-                AddFinding(findings, seenPaths, graphRoots, match, $"Недавний исполняемый объект в зоне {root.Label}");
+                AddFinding(findings, seenPaths, graphRoots, match, $"Релевантный бинарный объект в зоне {root.Label}");
             }
         }
 
-        foreach (var shortcut in EnumerateShortcuts())
-        {
-            scannedObjects++;
-            timeline.Add($"Ярлык: {Path.GetFileName(shortcut.ShortcutPath)} -> {shortcut.TargetPath}");
-            AddFinding(findings, seenPaths, graphRoots, shortcut.TargetPath, $"Целевая программа из ярлыка {Path.GetFileName(shortcut.ShortcutPath)}");
-        }
+        var effectiveCoverageRoots = coverageRoots
+            .Select(item => item.Path)
+            .Concat(graphRoots)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
-        foreach (var autorun in EnumerateAutoruns())
-        {
-            scannedObjects++;
-            timeline.Add($"Автозапуск: {autorun.Name} -> {autorun.Path}");
-            AddFinding(findings, seenPaths, graphRoots, autorun.Path, $"Объект автозапуска {autorun.Name}");
-        }
-
-        foreach (var service in EnumerateServices())
-        {
-            scannedObjects++;
-            timeline.Add($"Служба: {service.Name} -> {service.Path}");
-            AddFinding(findings, seenPaths, graphRoots, service.Path, $"Исполняемый файл службы {service.Name}");
-        }
-
-        foreach (var task in EnumerateScheduledTasks())
-        {
-            scannedObjects++;
-            timeline.Add($"Задание: {task.Name} -> {task.Path}");
-            AddFinding(findings, seenPaths, graphRoots, task.Path, $"Исполняемый файл задания {task.Name}");
-        }
-
-        var packageInventory = EnumeratePackageInventory();
-        timeline.Add($"Инвентарь программ: {packageInventory.Count} записей из install roots.");
-        foreach (var package in packageInventory.Take(12))
-        {
-            if (!string.IsNullOrWhiteSpace(package.Path))
-            {
-                AddFinding(findings, seenPaths, graphRoots, package.Path!, $"Установленная программа {package.Name}");
-            }
-            else if (!string.IsNullOrWhiteSpace(package.InstallRoot))
-            {
-                AddGraphRoot(graphRoots, package.InstallRoot!);
-            }
-        }
-
-        var coverageRoots = graphRoots.Count == 0
-            ? WindowsScanPlanService.BuildSmartCoverageRoots().Select(item => item.Path)
-            : graphRoots.AsEnumerable();
         var surfacedFindings = findings.Take(18).ToArray();
         var completedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var message = surfacedFindings.Length > 0
-            ? $"Быстрая проверка охватила {coverageRoots.Count()} корней и собрала {surfacedFindings.Length} значимых точек для дальнейшего анализа."
-            : $"Быстрая проверка охватила {coverageRoots.Count()} корней, явных совпадений не найдено.";
+            ? $"Быстрая проверка охватила {effectiveCoverageRoots.Length} корней и собрала {surfacedFindings.Length} значимых точек для дальнейшего анализа."
+            : $"Быстрая проверка охватила {effectiveCoverageRoots.Length} корней, явных совпадений не найдено.";
 
-        timeline.Add($"Покрытие: корней={coverageRoots.Count()}, объектов={scannedObjects}, находок={surfacedFindings.Length}.");
+        timeline.Add($"Покрытие: корней={effectiveCoverageRoots.Length}, объектов={scannedObjects}, находок={surfacedFindings.Length}.");
 
         return new DesktopScanState
         {
@@ -104,265 +76,189 @@ public static class WindowsLocalQuickScanService
             Status = "COMPLETED",
             Verdict = surfacedFindings.Length > 0 ? "Требуется дополнительная проверка" : "Совпадений не найдено",
             Message = message,
-            RiskScore = surfacedFindings.Length == 0 ? 0 : Math.Min(78, 24 + (surfacedFindings.Length * 4)),
+            RiskScore = surfacedFindings.Length == 0 ? 0 : Math.Min(84, 28 + (surfacedFindings.Length * 4)),
             SurfacedFindings = surfacedFindings.Length,
             HiddenFindings = Math.Max(0, findings.Count - surfacedFindings.Length),
             StartedAt = startedAt,
             CompletedAt = completedAt,
-            Timeline = timeline.Distinct().Take(120).ToArray(),
+            Timeline = timeline.Distinct().Take(160).ToArray(),
             Findings = surfacedFindings
         };
     }
 
-    private static IEnumerable<string> EnumerateRecentCandidates(string root, DateTime recentCutoffUtc, int limit, bool topDirectoryOnly)
+    private static void AppendSeedSummary(ICollection<string> timeline, IReadOnlyCollection<WindowsScanSeed> seeds)
     {
-        var results = new List<(string Path, DateTime Timestamp)>();
-        try
-        {
-            var searchOption = topDirectoryOnly ? SearchOption.TopDirectoryOnly : SearchOption.AllDirectories;
-            foreach (var file in Directory.EnumerateFiles(root, "*", searchOption))
-            {
-                if (!RiskyExtensions.Contains(Path.GetExtension(file)))
-                {
-                    continue;
-                }
+        var installedPrograms = seeds.Count(seed => seed.Kind == WindowsScanSeedKind.InstalledProgram);
+        var shortcuts = seeds.Count(seed => seed.Kind == WindowsScanSeedKind.Shortcut);
+        var autoruns = seeds.Count(seed => seed.Kind == WindowsScanSeedKind.Autorun);
+        var services = seeds.Count(seed => seed.Kind == WindowsScanSeedKind.Service);
+        var scheduledTasks = seeds.Count(seed => seed.Kind == WindowsScanSeedKind.ScheduledTask);
 
-                DateTime timestamp;
-                try
-                {
-                    timestamp = File.GetLastWriteTimeUtc(file);
-                }
-                catch
-                {
-                    continue;
-                }
-
-                if (timestamp < recentCutoffUtc)
-                {
-                    continue;
-                }
-
-                results.Add((file, timestamp));
-                if (results.Count >= limit)
-                {
-                    break;
-                }
-            }
-        }
-        catch
-        {
-        }
-
-        return results.OrderByDescending(item => item.Timestamp).Select(item => item.Path);
+        timeline.Add(
+            $"Точки входа: installs={installedPrograms}, ярлыки={shortcuts}, автозапуск={autoruns}, службы={services}, задания={scheduledTasks}.");
     }
 
-    private static IEnumerable<(string ShortcutPath, string TargetPath)> EnumerateShortcuts()
+    private static string BuildSeedTimeline(WindowsScanSeed seed)
     {
-        foreach (var root in WindowsScanPlanService.BuildInstallRoots())
+        return seed.Kind switch
         {
-            IEnumerable<string> shortcuts;
-            try
-            {
-                shortcuts = Directory.EnumerateFiles(root, "*.lnk", SearchOption.AllDirectories);
-            }
-            catch
-            {
-                continue;
-            }
-
-            foreach (var shortcut in shortcuts.Take(48))
-            {
-                var target = ResolveShortcutTarget(shortcut);
-                if (!string.IsNullOrWhiteSpace(target) && LooksExecutable(target))
-                {
-                    yield return (shortcut, target!);
-                }
-            }
-        }
+            WindowsScanSeedKind.Shortcut => $"Ярлык: {seed.Name} -> {seed.Path}",
+            WindowsScanSeedKind.Autorun => $"Автозапуск: {seed.Name} -> {seed.Path}",
+            WindowsScanSeedKind.Service => $"Служба: {seed.Name} -> {seed.Path}",
+            WindowsScanSeedKind.ScheduledTask => $"Задание: {seed.Name} -> {seed.Path}",
+            _ => $"Установка: {seed.Name} -> {seed.Path}"
+        };
     }
 
-    private static string? ResolveShortcutTarget(string shortcutPath)
+    private static string BuildSeedSummary(WindowsScanSeed seed)
     {
-        try
+        return seed.Kind switch
         {
-            var shellType = Type.GetTypeFromProgID("WScript.Shell");
-            if (shellType is null)
-            {
-                return null;
-            }
-            dynamic shell = Activator.CreateInstance(shellType)!;
-            dynamic shortcut = shell.CreateShortcut(shortcutPath);
-            return shortcut.TargetPath as string;
-        }
-        catch
-        {
-            return null;
-        }
+            WindowsScanSeedKind.Shortcut => $"Целевая программа из ярлыка {seed.Name}",
+            WindowsScanSeedKind.Autorun => $"Объект автозапуска {seed.Name}",
+            WindowsScanSeedKind.Service => $"Исполняемый файл службы {seed.Name}",
+            WindowsScanSeedKind.ScheduledTask => $"Исполняемый файл задания {seed.Name}",
+            _ => $"Установленная программа {seed.Name}"
+        };
     }
 
-    private static IEnumerable<(string Name, string Path)> EnumerateAutoruns()
+    private static IEnumerable<string> EnumerateCoverageCandidates(WindowsScanRoot root, DateTime recentCutoffUtc, int limit)
     {
-        var locations = new[]
+        if (string.IsNullOrWhiteSpace(root.Path))
         {
-            @"Software\Microsoft\Windows\CurrentVersion\Run",
-            @"Software\Microsoft\Windows\CurrentVersion\RunOnce"
+            return Array.Empty<string>();
+        }
+
+        if (File.Exists(root.Path))
+        {
+            return LooksExecutable(root.Path)
+                ? [root.Path]
+                : Array.Empty<string>();
+        }
+
+        if (!Directory.Exists(root.Path))
+        {
+            return Array.Empty<string>();
+        }
+
+        var (maxDepth, maxDirectories) = root.Kind switch
+        {
+            WindowsScanRootKind.ProgramFiles or
+            WindowsScanRootKind.ProgramFilesX86 or
+            WindowsScanRootKind.ProgramData or
+            WindowsScanRootKind.LocalAppData or
+            WindowsScanRootKind.RoamingAppData or
+            WindowsScanRootKind.UserProfile => (2, 72),
+
+            WindowsScanRootKind.LocalAppPrograms or
+            WindowsScanRootKind.CommonFiles or
+            WindowsScanRootKind.CommonFilesX86 or
+            WindowsScanRootKind.PackageInstallRoot or
+            WindowsScanRootKind.ShortcutTarget or
+            WindowsScanRootKind.AutorunTarget or
+            WindowsScanRootKind.ServiceTarget or
+            WindowsScanRootKind.ScheduledTaskTarget or
+            WindowsScanRootKind.RelatedBinaryRoot => (3, 48),
+
+            WindowsScanRootKind.StartMenu or
+            WindowsScanRootKind.CommonStartMenu or
+            WindowsScanRootKind.Startup or
+            WindowsScanRootKind.CommonStartup or
+            WindowsScanRootKind.Desktop or
+            WindowsScanRootKind.CommonDesktop or
+            WindowsScanRootKind.Documents or
+            WindowsScanRootKind.Downloads => (3, 36),
+
+            _ => (2, 32)
         };
 
-        foreach (var hive in new[] { Registry.CurrentUser, Registry.LocalMachine })
+        return EnumerateRiskyFiles(root.Path, maxDepth, maxDirectories, limit * 4)
+            .OrderByDescending(candidate => candidate.IsRecent)
+            .ThenByDescending(candidate => candidate.Priority)
+            .ThenByDescending(candidate => candidate.Timestamp)
+            .Select(candidate => candidate.Path)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(limit)
+            .ToArray();
+
+        IEnumerable<(string Path, DateTime Timestamp, bool IsRecent, int Priority)> EnumerateRiskyFiles(
+            string baseDirectory,
+            int depthLimit,
+            int directoryLimit,
+            int candidateLimit)
         {
-            foreach (var location in locations)
+            var queue = new Queue<(string Directory, int Depth)>();
+            queue.Enqueue((baseDirectory, 0));
+            var visitedDirectories = 0;
+            var emitted = 0;
+
+            while (queue.Count > 0 && visitedDirectories < directoryLimit && emitted < candidateLimit)
             {
-                RegistryKey? key = null;
+                var (directory, depth) = queue.Dequeue();
+                visitedDirectories++;
+
+                IEnumerable<string> files;
                 try
                 {
-                    key = hive.OpenSubKey(location);
+                    files = Directory.EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly);
                 }
                 catch
                 {
-                }
-
-                if (key is null)
-                {
                     continue;
                 }
 
-                foreach (var valueName in key.GetValueNames())
+                foreach (var file in files)
                 {
-                    var raw = key.GetValue(valueName)?.ToString();
-                    var path = ExtractExecutablePath(raw);
-                    if (!string.IsNullOrWhiteSpace(path))
+                    if (!LooksExecutable(file))
                     {
-                        yield return (valueName, path!);
+                        continue;
+                    }
+
+                    var timestamp = SafeGetLastWriteTimeUtc(file);
+                    yield return (file, timestamp, timestamp >= recentCutoffUtc, GetExtensionPriority(file));
+                    emitted++;
+                    if (emitted >= candidateLimit)
+                    {
+                        yield break;
                     }
                 }
-            }
-        }
-    }
 
-    private static IEnumerable<(string Name, string Path)> EnumerateServices()
-    {
-        foreach (var service in ServiceController.GetServices().Take(80))
-        {
-            string? imagePath = null;
-            try
-            {
-                using var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{service.ServiceName}");
-                imagePath = key?.GetValue("ImagePath")?.ToString();
-            }
-            catch
-            {
-            }
-
-            var executable = ExtractExecutablePath(imagePath);
-            if (!string.IsNullOrWhiteSpace(executable))
-            {
-                yield return (service.DisplayName, executable!);
-            }
-        }
-    }
-
-    private static IEnumerable<(string Name, string Path)> EnumerateScheduledTasks()
-    {
-        var tasks = new List<(string Name, string Path)>();
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = "schtasks.exe",
-                Arguments = "/query /fo csv /v",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            using var process = Process.Start(psi);
-            if (process is null)
-            {
-                yield break;
-            }
-
-            var output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit(5000);
-            using var reader = new StringReader(output);
-            _ = reader.ReadLine();
-            string? line;
-            var seen = 0;
-            while ((line = reader.ReadLine()) is not null && seen < 80)
-            {
-                var columns = ParseCsvLine(line);
-                if (columns.Count < 19)
+                if (depth >= depthLimit)
                 {
                     continue;
                 }
-                var name = columns[0];
-                var taskToRun = columns[18];
-                var executable = ExtractExecutablePath(taskToRun);
-                if (!string.IsNullOrWhiteSpace(executable))
+
+                IEnumerable<string> childDirectories;
+                try
                 {
-                    seen++;
-                    tasks.Add((name, executable!));
+                    childDirectories = Directory.EnumerateDirectories(directory, "*", SearchOption.TopDirectoryOnly);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                foreach (var childDirectory in childDirectories.Take(24))
+                {
+                    queue.Enqueue((childDirectory, depth + 1));
                 }
             }
         }
-        catch
-        {
-        }
-
-        foreach (var task in tasks)
-        {
-            yield return task;
-        }
-    }
-
-    private static List<PackageInventoryEntry> EnumeratePackageInventory()
-    {
-        var entries = new List<PackageInventoryEntry>();
-        foreach (var root in WindowsScanPlanService.BuildSmartCoverageRoots().Where(item => item.Kind is WindowsScanRootKind.ProgramFiles or WindowsScanRootKind.ProgramFilesX86 or WindowsScanRootKind.LocalAppData or WindowsScanRootKind.RoamingAppData or WindowsScanRootKind.ProgramData))
-        {
-            if (!Directory.Exists(root.Path))
-            {
-                continue;
-            }
-
-            try
-            {
-                foreach (var directory in Directory.EnumerateDirectories(root.Path).Take(40))
-                {
-                    var exe = Directory.EnumerateFiles(directory, "*.exe", SearchOption.TopDirectoryOnly).FirstOrDefault();
-                    entries.Add(new PackageInventoryEntry
-                    {
-                        Name = Path.GetFileName(directory),
-                        InstallRoot = directory,
-                        Path = exe,
-                        Source = root.Label
-                    });
-                }
-            }
-            catch
-            {
-            }
-        }
-        return entries;
     }
 
     private static void AddFinding(List<DesktopScanFinding> findings, HashSet<string> seenPaths, HashSet<string> graphRoots, string path, string summary)
     {
-        if (string.IsNullOrWhiteSpace(path))
+        var normalizedPath = NormalizeFullPath(path);
+        if (string.IsNullOrWhiteSpace(normalizedPath) || !seenPaths.Add(normalizedPath))
         {
             return;
         }
 
-        path = Path.GetFullPath(path);
-        if (!seenPaths.Add(path))
-        {
-            return;
-        }
-
-        AddGraphRoot(graphRoots, path);
+        AddGraphRoot(graphRoots, normalizedPath);
         findings.Add(new DesktopScanFinding
         {
-            Id = path,
-            Title = Path.GetFileName(path),
+            Id = normalizedPath,
+            Title = Path.GetFileName(normalizedPath),
             Verdict = "review",
             Summary = summary,
             Engines = Array.Empty<string>()
@@ -371,21 +267,23 @@ public static class WindowsLocalQuickScanService
 
     private static void AddGraphRoot(HashSet<string> roots, string path)
     {
-        if (string.IsNullOrWhiteSpace(path))
+        var normalizedPath = NormalizeFullPath(path);
+        if (string.IsNullOrWhiteSpace(normalizedPath))
         {
             return;
         }
 
-        var fullPath = Path.GetFullPath(path);
-        var baseDirectory = File.Exists(fullPath) ? Path.GetDirectoryName(fullPath) : fullPath;
-        if (string.IsNullOrWhiteSpace(baseDirectory))
+        var baseDirectory = Directory.Exists(normalizedPath)
+            ? normalizedPath
+            : Path.GetDirectoryName(normalizedPath);
+        if (string.IsNullOrWhiteSpace(baseDirectory) || !Directory.Exists(baseDirectory))
         {
             return;
         }
 
         roots.Add(baseDirectory);
-        var related = WindowsScanPlanService.BuildRelatedBinaryRoots(fullPath);
-        foreach (var relatedRoot in related)
+
+        foreach (var relatedRoot in WindowsScanPlanService.BuildRelatedBinaryRoots(normalizedPath))
         {
             if (!string.IsNullOrWhiteSpace(relatedRoot))
             {
@@ -394,75 +292,46 @@ public static class WindowsLocalQuickScanService
         }
     }
 
-    private static bool LooksExecutable(string path) => RiskyExtensions.Contains(Path.GetExtension(path));
-
-    private static string? ExtractExecutablePath(string? raw)
+    private static string? NormalizeFullPath(string? path)
     {
-        if (string.IsNullOrWhiteSpace(raw))
+        if (string.IsNullOrWhiteSpace(path))
         {
             return null;
         }
 
-        raw = raw.Trim();
-        if (raw.StartsWith('"'))
+        path = Environment.ExpandEnvironmentVariables(path.Trim().Trim('"', '\''));
+        try
         {
-            var closing = raw.IndexOf('"', 1);
-            if (closing > 1)
-            {
-                raw = raw[1..closing];
-            }
+            return Path.GetFullPath(path);
         }
-        else
+        catch
         {
-            raw = raw.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? raw;
+            return null;
         }
-
-        raw = Environment.ExpandEnvironmentVariables(raw.Trim('"'));
-        return string.IsNullOrWhiteSpace(raw) ? null : raw;
     }
 
-    private static List<string> ParseCsvLine(string line)
+    private static bool LooksExecutable(string path) => RiskyExtensions.Contains(Path.GetExtension(path));
+
+    private static int GetExtensionPriority(string path)
     {
-        var result = new List<string>();
-        var current = new List<char>();
-        var inQuotes = false;
-
-        for (var i = 0; i < line.Length; i++)
+        return Path.GetExtension(path).ToLowerInvariant() switch
         {
-            var ch = line[i];
-            if (ch == '"')
-            {
-                if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
-                {
-                    current.Add('"');
-                    i++;
-                }
-                else
-                {
-                    inQuotes = !inQuotes;
-                }
-                continue;
-            }
-
-            if (ch == ',' && !inQuotes)
-            {
-                result.Add(new string(current.ToArray()));
-                current.Clear();
-                continue;
-            }
-
-            current.Add(ch);
-        }
-
-        result.Add(new string(current.ToArray()));
-        return result;
+            ".exe" => 4,
+            ".dll" => 3,
+            ".sys" or ".drv" or ".ocx" => 2,
+            _ => 1
+        };
     }
 
-    private sealed class PackageInventoryEntry
+    private static DateTime SafeGetLastWriteTimeUtc(string path)
     {
-        public string Name { get; init; } = string.Empty;
-        public string? Path { get; init; }
-        public string? InstallRoot { get; init; }
-        public string? Source { get; init; }
+        try
+        {
+            return File.GetLastWriteTimeUtc(path);
+        }
+        catch
+        {
+            return DateTime.MinValue;
+        }
     }
 }

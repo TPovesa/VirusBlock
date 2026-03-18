@@ -38,17 +38,26 @@ public enum WindowsScanRootKind
 {
     UserProfile,
     Desktop,
+    CommonDesktop,
     Downloads,
     Documents,
     LocalAppData,
     RoamingAppData,
     ProgramData,
+    LocalAppPrograms,
     ProgramFiles,
     ProgramFilesX86,
+    CommonFiles,
+    CommonFilesX86,
     StartMenu,
     CommonStartMenu,
     Startup,
     CommonStartup,
+    PackageInstallRoot,
+    ShortcutTarget,
+    AutorunTarget,
+    ServiceTarget,
+    ScheduledTaskTarget,
     TargetFile,
     TargetDirectory,
     RelatedBinaryRoot,
@@ -57,6 +66,15 @@ public enum WindowsScanRootKind
     DriveRoot,
     Temp,
     Custom
+}
+
+public enum WindowsScanSeedKind
+{
+    InstalledProgram,
+    Shortcut,
+    Autorun,
+    Service,
+    ScheduledTask
 }
 
 public enum TrayScanVisualState
@@ -171,6 +189,16 @@ public sealed class WindowsScanRoot
     public string Label { get; init; } = string.Empty;
     public bool Exists { get; init; }
     public bool IsMetadataOnly { get; init; }
+}
+
+public sealed class WindowsScanSeed
+{
+    public WindowsScanSeedKind Kind { get; init; } = WindowsScanSeedKind.InstalledProgram;
+    public string Name { get; init; } = string.Empty;
+    public string Path { get; init; } = string.Empty;
+    public string RootPath { get; init; } = string.Empty;
+    public string Source { get; init; } = string.Empty;
+    public string SourcePath { get; init; } = string.Empty;
 }
 
 public sealed class WindowsScanPlan

@@ -122,10 +122,23 @@ function platformLabel(os) {
   return os || 'Платформа';
 }
 
+function canonicalPackageName(rawName) {
+  const value = String(rawName || '').trim();
+  const normalized = value.toLowerCase();
+  const namespaced = normalized.match(/^@?([a-z0-9._-]+)\/([a-z0-9._-]+)$/);
+  if (namespaced) {
+    return `@${namespaced[1]}/${namespaced[2]}`;
+  }
+  if (normalized === 'neuralv') return '@lvls/neuralv';
+  if (normalized === 'nv') return '@lvls/nv';
+  return value;
+}
+
 function parsePackageName(rawName) {
-  const matched = /^@([^/]+)\/(.+)$/.exec(String(rawName || '').trim());
+  const matched = /^@([^/]+)\/(.+)$/.exec(canonicalPackageName(rawName));
   if (!matched) {
-    return { creator: 'unknown', packageName: String(rawName || '').trim() || 'package', canonicalName: String(rawName || '').trim() || 'package' };
+    const fallbackName = canonicalPackageName(rawName) || 'package';
+    return { creator: 'unknown', packageName: fallbackName, canonicalName: fallbackName };
   }
   return {
     creator: matched[1],
@@ -136,6 +149,38 @@ function parsePackageName(rawName) {
 
 function normalizeCreatorSlug(value) {
   return String(value || '').trim().replace(/^@+/, '').toLowerCase();
+}
+
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizePrimaryInstallCommand(command, packageName) {
+  const raw = String(command || '').trim();
+  const canonicalName = canonicalPackageName(packageName);
+  if (!raw || !canonicalName) return raw;
+
+  const lower = raw.toLowerCase();
+  if (!(lower.includes('nv install') || lower.includes('nv.exe'))) {
+    return raw;
+  }
+
+  const aliases = canonicalName === '@lvls/neuralv'
+    ? ['@lvls/neuralv', 'neuralv']
+    : canonicalName === '@lvls/nv'
+      ? ['@lvls/nv', 'nv']
+      : [canonicalName];
+
+  let output = raw;
+  for (const alias of aliases) {
+    const pattern = new RegExp(`(\\binstall\\s+)${escapeRegExp(alias)}(?:@([a-z0-9][a-z0-9._-]*))?(?=(?:\\s|[\"');&|])|$)`, 'gi');
+    output = output.replace(pattern, (_, prefix, version = '') => {
+      const normalizedVersion = String(version || '').trim().toLowerCase();
+      return `${prefix}${normalizedVersion && normalizedVersion !== 'latest' ? `${canonicalName}@${normalizedVersion}` : canonicalName}`;
+    });
+  }
+
+  return output;
 }
 
 function isTelegramDomainError(raw) {
@@ -254,26 +299,26 @@ function creatorLink(creator) {
   return slug ? `/nv/profile/creator/?slug=${encodeURIComponent(slug)}` : '/nv/profile/creator/';
 }
 
-function normalizeVariant(variant) {
+function normalizeVariant(variant, packageName = '') {
   return {
     id: String(variant.id || '').trim(),
     label: String(variant.label || platformLabel(variant.os)).trim(),
     os: String(variant.os || 'unknown').trim().toLowerCase(),
     version: String(variant.version || '').trim(),
     downloadUrl: String(variant.download_url || '').trim(),
-    installCommand: String(
+    installCommand: normalizePrimaryInstallCommand(String(
       variant.install_command ||
       variant.metadata?.commands?.powershell?.install ||
       variant.metadata?.commands?.cmd?.install ||
       ''
-    ).trim(),
+    ).trim(), packageName),
     metadata: variant.metadata || {}
   };
 }
 
 function normalizeRegistryPackage(pkg) {
   const identity = parsePackageName(pkg.name);
-  const variants = safeArray(pkg.variants).map(normalizeVariant);
+  const variants = safeArray(pkg.variants).map((variant) => normalizeVariant(variant, identity.canonicalName));
   const platforms = [...new Set(variants.map((variant) => variant.os).filter(Boolean))];
   return {
     name: identity.canonicalName,
@@ -300,7 +345,7 @@ function normalizeCatalogPackage(pkg) {
     homepage: String(pkg.homepage || '').trim(),
     latestVersion: String(pkg.latest_version || '—').trim(),
     platforms,
-    installCommand: String(pkg.install_command || `nv install ${identity.canonicalName}`).trim(),
+    installCommand: normalizePrimaryInstallCommand(String(pkg.install_command || `nv install ${identity.canonicalName}`).trim(), identity.canonicalName),
     source: String(pkg.source || '').trim()
   };
 }
@@ -308,7 +353,7 @@ function normalizeCatalogPackage(pkg) {
 function deriveCatalogFromRegistry() {
   const packages = safeArray(state.registry.packages).map(normalizeRegistryPackage).map((pkg) => ({
     ...pkg,
-    installCommand: `nv install ${pkg.name}`,
+    installCommand: normalizePrimaryInstallCommand(`nv install ${pkg.name}`, pkg.name),
     source: 'registry'
   }));
   const creatorsMap = new Map();
@@ -690,8 +735,8 @@ function applyDownloadPlatform(platform) {
   if (version) version.textContent = variant?.version || '—';
   if (command) {
     command.textContent = platform === 'windows'
-      ? String(variant?.metadata?.commands?.powershell?.install || variant?.installCommand || '')
-      : String(variant?.installCommand || '');
+      ? normalizePrimaryInstallCommand(String(variant?.metadata?.commands?.powershell?.install || variant?.installCommand || ''), '@lvls/nv')
+      : normalizePrimaryInstallCommand(String(variant?.installCommand || ''), '@lvls/nv');
   }
   if (actions) {
     const buttons = [];
@@ -699,7 +744,7 @@ function applyDownloadPlatform(platform) {
       buttons.push(`<a class="primary-button" href="${escapeHtml(variant.downloadUrl)}">Скачать бинарник</a>`);
     }
     const extraCommand = platform === 'windows'
-      ? String(variant?.metadata?.commands?.cmd?.install || '')
+      ? normalizePrimaryInstallCommand(String(variant?.metadata?.commands?.cmd?.install || ''), '@lvls/nv')
       : '';
     if (extraCommand) {
       buttons.push(`<button class="ghost-button" type="button" data-copy="${escapeHtml(extraCommand)}">Копировать CMD</button>`);

@@ -129,6 +129,38 @@ function parsePackageRef(rawRef) {
     };
 }
 
+function escapeRegExp(value) {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizePrimaryInstallCommand(command, packageName) {
+    const raw = String(command || '').trim();
+    const canonicalName = canonicalPackageName(packageName);
+    if (!raw || !canonicalName) {
+        return raw;
+    }
+    if (!/\bnv\s+install\b|nv\.exe/i.test(raw)) {
+        return raw;
+    }
+
+    const aliases = canonicalName === '@lvls/neuralv'
+        ? ['@lvls/neuralv', 'neuralv']
+        : canonicalName === '@lvls/nv'
+            ? ['@lvls/nv', 'nv']
+            : [canonicalName];
+
+    let output = raw;
+    for (const alias of aliases) {
+        const pattern = new RegExp(`(\\binstall\\s+)${escapeRegExp(alias)}(?:@([a-z0-9][a-z0-9._-]*))?(?=(?:\\s|["');&|])|$)`, 'gi');
+        output = output.replace(pattern, (_, prefix, version = '') => {
+            const normalizedVersion = normalizeText(version);
+            return `${prefix}${normalizedVersion && normalizedVersion !== 'latest' ? `${canonicalName}@${normalizedVersion}` : canonicalName}`;
+        });
+    }
+
+    return output;
+}
+
 function ensureArray(value) {
     return Array.isArray(value) ? value : [];
 }
@@ -584,8 +616,14 @@ function buildVariantRecord(packageDef, definition, primaryArtifact, primarySour
         channel: primaryArtifact?.channel || 'main',
         file_name: primaryArtifact?.file_name || '',
         download_url: primaryArtifact?.download_url || '',
-        install_command: String(definition.install_command || primaryArtifact?.install_command || '').trim(),
-        update_command: String(definition.update_command || primaryArtifact?.update_command || '').trim(),
+        install_command: normalizePrimaryInstallCommand(
+            String(definition.install_command || primaryArtifact?.install_command || '').trim(),
+            packageDef.name
+        ),
+        update_command: normalizePrimaryInstallCommand(
+            String(definition.update_command || primaryArtifact?.update_command || '').trim(),
+            packageDef.name
+        ),
         update_policy: updatePolicy,
         auto_update: autoUpdate,
         sha256: primaryArtifact?.sha256 || '',
@@ -687,8 +725,14 @@ function normalizeHubRelease(release, packageDef) {
         channel: String(release?.channel || 'community').trim() || 'community',
         file_name: String(release?.file_name || '').trim(),
         download_url: String(release?.download_url || '').trim(),
-        install_command: String(release?.install_command || packageDef.install_command || `nv install ${packageDef.name}`).trim(),
-        update_command: String(release?.update_command || packageDef.update_command || packageDef.install_command || `nv install ${packageDef.name}`).trim(),
+        install_command: normalizePrimaryInstallCommand(
+            String(release?.install_command || packageDef.install_command || `nv install ${packageDef.name}`).trim(),
+            packageDef.name
+        ),
+        update_command: normalizePrimaryInstallCommand(
+            String(release?.update_command || packageDef.update_command || packageDef.install_command || `nv install ${packageDef.name}`).trim(),
+            packageDef.name
+        ),
         update_policy: 'nv-command',
         auto_update: false,
         sha256: String(release?.sha256 || '').trim(),
