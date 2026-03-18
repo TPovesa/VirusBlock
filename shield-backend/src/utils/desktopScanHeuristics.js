@@ -537,8 +537,31 @@ function normalizeDesktopScanPayload(payload) {
             256,
             700
         ),
+        coverageMode: normalizeString(
+            artifactMetadata.coverage_mode
+            || artifactMetadata.coverageMode
+            || source.coverage_mode
+            || source.coverageMode,
+            64
+        ),
         scanRoots: normalizePathList(
             artifactMetadata.scan_roots || artifactMetadata.scanRoots || artifactMetadata.search_roots || artifactMetadata.searchRoots,
+            256,
+            700
+        ),
+        relatedBinaryRoots: normalizePathList(
+            artifactMetadata.related_binary_roots
+            || artifactMetadata.relatedBinaryRoots
+            || source.related_binary_roots
+            || source.relatedBinaryRoots,
+            256,
+            700
+        ),
+        metadataRoots: normalizePathList(
+            artifactMetadata.metadata_roots
+            || artifactMetadata.metadataRoots
+            || source.metadata_roots
+            || source.metadataRoots,
             256,
             700
         ),
@@ -585,6 +608,11 @@ function normalizeDesktopScanPayload(payload) {
     };
 
     normalizedMetadata.recommendedScanRoots = deriveRecommendedScanRoots(platform, normalizedMetadata);
+    normalizedMetadata.effectiveScanRoots = uniqueStrings([
+        ...normalizedMetadata.scanRoots,
+        ...normalizedMetadata.relatedBinaryRoots,
+        ...normalizedMetadata.metadataRoots
+    ], 512, 700);
     normalizedMetadata.packageCount = normalizedMetadata.packageCount || normalizedMetadata.packageInventory.length || null;
     normalizedMetadata.candidateCount = normalizedMetadata.candidateCount || normalizedMetadata.candidatePaths.length || null;
 

@@ -427,6 +427,9 @@ internal static class JsonElementExtensions
         return element.Value.TryGetProperty(propertyName, out var value) ? value : null;
     }
 
+    public static JsonElement? GetPropertyOrDefault(this JsonElement element, string propertyName) =>
+        ((JsonElement?)element).GetPropertyOrDefault(propertyName);
+
     public static string ReadString(this JsonElement? element, string propertyName = "", string fallback = "")
     {
         var target = string.IsNullOrEmpty(propertyName) ? element : element.GetPropertyOrDefault(propertyName);
@@ -444,6 +447,9 @@ internal static class JsonElementExtensions
             _ => fallback
         };
     }
+
+    public static string ReadString(this JsonElement element, string propertyName = "", string fallback = "") =>
+        ((JsonElement?)element).ReadString(propertyName, fallback);
 
     public static bool ReadBoolean(this JsonElement? element, string propertyName = "", bool fallback = false)
     {
@@ -463,6 +469,9 @@ internal static class JsonElementExtensions
         };
     }
 
+    public static bool ReadBoolean(this JsonElement element, string propertyName = "", bool fallback = false) =>
+        ((JsonElement?)element).ReadBoolean(propertyName, fallback);
+
     public static int ReadInt32(this JsonElement? element, string propertyName = "", int fallback = 0)
     {
         var target = string.IsNullOrEmpty(propertyName) ? element : element.GetPropertyOrDefault(propertyName);
@@ -480,6 +489,9 @@ internal static class JsonElementExtensions
         };
     }
 
+    public static int ReadInt32(this JsonElement element, string propertyName = "", int fallback = 0) =>
+        ((JsonElement?)element).ReadInt32(propertyName, fallback);
+
     public static long ReadInt64(this JsonElement? element, string propertyName = "", long fallback = 0)
     {
         var target = string.IsNullOrEmpty(propertyName) ? element : element.GetPropertyOrDefault(propertyName);
@@ -496,6 +508,9 @@ internal static class JsonElementExtensions
             _ => fallback
         };
     }
+
+    public static long ReadInt64(this JsonElement element, string propertyName = "", long fallback = 0) =>
+        ((JsonElement?)element).ReadInt64(propertyName, fallback);
 
     public static IReadOnlyList<string> ToStringList(this JsonElement? element)
     {

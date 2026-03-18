@@ -225,7 +225,14 @@ public sealed partial class MainWindow : Window
                 }
                 else
                 {
-                    WindowsLog.Info($"Session refresh soft-failed: {refresh.error ?? "unknown"}");
+                    var refreshError = refresh.error ?? "unknown";
+                    WindowsLog.Info($"Session refresh soft-failed: {refreshError}");
+                    if (ShouldInvalidateSession(refreshError))
+                    {
+                        WindowsLog.Info("Session marked invalid after refresh failure, clearing local session");
+                        _session = null;
+                        SessionStore.ClearSession();
+                    }
                 }
             }
             else
@@ -309,6 +316,24 @@ public sealed partial class MainWindow : Window
         }
 
         UpdateNetworkUi();
+    }
+
+    private static bool ShouldInvalidateSession(string? error)
+    {
+        var message = String(error ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return false;
+        }
+
+        return message.Contains("invalid")
+            || message.Contains("expired")
+            || message.Contains("revoked")
+            || message.Contains("session not found")
+            || message.Contains("device mismatch")
+            || message.Contains("not authorized")
+            || message.Contains("unauthorized")
+            || message.Contains("forbidden");
     }
 
     private void BuildLayout()
@@ -425,7 +450,7 @@ public sealed partial class MainWindow : Window
         ScreenHost.Children.Add(SettingsView);
 
         ScanOverlay = BuildScanOverlay();
-        Panel.SetZIndex(ScanOverlay, 40);
+        Canvas.SetZIndex(ScanOverlay, 40);
         ScreenHost.Children.Add(ScanOverlay);
 
         DrawerScrim = new Border
@@ -434,12 +459,12 @@ public sealed partial class MainWindow : Window
             Visibility = Visibility.Collapsed
         };
         DrawerScrim.Tapped += (_, _) => SetDrawerState(false);
-        Panel.SetZIndex(DrawerScrim, 60);
+        Canvas.SetZIndex(DrawerScrim, 60);
         _windowRoot.Children.Add(DrawerScrim);
 
         DrawerPanel = BuildDrawerPanel();
         DrawerPanel.Visibility = Visibility.Collapsed;
-        Panel.SetZIndex(DrawerPanel, 61);
+        Canvas.SetZIndex(DrawerPanel, 61);
         _windowRoot.Children.Add(DrawerPanel);
 
         BusyOverlay = new Border
@@ -447,7 +472,7 @@ public sealed partial class MainWindow : Window
             Background = ThemeBrush("AppOverlayScrimBrush"),
             Visibility = Visibility.Collapsed
         };
-        Panel.SetZIndex(BusyOverlay, 80);
+        Canvas.SetZIndex(BusyOverlay, 80);
         var busyCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineStrongBrush", 22, new Thickness(22));
         busyCard.Width = 320;
         busyCard.HorizontalAlignment = HorizontalAlignment.Center;
@@ -1808,7 +1833,15 @@ public sealed partial class MainWindow : Window
                 SetStatus(ex.Message);
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                WindowsLog.Info("Desktop scan polling delay cancelled");
+                return;
+            }
         }
     }
 
@@ -1844,23 +1877,6 @@ public sealed partial class MainWindow : Window
         {
             SetScanOverlayState(true);
         }
-    }
-
-    private static int EstimateScanProgress(DesktopScanState scan)
-    {
-        if (scan.IsFinished)
-        {
-            return 100;
-        }
-
-        return scan.Status switch
-        {
-            "QUEUED" => 10,
-            "PREPARING" => 22,
-            "RUNNING" => Math.Min(94, 34 + (scan.Timeline.Count * 7)),
-            "AWAITING_UPLOAD" => 52,
-            _ => Math.Min(90, 20 + (scan.Timeline.Count * 6))
-        };
     }
 
     private async void OnCancelScanClick(object sender, RoutedEventArgs e)
