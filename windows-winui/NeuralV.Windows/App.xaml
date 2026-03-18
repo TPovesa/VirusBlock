@@ -30,29 +30,11 @@
         <SolidColorBrush x:Key="AppWarningBrush" Color="#FFB95F" />
         <SolidColorBrush x:Key="AppDangerBrush" Color="#FF829F" />
         <SolidColorBrush x:Key="AppOverlayScrimBrush" Color="#9C0A0E18" />
-        <LinearGradientBrush x:Key="AppSurfaceGradientBrush" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#20283C" Offset="0" />
-            <GradientStop Color="#171E30" Offset="1" />
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppSurfaceStrongGradientBrush" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#32405A" Offset="0" />
-            <GradientStop Color="#20283C" Offset="1" />
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppAccentGradientBrush" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#7C6BFF" Offset="0" />
-            <GradientStop Color="#57D5F9" Offset="1" />
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppAccentSoftGradientBrush" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#46589B" Offset="0" />
-            <GradientStop Color="#2F6574" Offset="1" />
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppSecondaryGradientBrush" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#27324A" Offset="0" />
-            <GradientStop Color="#32405A" Offset="1" />
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppFieldGradientBrush" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#20283C" Offset="0" />
-            <GradientStop Color="#171E30" Offset="1" />
-        </LinearGradientBrush>
+        <SolidColorBrush x:Key="AppSurfaceGradientBrush" Color="#20283C" />
+        <SolidColorBrush x:Key="AppSurfaceStrongGradientBrush" Color="#32405A" />
+        <SolidColorBrush x:Key="AppAccentGradientBrush" Color="#7C6BFF" />
+        <SolidColorBrush x:Key="AppAccentSoftGradientBrush" Color="#46589B" />
+        <SolidColorBrush x:Key="AppSecondaryGradientBrush" Color="#27324A" />
+        <SolidColorBrush x:Key="AppFieldGradientBrush" Color="#20283C" />
     </Application.Resources>
 </Application>

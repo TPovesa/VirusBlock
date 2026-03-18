@@ -46,6 +46,7 @@ public sealed partial class MainWindow : Window
     private ClientPreferences _preferences = new();
     private CancellationTokenSource? _scanPollCts;
     private bool _initialized;
+    private bool _interactiveTreeAttached;
     private bool _drawerOpen;
     private bool _scanOverlayOpen;
     private bool _networkUiSync;
@@ -223,6 +224,7 @@ public sealed partial class MainWindow : Window
 
         try
         {
+            EnsureInteractiveTreeAttached();
             _preferences = ClientPreferencesStore.Load();
             _networkState = BuildLocalNetworkFallback();
             _session = await SessionStore.LoadSessionAsync();
@@ -453,17 +455,11 @@ public sealed partial class MainWindow : Window
         SettingsView = BuildSettingsView();
 
         ScreenHost.Children.Add(SplashView);
-        ScreenHost.Children.Add(WelcomeView);
-        ScreenHost.Children.Add(LoginView);
-        ScreenHost.Children.Add(RegisterView);
-        ScreenHost.Children.Add(CodeView);
-        ScreenHost.Children.Add(HomeView);
-        ScreenHost.Children.Add(HistoryView);
-        ScreenHost.Children.Add(SettingsView);
 
         ScanOverlay = BuildScanOverlay();
         Canvas.SetZIndex(ScanOverlay, 40);
-        ScreenHost.Children.Add(ScanOverlay);
+
+        _interactiveTreeAttached = false;
 
         DrawerScrim = new Border
         {
@@ -605,7 +601,6 @@ public sealed partial class MainWindow : Window
     private FrameworkElement BuildWelcomeView()
     {
         var host = new Grid();
-        host.Children.Add(BuildWelcomeShapeLayer());
 
         var card = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 32, new Thickness(28));
         card.MaxWidth = 620;
@@ -1028,78 +1023,57 @@ public sealed partial class MainWindow : Window
 
     private void ApplyAmbientPalette()
     {
-        BackdropGradient.Fill = new LinearGradientBrush
-        {
-            StartPoint = new Point(0, 0),
-            EndPoint = new Point(1, 1),
-            GradientStops =
-            {
-                new GradientStop { Color = ThemePalette.Blend(App.Palette.Background, App.Palette.Accent, 0.08), Offset = 0.0 },
-                new GradientStop { Color = App.Palette.BackgroundAlt, Offset = 0.34 },
-                new GradientStop { Color = ThemePalette.Blend(App.Palette.Background, App.Palette.AccentSecondary, 0.12), Offset = 1.0 }
-            }
-        };
-
-        FabricLayerA.Fill = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentSecondary, 0.08, 0.30);
-        FabricLayerB.Fill = BuildWeaveBrush(App.Palette.AccentTertiary, App.Palette.Accent, 0.05, 0.22);
-        FabricLayerC.Fill = BuildSheenBrush(App.Palette.AccentSecondary, App.Palette.AccentTertiary);
-        GlowA.Fill = BuildGlowBrush(App.Palette.Accent, 0.92);
-        GlowB.Fill = BuildGlowBrush(ThemePalette.Blend(App.Palette.AccentSecondary, App.Palette.Text, 0.36), 0.42);
-        GlowC.Fill = BuildGlowBrush(ThemePalette.Blend(App.Palette.AccentTertiary, App.Palette.BackgroundAlt, 0.30), 0.28);
+        BackdropGradient.Fill = new SolidColorBrush(ThemePalette.Blend(App.Palette.BackgroundAlt, App.Palette.Accent, 0.06));
+        FabricLayerA.Fill = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.Accent, 0.06));
+        FabricLayerB.Fill = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.AccentSecondary, 0.05));
+        FabricLayerC.Fill = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.AccentTertiary, 0.04));
+        GlowA.Fill = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.Accent, 0.10));
+        GlowB.Fill = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.AccentSecondary, 0.08));
+        GlowC.Fill = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.AccentTertiary, 0.06));
     }
 
     private static Brush BuildGlowBrush(UiColor color, double opacity)
     {
-        return new RadialGradientBrush
-        {
-            GradientStops =
-            {
-                new GradientStop { Color = ThemePalette.WithAlpha(color, opacity), Offset = 0.0 },
-                new GradientStop { Color = ThemePalette.WithAlpha(color, 0.0), Offset = 1.0 }
-            }
-        };
+        return new SolidColorBrush(ThemePalette.WithAlpha(color, opacity));
     }
 
     private static Brush BuildWeaveBrush(UiColor baseColor, UiColor accentColor, double lowOpacity, double highOpacity)
     {
-        return new LinearGradientBrush
-        {
-            StartPoint = new Point(0, 0),
-            EndPoint = new Point(1, 1),
-            GradientStops =
-            {
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, lowOpacity), Offset = 0.00 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.08 },
-                new GradientStop { Color = ThemePalette.WithAlpha(accentColor, highOpacity), Offset = 0.14 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.24 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, lowOpacity), Offset = 0.34 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.48 },
-                new GradientStop { Color = ThemePalette.WithAlpha(accentColor, highOpacity * 0.72), Offset = 0.62 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.76 },
-                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, lowOpacity), Offset = 1.00 }
-            }
-        };
+        return new SolidColorBrush(ThemePalette.WithAlpha(ThemePalette.Blend(baseColor, accentColor, 0.38), Math.Max(lowOpacity, highOpacity * 0.68)));
     }
 
     private static Brush BuildSheenBrush(UiColor first, UiColor second)
     {
-        return new LinearGradientBrush
+        return new SolidColorBrush(ThemePalette.WithAlpha(ThemePalette.Blend(first, second, 0.5), 0.12));
+    }
+
+    private void EnsureInteractiveTreeAttached()
+    {
+        if (_interactiveTreeAttached)
         {
-            StartPoint = new Point(0, 0),
-            EndPoint = new Point(1, 0),
-            GradientStops =
-            {
-                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.0), Offset = 0.00 },
-                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.14), Offset = 0.24 },
-                new GradientStop { Color = ThemePalette.WithAlpha(second, 0.24), Offset = 0.50 },
-                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.12), Offset = 0.74 },
-                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.0), Offset = 1.00 }
-            }
-        };
+            return;
+        }
+
+        WindowsLog.Info("Attaching deferred interactive screens");
+        ScreenHost.Children.Add(WelcomeView);
+        ScreenHost.Children.Add(LoginView);
+        ScreenHost.Children.Add(RegisterView);
+        ScreenHost.Children.Add(CodeView);
+        ScreenHost.Children.Add(HomeView);
+        ScreenHost.Children.Add(HistoryView);
+        ScreenHost.Children.Add(SettingsView);
+        ScreenHost.Children.Add(ScanOverlay);
+        _interactiveTreeAttached = true;
+        WindowsLog.Info("Deferred interactive screens attached");
     }
 
     private void ShowScreen(AppScreen screen)
     {
+        if (screen != AppScreen.Splash)
+        {
+            EnsureInteractiveTreeAttached();
+        }
+
         _screen = screen;
         SplashView.Visibility = screen == AppScreen.Splash ? Visibility.Visible : Visibility.Collapsed;
         WelcomeView.Visibility = screen == AppScreen.Welcome ? Visibility.Visible : Visibility.Collapsed;

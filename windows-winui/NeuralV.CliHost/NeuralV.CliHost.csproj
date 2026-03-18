@@ -12,10 +12,10 @@
     <PublishReadyToRun>false</PublishReadyToRun>
     <AssemblyName>neuralv-host</AssemblyName>
     <RootNamespace>NeuralV.CliHost</RootNamespace>
-    <Version>1.5.10</Version>
-    <AssemblyVersion>1.5.10.0</AssemblyVersion>
-    <FileVersion>1.5.10.0</FileVersion>
-    <InformationalVersion>1.5.10</InformationalVersion>
+    <Version>1.5.11</Version>
+    <AssemblyVersion>1.5.11.0</AssemblyVersion>
+    <FileVersion>1.5.11.0</FileVersion>
+    <InformationalVersion>1.5.11</InformationalVersion>
     <ApplicationIcon>..\NeuralV.Windows\Assets\NeuralV.ico</ApplicationIcon>
   </PropertyGroup>
 

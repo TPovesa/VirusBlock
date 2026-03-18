@@ -130,66 +130,12 @@ public partial class App : Application
         resources["AppWarningBrush"] = Brush(palette.Warning);
         resources["AppDangerBrush"] = Brush(palette.Danger);
         resources["AppOverlayScrimBrush"] = Brush(ThemePalette.WithAlpha(palette.Background, 0.68));
-        resources["AppSurfaceGradientBrush"] = new LinearGradientBrush
-        {
-            StartPoint = new global::Windows.Foundation.Point(0, 0),
-            EndPoint = new global::Windows.Foundation.Point(1, 1),
-            GradientStops =
-            {
-                new GradientStop { Color = ThemePalette.Blend(palette.SurfaceHigh, palette.Accent, 0.10), Offset = 0.0 },
-                new GradientStop { Color = palette.Surface, Offset = 1.0 }
-            }
-        };
-        resources["AppSurfaceStrongGradientBrush"] = new LinearGradientBrush
-        {
-            StartPoint = new global::Windows.Foundation.Point(0, 0),
-            EndPoint = new global::Windows.Foundation.Point(1, 1),
-            GradientStops =
-            {
-                new GradientStop { Color = ThemePalette.Blend(palette.SurfaceStrong, palette.AccentSecondary, 0.22), Offset = 0.0 },
-                new GradientStop { Color = ThemePalette.Blend(palette.PrimaryContainer, palette.BackgroundAlt, 0.36), Offset = 1.0 }
-            }
-        };
-        resources["AppAccentGradientBrush"] = new LinearGradientBrush
-        {
-            StartPoint = new global::Windows.Foundation.Point(0, 0),
-            EndPoint = new global::Windows.Foundation.Point(1, 1),
-            GradientStops =
-            {
-                new GradientStop { Color = palette.Accent, Offset = 0.0 },
-                new GradientStop { Color = palette.AccentSecondary, Offset = 1.0 }
-            }
-        };
-        resources["AppAccentSoftGradientBrush"] = new LinearGradientBrush
-        {
-            StartPoint = new global::Windows.Foundation.Point(0, 0),
-            EndPoint = new global::Windows.Foundation.Point(1, 1),
-            GradientStops =
-            {
-                new GradientStop { Color = ThemePalette.Blend(palette.PrimaryContainer, palette.Accent, 0.22), Offset = 0.0 },
-                new GradientStop { Color = ThemePalette.Blend(palette.SecondaryContainer, palette.AccentSecondary, 0.18), Offset = 1.0 }
-            }
-        };
-        resources["AppSecondaryGradientBrush"] = new LinearGradientBrush
-        {
-            StartPoint = new global::Windows.Foundation.Point(0, 0),
-            EndPoint = new global::Windows.Foundation.Point(1, 1),
-            GradientStops =
-            {
-                new GradientStop { Color = ThemePalette.Blend(palette.SurfaceRaised, palette.AccentSecondary, 0.14), Offset = 0.0 },
-                new GradientStop { Color = ThemePalette.Blend(palette.SurfaceStrong, palette.BackgroundAlt, 0.18), Offset = 1.0 }
-            }
-        };
-        resources["AppFieldGradientBrush"] = new LinearGradientBrush
-        {
-            StartPoint = new global::Windows.Foundation.Point(0, 0),
-            EndPoint = new global::Windows.Foundation.Point(1, 1),
-            GradientStops =
-            {
-                new GradientStop { Color = ThemePalette.Blend(palette.Surface, palette.Accent, 0.05), Offset = 0.0 },
-                new GradientStop { Color = palette.SurfaceHigh, Offset = 1.0 }
-            }
-        };
+        resources["AppSurfaceGradientBrush"] = Brush(ThemePalette.Blend(palette.SurfaceHigh, palette.Accent, 0.06));
+        resources["AppSurfaceStrongGradientBrush"] = Brush(ThemePalette.Blend(palette.SurfaceStrong, palette.AccentSecondary, 0.12));
+        resources["AppAccentGradientBrush"] = Brush(palette.Accent);
+        resources["AppAccentSoftGradientBrush"] = Brush(ThemePalette.Blend(palette.PrimaryContainer, palette.Accent, 0.16));
+        resources["AppSecondaryGradientBrush"] = Brush(ThemePalette.Blend(palette.SurfaceRaised, palette.AccentSecondary, 0.08));
+        resources["AppFieldGradientBrush"] = Brush(ThemePalette.Blend(palette.Surface, palette.Accent, 0.04));
     }
 
     public static void ApplyClientPreferences(ClientPreferences preferences)
