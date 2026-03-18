@@ -1,23 +1,17 @@
 using System.Diagnostics;
 using System.Text;
-using System.Text.Json;
 using Microsoft.Win32;
 
 namespace NeuralV.Windows.Services;
 
 public static class InstallStateStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true
-    };
 
     public static InstallState CreateDefault(string? installRoot = null, string? version = null)
     {
         return new InstallState
         {
-            InstallRoot = NormalizeInstallRoot(installRoot ?? InstallLayout.DefaultInstallRoot()),
+            InstallRoot = InstallLayout.NormalizeInstallRoot(installRoot ?? InstallLayout.DefaultInstallRoot()),
             Version = string.IsNullOrWhiteSpace(version) ? string.Empty : version.Trim(),
             UpdatedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
         };
@@ -43,17 +37,17 @@ public static class InstallStateStore
 
         if (!string.IsNullOrWhiteSpace(executablePath))
         {
-            AddCandidate(candidates, Path.GetDirectoryName(executablePath));
+            AddCandidate(candidates, InstallLayout.ResolveInstallRootFromExecutablePath(executablePath));
         }
 
         if (!string.IsNullOrWhiteSpace(Environment.ProcessPath))
         {
-            AddCandidate(candidates, Path.GetDirectoryName(Environment.ProcessPath));
+            AddCandidate(candidates, InstallLayout.ResolveInstallRootFromExecutablePath(Environment.ProcessPath));
         }
 
         if (!string.IsNullOrWhiteSpace(AppContext.BaseDirectory))
         {
-            AddCandidate(candidates, AppContext.BaseDirectory);
+            AddCandidate(candidates, InstallLayout.ResolveInstallRootFromExecutablePath(AppContext.BaseDirectory));
         }
 
         AddCandidate(candidates, ResolveInstallRootFromShortcuts());
@@ -68,7 +62,7 @@ public static class InstallStateStore
             return null;
         }
 
-        var normalizedRoot = NormalizeInstallRoot(installRoot);
+        var normalizedRoot = InstallLayout.NormalizeInstallRoot(installRoot);
         var metadataPath = InstallLayout.MetadataPath(normalizedRoot);
         if (!File.Exists(metadataPath))
         {
@@ -82,7 +76,7 @@ public static class InstallStateStore
         try
         {
             var payload = File.ReadAllText(metadataPath, Encoding.UTF8);
-            var state = JsonSerializer.Deserialize<InstallState>(payload, JsonOptions);
+            var state = InstallStateJsonContext.Deserialize(payload);
             if (state is null)
             {
                 return null;
@@ -92,6 +86,8 @@ public static class InstallStateStore
             if (string.IsNullOrWhiteSpace(state.GuiBinary)) state.GuiBinary = InstallLayout.GuiBinaryName;
             if (string.IsNullOrWhiteSpace(state.CliBinary)) state.CliBinary = InstallLayout.CliBinaryName;
             if (string.IsNullOrWhiteSpace(state.UpdaterBinary)) state.UpdaterBinary = InstallLayout.UpdaterBinaryName;
+            if (string.IsNullOrWhiteSpace(state.CliHostBinary)) state.CliHostBinary = InstallLayout.CliHostBinaryName;
+            if (string.IsNullOrWhiteSpace(state.UpdaterHostBinary)) state.UpdaterHostBinary = InstallLayout.UpdaterHostBinaryName;
             return state;
         }
         catch (Exception ex)
@@ -103,11 +99,11 @@ public static class InstallStateStore
 
     public static void Save(InstallState state)
     {
-        state.InstallRoot = NormalizeInstallRoot(state.InstallRoot);
+        state.InstallRoot = InstallLayout.NormalizeInstallRoot(state.InstallRoot);
         state.UpdatedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        Directory.CreateDirectory(state.InstallRoot);
+        Directory.CreateDirectory(InstallLayout.LibsDirectory(state.InstallRoot));
         var metadataPath = InstallLayout.MetadataPath(state.InstallRoot);
-        var payload = JsonSerializer.Serialize(state, JsonOptions);
+        var payload = InstallStateJsonContext.Serialize(state);
         File.WriteAllText(metadataPath, payload, Encoding.UTF8);
 
         using var key = Registry.CurrentUser.CreateSubKey(InstallLayout.RegistryKeyPath);
@@ -141,13 +137,16 @@ public static class InstallStateStore
             return false;
         }
 
-        return File.Exists(InstallLayout.GuiPath(installRoot))
-            || File.Exists(InstallLayout.LauncherPath(installRoot))
-            || File.Exists(InstallLayout.CliPath(installRoot));
+        var hasPublicEntry = File.Exists(InstallLayout.LauncherPath(installRoot))
+            || File.Exists(InstallLayout.CliPath(installRoot))
+            || File.Exists(InstallLayout.UpdaterPath(installRoot));
+        var hasPayload = File.Exists(InstallLayout.GuiPath(installRoot))
+            || File.Exists(InstallLayout.CliHostPath(installRoot))
+            || File.Exists(InstallLayout.UpdaterHostPath(installRoot));
+        return hasPublicEntry && hasPayload;
     }
 
-    public static string NormalizeInstallRoot(string installRoot) =>
-        Path.GetFullPath(string.IsNullOrWhiteSpace(installRoot) ? InstallLayout.DefaultInstallRoot() : installRoot.Trim());
+    public static string NormalizeInstallRoot(string installRoot) => InstallLayout.NormalizeInstallRoot(installRoot);
 
     private static void AddCandidate(ICollection<string> items, string? candidate)
     {
@@ -155,7 +154,7 @@ public static class InstallStateStore
         {
             return;
         }
-        var normalized = NormalizeInstallRoot(candidate);
+        var normalized = InstallLayout.NormalizeInstallRoot(candidate);
         if (items.Contains(normalized, StringComparer.OrdinalIgnoreCase))
         {
             return;
@@ -198,7 +197,7 @@ public static class InstallStateStore
             {
                 continue;
             }
-            return Path.GetDirectoryName(target);
+            return InstallLayout.ResolveInstallRootFromExecutablePath(target);
         }
         return null;
     }

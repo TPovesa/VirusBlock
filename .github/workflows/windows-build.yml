@@ -56,8 +56,10 @@ jobs:
         shell: pwsh
         run: |
           dotnet restore windows-winui/NeuralV.Windows/NeuralV.Windows.csproj
+          dotnet restore windows-winui/NeuralV.CliHost/NeuralV.CliHost.csproj
           dotnet restore windows-winui/NeuralV.Cmd/NeuralV.Cmd.csproj
           dotnet restore windows-winui/NeuralV.Launcher/NeuralV.Launcher.csproj
+          dotnet restore windows-winui/NeuralV.UpdateHost/NeuralV.UpdateHost.csproj
           dotnet restore windows-winui/NeuralV.Updater/NeuralV.Updater.csproj
           dotnet restore windows-winui/NeuralV.Setup/NeuralV.Setup.csproj
 
@@ -70,6 +72,8 @@ jobs:
           $assemblyVersion = "$semver.0"
           Remove-Item -Recurse -Force dist\windows -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path dist\windows\NeuralV | Out-Null
+          New-Item -ItemType Directory -Force -Path dist\windows\NeuralV\bin | Out-Null
+          New-Item -ItemType Directory -Force -Path dist\windows\NeuralV\libs | Out-Null
           dotnet publish windows-winui/NeuralV.Windows/NeuralV.Windows.csproj `
             -c Release `
             -r win-x64 `
@@ -80,7 +84,7 @@ jobs:
             -p:FileVersion=$assemblyVersion `
             -p:WindowsPackageType=None `
             -p:PublishSingleFile=false `
-            -o dist\windows\NeuralV 2>&1 | Tee-Object -FilePath windows-build.log
+            -o dist\windows\NeuralV\libs 2>&1 | Tee-Object -FilePath windows-build.log
           "WINDOWS_WINUI_BUILD_EXIT=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Publish Windows launcher
@@ -100,10 +104,29 @@ jobs:
             -p:InformationalVersion=$semver `
             -p:AssemblyVersion=$assemblyVersion `
             -p:FileVersion=$assemblyVersion `
-            -p:PublishSingleFile=true `
             -o dist\windows\launcher-temp
-          $launcherExe = Resolve-Path 'dist/windows/launcher-temp/NeuralV.exe'
-          Copy-Item $launcherExe 'dist/windows/NeuralV/NeuralV.exe' -Force
+          Copy-Item (Resolve-Path 'dist/windows/launcher-temp/NeuralV.exe') 'dist/windows/NeuralV/NeuralV.exe' -Force
+
+      - name: Publish Windows CLI host
+        if: env.WINDOWS_WINUI_BUILD_EXIT == '0'
+        shell: pwsh
+        env:
+          NEURALV_VERSION: ${{ steps.release_version.outputs.semver }}
+        run: |
+          $semver = "${env:NEURALV_VERSION}"
+          $assemblyVersion = "$semver.0"
+          Remove-Item -Recurse -Force dist\windows\cli-host-temp -ErrorAction SilentlyContinue
+          dotnet publish windows-winui/NeuralV.CliHost/NeuralV.CliHost.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained false `
+            -p:Version=$semver `
+            -p:InformationalVersion=$semver `
+            -p:AssemblyVersion=$assemblyVersion `
+            -p:FileVersion=$assemblyVersion `
+            -p:PublishSingleFile=false `
+            -o dist\windows\cli-host-temp
+          Copy-Item 'dist/windows/cli-host-temp/*' 'dist/windows/NeuralV/libs/' -Force -Recurse
 
       - name: Publish Windows CLI companion
         if: env.WINDOWS_WINUI_BUILD_EXIT == '0'
@@ -122,11 +145,29 @@ jobs:
             -p:InformationalVersion=$semver `
             -p:AssemblyVersion=$assemblyVersion `
             -p:FileVersion=$assemblyVersion `
-            -p:PublishSingleFile=true `
-            -p:IncludeNativeLibrariesForSelfExtract=true `
             -o dist\windows\cli-temp
-          $cliExe = Resolve-Path 'dist/windows/cli-temp/neuralv.exe'
-          Copy-Item $cliExe 'dist/windows/NeuralV/neuralv.exe' -Force
+          Copy-Item (Resolve-Path 'dist/windows/cli-temp/neuralv.exe') 'dist/windows/NeuralV/bin/neuralv.exe' -Force
+
+      - name: Publish Windows updater host
+        if: env.WINDOWS_WINUI_BUILD_EXIT == '0'
+        shell: pwsh
+        env:
+          NEURALV_VERSION: ${{ steps.release_version.outputs.semver }}
+        run: |
+          $semver = "${env:NEURALV_VERSION}"
+          $assemblyVersion = "$semver.0"
+          Remove-Item -Recurse -Force dist\windows\updater-host-temp -ErrorAction SilentlyContinue
+          dotnet publish windows-winui/NeuralV.UpdateHost/NeuralV.UpdateHost.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained false `
+            -p:Version=$semver `
+            -p:InformationalVersion=$semver `
+            -p:AssemblyVersion=$assemblyVersion `
+            -p:FileVersion=$assemblyVersion `
+            -p:PublishSingleFile=false `
+            -o dist\windows\updater-host-temp
+          Copy-Item 'dist/windows/updater-host-temp/*' 'dist/windows/NeuralV/libs/' -Force -Recurse
 
       - name: Publish Windows updater
         if: env.WINDOWS_WINUI_BUILD_EXIT == '0'
@@ -145,10 +186,9 @@ jobs:
             -p:InformationalVersion=$semver `
             -p:AssemblyVersion=$assemblyVersion `
             -p:FileVersion=$assemblyVersion `
-            -p:PublishSingleFile=true `
             -o dist\windows\updater-temp
-          $updaterExe = Resolve-Path 'dist/windows/updater-temp/neuralv-updater.exe'
-          Copy-Item $updaterExe 'dist/windows/NeuralV/neuralv-updater.exe' -Force
+          Copy-Item (Resolve-Path 'dist/windows/updater-temp/neuralv-updater.exe') 'dist/windows/NeuralV/bin/neuralv-updater.exe' -Force
+          New-Item -ItemType File -Force -Path dist\windows\NeuralV\log.txt | Out-Null
 
       - name: Smoke test published Windows client
         if: env.WINDOWS_WINUI_BUILD_EXIT == '0'
@@ -158,6 +198,7 @@ jobs:
             $parts = @()
             $candidates = @(
               'dist/windows/NeuralV/smoke-error.txt',
+              'dist/windows/NeuralV/libs/smoke-error.txt',
               'dist/windows/NeuralV/log.txt',
               "$HOME/AppData/Local/NeuralV/log.txt",
               "$HOME/AppData/Roaming/NeuralV/log.txt"
@@ -171,16 +212,17 @@ jobs:
               }
             }
             if (-not $parts -and (Test-Path 'dist/windows/NeuralV')) {
-              $listing = (Get-ChildItem 'dist/windows/NeuralV' -Force | Select-Object -ExpandProperty Name) -join ', '
+              $listing = (Get-ChildItem 'dist/windows/NeuralV' -Force -Recurse | Select-Object -ExpandProperty FullName) -join ', '
               if ($listing) {
                 $parts += "[dist/windows/NeuralV files] $listing"
               }
             }
             return (($parts -join ' | ') -replace '\s+', ' ').Trim()
           }
-          $exe = Resolve-Path 'dist/windows/NeuralV/NeuralV.Gui.exe'
+          $exe = Resolve-Path 'dist/windows/NeuralV/libs/NeuralV.Gui.exe'
           $env:NEURALV_SMOKE_TEST = '1'
           $env:NEURALV_SKIP_UPDATER = '1'
+          $env:NEURALV_INSTALL_ROOT = Resolve-Path 'dist/windows/NeuralV'
           $proc = Start-Process -FilePath $exe -ArgumentList '--smoke-test' -PassThru -WorkingDirectory (Split-Path $exe)
           if (-not $proc.WaitForExit(30000)) {
             $details = Get-NeuralVSmokeDetails
@@ -243,6 +285,8 @@ jobs:
           name: windows-winui-runtime-log
           path: |
             dist/windows/NeuralV/log.txt
+            dist/windows/NeuralV/smoke-error.txt
+            dist/windows/NeuralV/libs/smoke-error.txt
             ~/AppData/Local/NeuralV/log.txt
             ~/AppData/Roaming/NeuralV/log.txt
           if-no-files-found: warn
@@ -358,10 +402,22 @@ jobs:
                       "metadata": {
                           "setupUrl": f"{os.environ['RELEASE_BASE']}/neuralv-setup.exe",
                           "bundledComponents": ["gui", "cli", "updater"],
+                          "layout": "root-bin-libs",
+                          "rootEntries": ["NeuralV.exe", "log.txt", "bin", "libs"],
                           "cliBinaryName": "neuralv.exe",
+                          "cliHostBinaryName": "neuralv-host.exe",
                           "guiBinaryName": "NeuralV.Gui.exe",
                           "launcherBinaryName": "NeuralV.exe",
                           "updaterBinaryName": "neuralv-updater.exe",
+                          "updaterHostBinaryName": "neuralv-updater-host.exe",
+                          "guiRelativePath": "libs/NeuralV.Gui.exe",
+                          "cliRelativePath": "bin/neuralv.exe",
+                          "cliHostRelativePath": "libs/neuralv-host.exe",
+                          "updaterRelativePath": "bin/neuralv-updater.exe",
+                          "updaterHostRelativePath": "libs/neuralv-updater-host.exe",
+                          "logRelativePath": "log.txt",
+                          "binDirectory": "bin",
+                          "libsDirectory": "libs",
                           "portableArtifactPath": "releases/windows-v{version}/neuralv-windows.zip",
                           "setupArtifactPath": "releases/windows-v{version}/neuralv-setup.exe",
                           "setupSha256": os.environ["SHA_SETUP"],

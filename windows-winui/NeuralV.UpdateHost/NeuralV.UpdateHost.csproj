@@ -5,12 +5,12 @@
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <SelfContained>true</SelfContained>
-    <PublishAot>true</PublishAot>
-    <StripSymbols>true</StripSymbols>
-    <InvariantGlobalization>true</InvariantGlobalization>
-    <AssemblyName>NeuralV</AssemblyName>
-    <RootNamespace>NeuralV.Launcher</RootNamespace>
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <UseAppHost>true</UseAppHost>
+    <AssemblyName>neuralv-updater-host</AssemblyName>
+    <RootNamespace>NeuralV.UpdateHost</RootNamespace>
     <ApplicationIcon>..\NeuralV.Windows\Assets\NeuralV.ico</ApplicationIcon>
     <Version>1.5.8</Version>
     <AssemblyVersion>1.5.8.0</AssemblyVersion>
@@ -21,5 +21,9 @@
   <ItemGroup>
     <Compile Include="..\NeuralV.Windows\Services\WindowsLog.cs" Link="Shared\WindowsLog.cs" />
     <Compile Include="..\NeuralV.Shared\InstallLayout.cs" Link="Shared\InstallLayout.cs" />
+    <Compile Include="..\NeuralV.Shared\InstallStateStore.cs" Link="Shared\InstallStateStore.cs" />
+    <Compile Include="..\NeuralV.Shared\InstallStateJsonContext.cs" Link="Shared\InstallStateJsonContext.cs" />
+    <Compile Include="..\NeuralV.Shared\WindowsBundleInstaller.cs" Link="Shared\WindowsBundleInstaller.cs" />
+    <Compile Include="..\NeuralV.Shared\WindowsReleaseManifestClient.cs" Link="Shared\WindowsReleaseManifestClient.cs" />
   </ItemGroup>
 </Project>

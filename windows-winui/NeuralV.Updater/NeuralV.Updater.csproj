@@ -6,22 +6,20 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <SelfContained>true</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <PublishReadyToRun>false</PublishReadyToRun>
+    <PublishAot>true</PublishAot>
+    <StripSymbols>true</StripSymbols>
+    <InvariantGlobalization>true</InvariantGlobalization>
     <AssemblyName>neuralv-updater</AssemblyName>
     <RootNamespace>NeuralV.Updater</RootNamespace>
     <ApplicationIcon>..\NeuralV.Windows\Assets\NeuralV.ico</ApplicationIcon>
-    <Version>1.5.6</Version>
-    <AssemblyVersion>1.5.6.0</AssemblyVersion>
-    <FileVersion>1.5.6.0</FileVersion>
-    <InformationalVersion>1.5.6</InformationalVersion>
+    <Version>1.5.8</Version>
+    <AssemblyVersion>1.5.8.0</AssemblyVersion>
+    <FileVersion>1.5.8.0</FileVersion>
+    <InformationalVersion>1.5.8</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="..\NeuralV.Windows\Services\WindowsLog.cs" Link="Shared\WindowsLog.cs" />
     <Compile Include="..\NeuralV.Shared\InstallLayout.cs" Link="Shared\InstallLayout.cs" />
-    <Compile Include="..\NeuralV.Shared\InstallStateStore.cs" Link="Shared\InstallStateStore.cs" />
-    <Compile Include="..\NeuralV.Shared\WindowsBundleInstaller.cs" Link="Shared\WindowsBundleInstaller.cs" />
-    <Compile Include="..\NeuralV.Shared\WindowsReleaseManifestClient.cs" Link="Shared\WindowsReleaseManifestClient.cs" />
   </ItemGroup>
 </Project>

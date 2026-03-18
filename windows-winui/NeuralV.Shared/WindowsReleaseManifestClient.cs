@@ -12,6 +12,8 @@ public sealed class WindowsReleaseInfo
     public string GuiBinaryName { get; init; } = InstallLayout.GuiBinaryName;
     public string LauncherBinaryName { get; init; } = InstallLayout.LauncherBinaryName;
     public string UpdaterBinaryName { get; init; } = InstallLayout.UpdaterBinaryName;
+    public string CliHostBinaryName { get; init; } = InstallLayout.CliHostBinaryName;
+    public string UpdaterHostBinaryName { get; init; } = InstallLayout.UpdaterHostBinaryName;
 
     public bool IsNewerThan(string currentVersion)
     {
@@ -66,7 +68,9 @@ public static class WindowsReleaseManifestClient
             CliBinaryName = ReadString(metadata, "cliBinaryName") is { Length: > 0 } cli ? cli : InstallLayout.CliBinaryName,
             GuiBinaryName = ReadString(metadata, "guiBinaryName") is { Length: > 0 } gui ? gui : InstallLayout.GuiBinaryName,
             LauncherBinaryName = ReadString(metadata, "launcherBinaryName") is { Length: > 0 } launcher ? launcher : InstallLayout.LauncherBinaryName,
-            UpdaterBinaryName = ReadString(metadata, "updaterBinaryName") is { Length: > 0 } updater ? updater : InstallLayout.UpdaterBinaryName
+            UpdaterBinaryName = ReadString(metadata, "updaterBinaryName") is { Length: > 0 } updater ? updater : InstallLayout.UpdaterBinaryName,
+            CliHostBinaryName = ReadString(metadata, "cliHostBinaryName") is { Length: > 0 } cliHost ? cliHost : InstallLayout.CliHostBinaryName,
+            UpdaterHostBinaryName = ReadString(metadata, "updaterHostBinaryName") is { Length: > 0 } updaterHost ? updaterHost : InstallLayout.UpdaterHostBinaryName
         };
     }
 

@@ -9,7 +9,12 @@ public static class InstallLayout
     public const string GuiBinaryName = "NeuralV.Gui.exe";
     public const string CliBinaryName = "neuralv.exe";
     public const string UpdaterBinaryName = "neuralv-updater.exe";
+    public const string CliHostBinaryName = "neuralv-host.exe";
+    public const string UpdaterHostBinaryName = "neuralv-updater-host.exe";
     public const string MetadataFileName = "install.json";
+    public const string LogFileName = "log.txt";
+    public const string BinDirectoryName = "bin";
+    public const string LibsDirectoryName = "libs";
     public const string RegistryKeyPath = @"Software\NeuralV";
     public const string RegistryInstallRootValue = "InstallRoot";
     public const string RegistryVersionValue = "Version";
@@ -22,16 +27,51 @@ public static class InstallLayout
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (string.IsNullOrWhiteSpace(localAppData))
         {
-            localAppData = AppContext.BaseDirectory;
+            localAppData = ResolveInstallRootFromExecutablePath(AppContext.BaseDirectory);
         }
         return Path.Combine(localAppData, "Programs", ProductName);
     }
 
-    public static string MetadataPath(string installRoot) => Path.Combine(installRoot, MetadataFileName);
-    public static string LauncherPath(string installRoot) => Path.Combine(installRoot, LauncherBinaryName);
-    public static string GuiPath(string installRoot) => Path.Combine(installRoot, GuiBinaryName);
-    public static string CliPath(string installRoot) => Path.Combine(installRoot, CliBinaryName);
-    public static string UpdaterPath(string installRoot) => Path.Combine(installRoot, UpdaterBinaryName);
+    public static string NormalizeInstallRoot(string installRoot) =>
+        ResolveInstallRootFromExecutablePath(string.IsNullOrWhiteSpace(installRoot) ? DefaultInstallRoot() : installRoot.Trim());
+
+    public static string ResolveInstallRootFromExecutablePath(string? executablePath)
+    {
+        if (string.IsNullOrWhiteSpace(executablePath))
+        {
+            return Path.GetFullPath(DefaultInstallRoot());
+        }
+
+        var fullPath = Path.GetFullPath(executablePath);
+        var directory = Directory.Exists(fullPath)
+            ? fullPath
+            : Path.GetDirectoryName(fullPath) ?? AppContext.BaseDirectory;
+        var trimmedDirectory = directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var leaf = Path.GetFileName(trimmedDirectory);
+
+        if (string.Equals(leaf, BinDirectoryName, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(leaf, LibsDirectoryName, StringComparison.OrdinalIgnoreCase))
+        {
+            var parent = Path.GetDirectoryName(trimmedDirectory);
+            if (!string.IsNullOrWhiteSpace(parent))
+            {
+                return Path.GetFullPath(parent);
+            }
+        }
+
+        return Path.GetFullPath(trimmedDirectory);
+    }
+
+    public static string BinDirectory(string installRoot) => Path.Combine(NormalizeInstallRoot(installRoot), BinDirectoryName);
+    public static string LibsDirectory(string installRoot) => Path.Combine(NormalizeInstallRoot(installRoot), LibsDirectoryName);
+    public static string MetadataPath(string installRoot) => Path.Combine(LibsDirectory(installRoot), MetadataFileName);
+    public static string LogPath(string installRoot) => Path.Combine(NormalizeInstallRoot(installRoot), LogFileName);
+    public static string LauncherPath(string installRoot) => Path.Combine(NormalizeInstallRoot(installRoot), LauncherBinaryName);
+    public static string GuiPath(string installRoot) => Path.Combine(LibsDirectory(installRoot), GuiBinaryName);
+    public static string CliPath(string installRoot) => Path.Combine(BinDirectory(installRoot), CliBinaryName);
+    public static string CliHostPath(string installRoot) => Path.Combine(LibsDirectory(installRoot), CliHostBinaryName);
+    public static string UpdaterPath(string installRoot) => Path.Combine(BinDirectory(installRoot), UpdaterBinaryName);
+    public static string UpdaterHostPath(string installRoot) => Path.Combine(LibsDirectory(installRoot), UpdaterHostBinaryName);
 
     public static string StartMenuShortcutPath()
     {
@@ -65,6 +105,12 @@ public sealed class InstallState
 
     [JsonPropertyName("updaterExecutable")]
     public string UpdaterBinary { get; set; } = InstallLayout.UpdaterBinaryName;
+
+    [JsonPropertyName("cliHostExecutable")]
+    public string CliHostBinary { get; set; } = InstallLayout.CliHostBinaryName;
+
+    [JsonPropertyName("updaterHostExecutable")]
+    public string UpdaterHostBinary { get; set; } = InstallLayout.UpdaterHostBinaryName;
 
     [JsonPropertyName("autoStartEnabled")]
     public bool AutoStartEnabled { get; set; } = true;

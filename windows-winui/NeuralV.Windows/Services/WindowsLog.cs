@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 
 namespace NeuralV.Windows.Services;
@@ -6,7 +7,6 @@ public static class WindowsLog
 {
     private static readonly object Sync = new();
     private static string? _logFilePath;
-    private const string LogFileName = "log.txt";
 
     public static string LogFilePath
     {
@@ -26,12 +26,19 @@ public static class WindowsLog
     {
         try
         {
+            var append = string.Equals(Environment.GetEnvironmentVariable("NEURALV_LOG_APPEND"), "1", StringComparison.OrdinalIgnoreCase)
+                && File.Exists(LogFilePath);
+            var line = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] session-start {context} pid={Environment.ProcessId} exe={Environment.ProcessPath}{Environment.NewLine}";
             lock (Sync)
             {
-                File.WriteAllText(
-                    LogFilePath,
-                    $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] session-start {context}{Environment.NewLine}",
-                    Encoding.UTF8);
+                if (append)
+                {
+                    File.AppendAllText(LogFilePath, line, Encoding.UTF8);
+                }
+                else
+                {
+                    File.WriteAllText(LogFilePath, line, Encoding.UTF8);
+                }
             }
         }
         catch
@@ -72,57 +79,57 @@ public static class WindowsLog
 
     private static string ResolveLogFilePath()
     {
-        foreach (var candidate in EnumerateCandidateDirectories())
+        foreach (var candidate in EnumerateCandidateLogPaths())
         {
-            if (TryEnsureWritableDirectory(candidate))
+            if (TryEnsureWritableFile(candidate))
             {
-                return Path.Combine(candidate, LogFileName);
+                return candidate;
             }
         }
 
-        return Path.Combine(Path.GetTempPath(), "NeuralV", LogFileName);
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "NeuralV");
+        Directory.CreateDirectory(tempDirectory);
+        return Path.Combine(tempDirectory, InstallLayout.LogFileName);
     }
 
-    private static IEnumerable<string> EnumerateCandidateDirectories()
+    private static IEnumerable<string> EnumerateCandidateLogPaths()
     {
-        if (!string.IsNullOrWhiteSpace(Environment.ProcessPath))
-        {
-            var processDir = Path.GetDirectoryName(Environment.ProcessPath);
-            if (!string.IsNullOrWhiteSpace(processDir))
-            {
-                yield return processDir;
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(AppContext.BaseDirectory))
-        {
-            yield return AppContext.BaseDirectory;
-        }
+        var hintedInstallRoot = Environment.GetEnvironmentVariable("NEURALV_INSTALL_ROOT");
+        var installRoot = !string.IsNullOrWhiteSpace(hintedInstallRoot)
+            ? InstallLayout.NormalizeInstallRoot(hintedInstallRoot)
+            : InstallLayout.ResolveInstallRootFromExecutablePath(Environment.ProcessPath ?? AppContext.BaseDirectory);
+        yield return InstallLayout.LogPath(installRoot);
 
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (!string.IsNullOrWhiteSpace(localAppData))
         {
-            yield return Path.Combine(localAppData, "NeuralV");
+            yield return Path.Combine(localAppData, InstallLayout.ProductName, InstallLayout.LogFileName);
         }
 
         var roamingAppData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         if (!string.IsNullOrWhiteSpace(roamingAppData))
         {
-            yield return Path.Combine(roamingAppData, "NeuralV");
+            yield return Path.Combine(roamingAppData, InstallLayout.ProductName, InstallLayout.LogFileName);
         }
     }
 
-    private static bool TryEnsureWritableDirectory(string? directory)
+    private static bool TryEnsureWritableFile(string? filePath)
     {
-        if (string.IsNullOrWhiteSpace(directory))
+        if (string.IsNullOrWhiteSpace(filePath))
         {
             return false;
         }
 
         try
         {
+            var directory = Path.GetDirectoryName(filePath);
+            if (string.IsNullOrWhiteSpace(directory))
+            {
+                return false;
+            }
+
             Directory.CreateDirectory(directory);
-            var probe = Path.Combine(directory, ".neuralv-write-probe");
+            var probe = Path.Combine(directory, $".neuralv-write-probe-{Process.GetCurrentProcess().Id}");
             File.WriteAllText(probe, "probe", Encoding.UTF8);
             File.Delete(probe);
             return true;

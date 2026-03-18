@@ -1905,7 +1905,9 @@ public sealed partial class MainWindow : Window
         }, rebuildVisualTree: false);
 
         var installState = InstallStateStore.ResolveExistingInstall(Environment.ProcessPath)
-            ?? InstallStateStore.CreateDefault(AppContext.BaseDirectory, VersionInfo.Current);
+            ?? InstallStateStore.CreateDefault(
+                InstallLayout.ResolveInstallRootFromExecutablePath(Environment.ProcessPath ?? AppContext.BaseDirectory),
+                VersionInfo.Current);
         installState.Version = VersionInfo.Current;
         installState.AutoStartEnabled = AutoStartToggle.IsOn;
         InstallStateStore.Save(installState);

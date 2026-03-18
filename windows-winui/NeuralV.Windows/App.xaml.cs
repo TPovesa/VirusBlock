@@ -21,6 +21,7 @@ public partial class App : Application
         WindowsLog.Info("App ctor");
         UnhandledException += OnUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnCurrentDomainUnhandledException;
+        AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         InitializeComponent();
     }
@@ -42,8 +43,10 @@ public partial class App : Application
             WindowsLog.Info($"Smoke test mode: {IsSmokeTest}");
             WindowsLog.Info("Loading client preferences");
             Preferences = ClientPreferencesStore.Load();
+            WindowsLog.Info("Client preferences loaded");
             WindowsLog.Info("Loading palette");
             Palette = WallpaperPaletteService.Load(Preferences.ThemeMode, Preferences.DynamicColorsEnabled);
+            WindowsLog.Info("Palette loaded");
         }
         catch (Exception ex)
         {
@@ -58,14 +61,18 @@ public partial class App : Application
         {
             WindowsLog.Info("Touching install metadata");
             var installState = InstallStateStore.ResolveExistingInstall(Environment.ProcessPath)
-                ?? InstallStateStore.CreateDefault(AppContext.BaseDirectory, VersionInfo.Current);
+                ?? InstallStateStore.CreateDefault(
+                    InstallLayout.ResolveInstallRootFromExecutablePath(Environment.ProcessPath ?? AppContext.BaseDirectory),
+                    VersionInfo.Current);
             installState.Version = VersionInfo.Current;
             installState.AutoStartEnabled = Preferences.AutoStartEnabled;
             InstallStateStore.Save(installState);
             WindowsBundleInstaller.EnsureAutoStart(installState);
+            WindowsLog.Info($"Install metadata saved: {installState.InstallRoot}");
 
             WindowsLog.Info("Creating main window");
             _window = new MainWindow();
+            WindowsLog.Info("Main window created");
 
             if (IsSmokeTest && _window is MainWindow smokeWindow)
             {
@@ -78,6 +85,7 @@ public partial class App : Application
             }
 
             _window.Activate();
+            WindowsLog.Info("Main window activated");
         }
         catch (Exception ex)
         {
@@ -221,6 +229,11 @@ public partial class App : Application
         e.SetObserved();
     }
 
+    private static void OnProcessExit(object? sender, EventArgs e)
+    {
+        WindowsLog.Info($"Process exit code: {Environment.ExitCode}");
+    }
+
     private void ShowStartupFailureWindow(Exception exception)
     {
         try
@@ -348,7 +361,8 @@ public partial class App : Application
     {
         try
         {
-            var path = Path.Combine(AppContext.BaseDirectory, "smoke-error.txt");
+            var installRoot = InstallLayout.ResolveInstallRootFromExecutablePath(Environment.ProcessPath ?? AppContext.BaseDirectory);
+            var path = Path.Combine(installRoot, "smoke-error.txt");
             File.WriteAllText(path, exception.ToString());
         }
         catch

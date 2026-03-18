@@ -39,7 +39,7 @@ public static class WindowsBundleInstaller
 {
     public static async Task<PreparedWindowsBundle> PrepareBundleAsync(string portableUrl, string installRoot, string version, bool autoStartEnabled, CancellationToken cancellationToken = default)
     {
-        var normalizedInstallRoot = InstallStateStore.NormalizeInstallRoot(installRoot);
+        var normalizedInstallRoot = InstallLayout.NormalizeInstallRoot(installRoot);
         var parentDir = Path.GetDirectoryName(normalizedInstallRoot) ?? AppContext.BaseDirectory;
         Directory.CreateDirectory(parentDir);
 
@@ -57,7 +57,6 @@ public static class WindowsBundleInstaller
 
         var installState = InstallStateStore.CreateDefault(normalizedInstallRoot, version);
         installState.AutoStartEnabled = autoStartEnabled;
-        InstallStateStore.Save(installState);
         WriteMetadataInto(stageRoot, installState);
 
         return new PreparedWindowsBundle
@@ -71,7 +70,7 @@ public static class WindowsBundleInstaller
     public static async Task InstallPreparedBundleAsync(PreparedWindowsBundle preparedBundle, InstallState installState, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var normalizedInstallRoot = InstallStateStore.NormalizeInstallRoot(installState.InstallRoot);
+        var normalizedInstallRoot = InstallLayout.NormalizeInstallRoot(installState.InstallRoot);
         var backupRoot = normalizedInstallRoot + ".backup";
 
         if (Directory.Exists(backupRoot))
@@ -87,6 +86,7 @@ public static class WindowsBundleInstaller
         try
         {
             Directory.Move(preparedBundle.StageRoot, normalizedInstallRoot);
+            TryRestoreLogFile(backupRoot, normalizedInstallRoot);
             InstallStateStore.Save(installState);
             EnsureShortcuts(installState);
             EnsureUserPath(normalizedInstallRoot);
@@ -111,6 +111,8 @@ public static class WindowsBundleInstaller
         installState.GuiBinary = releaseInfo.GuiBinaryName;
         installState.LauncherBinary = releaseInfo.LauncherBinaryName;
         installState.UpdaterBinary = releaseInfo.UpdaterBinaryName;
+        installState.CliHostBinary = releaseInfo.CliHostBinaryName;
+        installState.UpdaterHostBinary = releaseInfo.UpdaterHostBinaryName;
         await InstallPreparedBundleAsync(preparedBundle, installState, cancellationToken);
     }
 
@@ -159,23 +161,25 @@ public static class WindowsBundleInstaller
 
     public static void EnsureUserPath(string installRoot)
     {
+        var pathEntry = InstallLayout.BinDirectory(installRoot);
         var userPath = Environment.GetEnvironmentVariable("Path", EnvironmentVariableTarget.User) ?? string.Empty;
         var parts = userPath
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToList();
-        if (!parts.Contains(installRoot, StringComparer.OrdinalIgnoreCase))
+        if (!parts.Contains(pathEntry, StringComparer.OrdinalIgnoreCase))
         {
-            parts.Insert(0, installRoot);
+            parts.Insert(0, pathEntry);
             Environment.SetEnvironmentVariable("Path", string.Join(Path.PathSeparator, parts), EnvironmentVariableTarget.User);
         }
     }
 
     public static void RemoveFromUserPath(string installRoot)
     {
+        var pathEntry = InstallLayout.BinDirectory(installRoot);
         var userPath = Environment.GetEnvironmentVariable("Path", EnvironmentVariableTarget.User) ?? string.Empty;
         var parts = userPath
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(item => !string.Equals(Path.GetFullPath(item), Path.GetFullPath(installRoot), StringComparison.OrdinalIgnoreCase))
+            .Where(item => !string.Equals(Path.GetFullPath(item), Path.GetFullPath(pathEntry), StringComparison.OrdinalIgnoreCase))
             .ToArray();
         Environment.SetEnvironmentVariable("Path", string.Join(Path.PathSeparator, parts), EnvironmentVariableTarget.User);
     }
@@ -201,6 +205,7 @@ public static class WindowsBundleInstaller
             "  timeout /t 1 /nobreak >nul",
             "  goto retry",
             ")",
+            "if exist \"%BACKUP_ROOT%\\log.txt\" if not exist \"%INSTALL_ROOT%\\log.txt\" copy /Y \"%BACKUP_ROOT%\\log.txt\" \"%INSTALL_ROOT%\\log.txt\" >nul 2>&1",
             "if exist \"%BACKUP_ROOT%\" rmdir /S /Q \"%BACKUP_ROOT%\" >nul 2>&1",
             $"start \"\" \"{launcherPath}\"",
             "del /F /Q \"%~f0\" >nul 2>&1"
@@ -223,7 +228,7 @@ public static class WindowsBundleInstaller
     {
         foreach (var directory in Directory.EnumerateDirectories(extractRoot, "*", SearchOption.AllDirectories).Prepend(extractRoot))
         {
-            if (File.Exists(InstallLayout.GuiPath(directory)) || File.Exists(InstallLayout.LauncherPath(directory)))
+            if (File.Exists(InstallLayout.GuiPath(directory)) || File.Exists(InstallLayout.LauncherPath(directory)) || File.Exists(InstallLayout.CliHostPath(directory)))
             {
                 return directory;
             }
@@ -252,21 +257,36 @@ public static class WindowsBundleInstaller
     {
         var clone = new InstallState
         {
-            InstallRoot = InstallStateStore.NormalizeInstallRoot(installState.InstallRoot),
+            InstallRoot = InstallLayout.NormalizeInstallRoot(installState.InstallRoot),
             Version = installState.Version,
             LauncherBinary = installState.LauncherBinary,
             GuiBinary = installState.GuiBinary,
             CliBinary = installState.CliBinary,
             UpdaterBinary = installState.UpdaterBinary,
+            CliHostBinary = installState.CliHostBinary,
+            UpdaterHostBinary = installState.UpdaterHostBinary,
             AutoStartEnabled = installState.AutoStartEnabled,
             UpdatedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
         };
-        Directory.CreateDirectory(stageRoot);
-        var payload = System.Text.Json.JsonSerializer.Serialize(clone, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)
+        Directory.CreateDirectory(InstallLayout.LibsDirectory(stageRoot));
+        var payload = InstallStateJsonContext.Serialize(clone);
+        File.WriteAllText(InstallLayout.MetadataPath(stageRoot), payload, Encoding.UTF8);
+    }
+
+    private static void TryRestoreLogFile(string backupRoot, string installRoot)
+    {
+        try
         {
-            WriteIndented = true
-        });
-        File.WriteAllText(Path.Combine(stageRoot, InstallLayout.MetadataFileName), payload, Encoding.UTF8);
+            var previousLog = InstallLayout.LogPath(backupRoot);
+            var currentLog = InstallLayout.LogPath(installRoot);
+            if (File.Exists(previousLog) && !File.Exists(currentLog))
+            {
+                File.Copy(previousLog, currentLog, overwrite: false);
+            }
+        }
+        catch
+        {
+        }
     }
 
     private static void CreateShortcut(string shortcutPath, string targetPath, string workingDirectory)
