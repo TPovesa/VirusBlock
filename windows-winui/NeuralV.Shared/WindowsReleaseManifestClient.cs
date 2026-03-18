@@ -15,11 +15,11 @@ public sealed class WindowsReleaseInfo
 
     public bool IsNewerThan(string currentVersion)
     {
-        if (!Version.TryParse(NormalizeSemVer(Version), out var latest))
+        if (!System.Version.TryParse(NormalizeSemVer(Version), out var latest))
         {
             return false;
         }
-        if (!Version.TryParse(NormalizeSemVer(currentVersion), out var current))
+        if (!System.Version.TryParse(NormalizeSemVer(currentVersion), out var current))
         {
             return true;
         }

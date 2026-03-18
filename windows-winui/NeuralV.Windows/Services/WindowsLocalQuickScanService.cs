@@ -263,6 +263,7 @@ public static class WindowsLocalQuickScanService
 
     private static IEnumerable<(string Name, string Path)> EnumerateScheduledTasks()
     {
+        var tasks = new List<(string Name, string Path)>();
         try
         {
             var psi = new ProcessStartInfo
@@ -299,13 +300,15 @@ public static class WindowsLocalQuickScanService
                 if (!string.IsNullOrWhiteSpace(executable))
                 {
                     seen++;
-                    yield return (name, executable!);
+                    tasks.Add((name, executable!));
                 }
             }
         }
         catch
         {
         }
+
+        return tasks;
     }
 
     private static List<PackageInventoryEntry> EnumeratePackageInventory()

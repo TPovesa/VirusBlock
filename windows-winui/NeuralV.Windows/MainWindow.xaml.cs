@@ -1902,7 +1902,7 @@ public sealed partial class MainWindow : Window
         await SavePreferencesAsync(prefs =>
         {
             prefs.AutoStartEnabled = AutoStartToggle.IsOn;
-        });
+        }, rebuildVisualTree: false);
 
         var installState = InstallStateStore.ResolveExistingInstall(Environment.ProcessPath)
             ?? InstallStateStore.CreateDefault(AppContext.BaseDirectory, VersionInfo.Current);
