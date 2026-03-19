@@ -14,11 +14,16 @@ public sealed class WindowsWindowLifecycleService : IDisposable
     private const uint WmCopyData = 0x004A;
     private const uint WmDestroy = 0x0002;
     private const uint WmGetMinMaxInfo = 0x0024;
+    private const uint WmNull = 0x0000;
+    private const uint WmContextMenu = 0x007B;
     private const uint WmApp = 0x8000;
+    private const uint WmUser = 0x0400;
     private const uint TrayCallbackMessage = WmApp + 0x44;
     private const uint WmLButtonUp = 0x0202;
     private const uint WmLButtonDblClk = 0x0203;
     private const uint WmRButtonUp = 0x0205;
+    private const uint NinSelect = WmUser;
+    private const uint NinKeySelect = WmUser + 1;
     private const uint MfString = 0x00000000;
     private const uint TpmLeftAlign = 0x0000;
     private const uint TpmBottomAlign = 0x0020;
@@ -171,6 +176,7 @@ public sealed class WindowsWindowLifecycleService : IDisposable
         _hiddenToTray = false;
         ShowWindow(_hwnd, SwRestore);
         ShowWindow(_hwnd, SwShow);
+        _window?.Activate();
         SetForegroundWindow(_hwnd);
         ApplyTrayState();
         RestoreRequested?.Invoke();
@@ -324,15 +330,15 @@ public sealed class WindowsWindowLifecycleService : IDisposable
 
             if (message == TrayCallbackMessage)
             {
-                var callback = unchecked((uint)lParam.ToInt64());
-                if (callback is WmLButtonUp or WmLButtonDblClk)
+                var callback = GetTrayCallbackEvent(lParam);
+                if (callback is WmLButtonUp or WmLButtonDblClk or NinSelect or NinKeySelect)
                 {
                     RestoreFromTray();
                     return IntPtr.Zero;
                 }
-                if (callback == WmRButtonUp)
+                if (callback is WmRButtonUp or WmContextMenu)
                 {
-                    ShowTrayContextMenu();
+                    ShowTrayContextMenu(wParam, callback == WmContextMenu);
                     return IntPtr.Zero;
                 }
             }
@@ -425,7 +431,7 @@ public sealed class WindowsWindowLifecycleService : IDisposable
         }
     }
 
-    private void ShowTrayContextMenu()
+    private void ShowTrayContextMenu(IntPtr wParam, bool useAnchorCoordinates)
     {
         if (_hwnd == IntPtr.Zero)
         {
@@ -444,7 +450,7 @@ public sealed class WindowsWindowLifecycleService : IDisposable
             AppendMenu(menu, MfString, TrayCommandOpen, "Открыть");
             AppendMenu(menu, MfString, TrayCommandExit, "Выйти");
             SetForegroundWindow(_hwnd);
-            GetCursorPos(out var point);
+            var point = ResolveContextMenuPoint(wParam, useAnchorCoordinates);
             var command = TrackPopupMenuEx(
                 menu,
                 TpmLeftAlign | TpmBottomAlign | TpmRightButton | TpmReturnCommand,
@@ -452,6 +458,7 @@ public sealed class WindowsWindowLifecycleService : IDisposable
                 point.y,
                 _hwnd,
                 IntPtr.Zero);
+            PostMessage(_hwnd, WmNull, IntPtr.Zero, IntPtr.Zero);
 
             if (command == TrayCommandOpen)
             {
@@ -474,6 +481,31 @@ public sealed class WindowsWindowLifecycleService : IDisposable
             }
         }
     }
+
+    private static uint GetTrayCallbackEvent(IntPtr lParam)
+    {
+        var value = unchecked((ulong)lParam.ToInt64());
+        return (uint)(value & 0xFFFF);
+    }
+
+    private POINT ResolveContextMenuPoint(IntPtr wParam, bool useAnchorCoordinates)
+    {
+        if (useAnchorCoordinates)
+        {
+            return new POINT
+            {
+                x = GetSignedLowWord(wParam),
+                y = GetSignedHighWord(wParam)
+            };
+        }
+
+        GetCursorPos(out var point);
+        return point;
+    }
+
+    private static int GetSignedLowWord(IntPtr value) => unchecked((short)value.ToInt64());
+
+    private static int GetSignedHighWord(IntPtr value) => unchecked((short)(value.ToInt64() >> 16));
 
     [StructLayout(LayoutKind.Sequential)]
     private struct POINT
