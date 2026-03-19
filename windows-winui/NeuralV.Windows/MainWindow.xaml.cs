@@ -1061,7 +1061,7 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(NetworkProtectionToggle, 1);
         networkControlGrid.Children.Add(NetworkProtectionToggle);
         networkControlCard.Child = networkControlGrid;
-        Grid.SetRow(networkControlCard, 3);
+        Grid.SetRow(networkControlCard, 2);
         networkGrid.Children.Add(networkControlCard);
         HomeNetworkCard.Child = networkGrid;
         Grid.SetColumn(HomeNetworkCard, 2);
