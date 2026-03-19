@@ -90,6 +90,7 @@ public static class WindowsBundleInstaller
             InstallStateStore.Save(installState);
             EnsureShortcuts(installState);
             EnsureUserPath(normalizedInstallRoot);
+            WindowsProtocolRegistration.EnsureHandlers(installState);
             EnsureAutoStart(installState);
             TryDelete(backupRoot);
         }
@@ -112,6 +113,8 @@ public static class WindowsBundleInstaller
         installState.LauncherBinary = releaseInfo.LauncherBinaryName;
         installState.UpdaterBinary = releaseInfo.UpdaterBinaryName;
         installState.UpdaterHostBinary = releaseInfo.UpdaterHostBinaryName;
+        installState.ProtocolSchemes = InstallLayout.UriSchemes.ToArray();
+        installState.ProtocolHandlerBinary = releaseInfo.LauncherBinaryName;
         await InstallPreparedBundleAsync(preparedBundle, installState, cancellationToken);
     }
 
@@ -121,6 +124,7 @@ public static class WindowsBundleInstaller
         RemoveShortcut(InstallLayout.StartMenuShortcutPath());
         RemoveShortcut(InstallLayout.DesktopShortcutPath());
         RemoveFromUserPath(installState.InstallRoot);
+        WindowsProtocolRegistration.RemoveHandlers();
         DisableAutoStart();
         InstallStateStore.ClearRegistry();
     }
@@ -263,6 +267,8 @@ public static class WindowsBundleInstaller
             CliBinary = installState.CliBinary,
             UpdaterBinary = installState.UpdaterBinary,
             UpdaterHostBinary = installState.UpdaterHostBinary,
+            ProtocolSchemes = installState.ProtocolSchemes,
+            ProtocolHandlerBinary = installState.ProtocolHandlerBinary,
             AutoStartEnabled = installState.AutoStartEnabled,
             UpdatedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
         };

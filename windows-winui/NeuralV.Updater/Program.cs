@@ -2,7 +2,7 @@ using System.Diagnostics;
 using NeuralV.Windows.Services;
 
 WindowsLog.StartSession("windows-updater-shim");
-WindowsLog.Info($"Updater shim args: {string.Join(' ', args)}");
+WindowsLog.Info($"Updater shim args count: {args.Length}");
 
 try
 {

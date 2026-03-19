@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Microsoft.UI.Xaml;
 using NeuralV.Windows.Models;
 using WinRT.Interop;
@@ -10,6 +11,7 @@ public sealed class WindowsWindowLifecycleService : IDisposable
 {
     private const int GwlWndProc = -4;
     private const uint WmClose = 0x0010;
+    private const uint WmCopyData = 0x004A;
     private const uint WmDestroy = 0x0002;
     private const uint WmGetMinMaxInfo = 0x0024;
     private const uint WmApp = 0x8000;
@@ -61,6 +63,7 @@ public sealed class WindowsWindowLifecycleService : IDisposable
     public event Action? RestoreRequested;
     public event Action? HiddenToTray;
     public event Action? ExitRequested;
+    public event Action<IReadOnlyList<string>>? LaunchArgumentsReceived;
 
     public WindowsWindowLifecycleService()
     {
@@ -313,6 +316,12 @@ public sealed class WindowsWindowLifecycleService : IDisposable
                 }
             }
 
+            if (message == WmCopyData)
+            {
+                HandleLaunchArguments(lParam);
+                return IntPtr.Zero;
+            }
+
             if (message == TrayCallbackMessage)
             {
                 var callback = unchecked((uint)lParam.ToInt64());
@@ -346,6 +355,46 @@ public sealed class WindowsWindowLifecycleService : IDisposable
         }
 
         return CallWindowProc(_previousWndProc, hwnd, message, wParam, lParam);
+    }
+
+    private void HandleLaunchArguments(IntPtr lParam)
+    {
+        if (lParam == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var copyData = Marshal.PtrToStructure<COPYDATASTRUCT>(lParam);
+        if (copyData.dwData != new IntPtr(InstallLayout.LaunchArgsCopyDataSignature)
+            || copyData.cbData <= 0
+            || copyData.lpData == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var charCount = Math.Max(0, (copyData.cbData / 2) - 1);
+        var payload = Marshal.PtrToStringUni(copyData.lpData, charCount)?.Trim();
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return;
+        }
+
+        string[]? launchArguments = null;
+        try
+        {
+            launchArguments = JsonSerializer.Deserialize<string[]>(payload);
+        }
+        catch (JsonException)
+        {
+        }
+
+        if (launchArguments is null || launchArguments.Length == 0)
+        {
+            launchArguments = [payload];
+        }
+
+        WindowsLog.Info($"Forwarded launch arguments received: count={launchArguments.Length}");
+        LaunchArgumentsReceived?.Invoke(launchArguments);
     }
 
     private void ApplyMinTrackSize(IntPtr lParam)
@@ -431,6 +480,14 @@ public sealed class WindowsWindowLifecycleService : IDisposable
     {
         public int x;
         public int y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct COPYDATASTRUCT
+    {
+        public IntPtr dwData;
+        public int cbData;
+        public IntPtr lpData;
     }
 
     [StructLayout(LayoutKind.Sequential)]

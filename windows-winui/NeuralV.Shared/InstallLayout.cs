@@ -5,6 +5,8 @@ namespace NeuralV.Windows.Services;
 public static class InstallLayout
 {
     public const string ProductName = "NeuralV";
+    public static readonly string[] UriSchemes = { "shieldsecurity", "neuralv" };
+    public const long LaunchArgsCopyDataSignature = 0x4E564C41;
     public const string LauncherBinaryName = "NeuralV.exe";
     public const string GuiBinaryName = "NeuralV.Gui.exe";
     public const string CliBinaryName = "neuralv.exe";
@@ -18,6 +20,8 @@ public static class InstallLayout
     public const string RegistryInstallRootValue = "InstallRoot";
     public const string RegistryVersionValue = "Version";
     public const string RegistryAutoStartValue = "AutoStartEnabled";
+    public const string RegistryProtocolHandlerValue = "ProtocolHandlerPath";
+    public const string RegistryProtocolSchemesValue = "ProtocolSchemes";
     public const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     public const string RunValueName = "NeuralV";
 
@@ -82,6 +86,8 @@ public static class InstallLayout
         var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         return Path.Combine(desktop, ProductName + ".lnk");
     }
+
+    public static string UriSchemeRegistryKeyPath(string scheme) => $@"Software\Classes\{scheme.Trim().ToLowerInvariant()}";
 }
 
 public sealed class InstallState
@@ -106,6 +112,12 @@ public sealed class InstallState
 
     [JsonPropertyName("updaterHostExecutable")]
     public string UpdaterHostBinary { get; set; } = InstallLayout.UpdaterHostBinaryName;
+
+    [JsonPropertyName("protocolSchemes")]
+    public string[] ProtocolSchemes { get; set; } = { "shieldsecurity", "neuralv" };
+
+    [JsonPropertyName("protocolHandlerExecutable")]
+    public string ProtocolHandlerBinary { get; set; } = InstallLayout.LauncherBinaryName;
 
     [JsonPropertyName("autoStartEnabled")]
     public bool AutoStartEnabled { get; set; } = true;

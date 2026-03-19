@@ -23,6 +23,7 @@
     <Compile Include="..\NeuralV.Shared\InstallLayout.cs" Link="Shared\InstallLayout.cs" />
     <Compile Include="..\NeuralV.Shared\InstallStateStore.cs" Link="Shared\InstallStateStore.cs" />
     <Compile Include="..\NeuralV.Shared\InstallStateJsonContext.cs" Link="Shared\InstallStateJsonContext.cs" />
+    <Compile Include="..\NeuralV.Shared\WindowsProtocolRegistration.cs" Link="Shared\WindowsProtocolRegistration.cs" />
     <Compile Include="..\NeuralV.Shared\WindowsBundleInstaller.cs" Link="Shared\WindowsBundleInstaller.cs" />
     <Compile Include="..\NeuralV.Shared\WindowsReleaseManifestClient.cs" Link="Shared\WindowsReleaseManifestClient.cs" />
   </ItemGroup>

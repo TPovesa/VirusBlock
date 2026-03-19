@@ -2,7 +2,7 @@ using System.Diagnostics;
 using NeuralV.Windows.Services;
 
 WindowsLog.StartSession("windows-updater-host");
-WindowsLog.Info($"Updater host args: {string.Join(' ', args)}");
+WindowsLog.Info($"Updater host args count: {args.Length}");
 
 var forwardedArgs = args.Where(arg => !string.Equals(arg, "--check-and-launch", StringComparison.OrdinalIgnoreCase)).ToArray();
 

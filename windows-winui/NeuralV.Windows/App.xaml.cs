@@ -29,19 +29,24 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        var smokeFromArgs = (args.Arguments ?? string.Empty)
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Any(arg => string.Equals(arg, "--smoke-test", StringComparison.OrdinalIgnoreCase));
+        var launchArguments = Environment.GetCommandLineArgs().Skip(1).ToArray();
+        var smokeFromArgs = launchArguments.Any(arg => string.Equals(arg, "--smoke-test", StringComparison.OrdinalIgnoreCase));
         var smokeFromEnv = string.Equals(
             Environment.GetEnvironmentVariable("NEURALV_SMOKE_TEST"),
             "1",
             StringComparison.OrdinalIgnoreCase);
         IsSmokeTest = smokeFromArgs || smokeFromEnv;
 
+        var pendingResetPasswordDeepLink = WindowsDeepLinkActivationService.CaptureStartupArguments(launchArguments);
+
         try
         {
-            WindowsLog.Info($"Launch arguments: {args.Arguments}");
+            WindowsLog.Info($"Launch arguments count: {launchArguments.Length}");
             WindowsLog.Info($"Smoke test mode: {IsSmokeTest}");
+            if (pendingResetPasswordDeepLink is not null)
+            {
+                WindowsLog.Info($"Startup deeplink ready: {pendingResetPasswordDeepLink.Scheme}://auth/reset-password");
+            }
             WindowsLog.Info("Loading client preferences");
             Preferences = ClientPreferencesStore.Load();
             WindowsLog.Info("Client preferences loaded");
@@ -68,6 +73,15 @@ public partial class App : Application
             installState.Version = VersionInfo.Current;
             installState.AutoStartEnabled = Preferences.AutoStartEnabled;
             InstallStateStore.Save(installState);
+            try
+            {
+                WindowsProtocolRegistration.EnsureHandlers(installState);
+                WindowsLog.Info("Protocol handlers ensured");
+            }
+            catch (Exception protocolError)
+            {
+                WindowsLog.Error("Protocol handler registration failed", protocolError);
+            }
             WindowsBundleInstaller.EnsureAutoStart(installState);
             WindowsLog.Info($"Install metadata saved: {installState.InstallRoot}");
 
@@ -192,6 +206,10 @@ public partial class App : Application
     {
         try
         {
+            if (WindowLifecycle is not null)
+            {
+                WindowLifecycle.LaunchArgumentsReceived -= OnLaunchArgumentsReceived;
+            }
             WindowLifecycle?.Dispose();
             WindowLifecycle = new WindowsWindowLifecycleService();
             WindowLifecycle.Attach(window, new WindowsWindowLifecycleOptions
@@ -203,11 +221,28 @@ public partial class App : Application
                 InitialTrayState = WindowsTrayProgressService.CreateIdle(),
                 TrayStateProvider = () => WindowsTrayProgressService.CreateIdle()
             });
+            WindowLifecycle.LaunchArgumentsReceived += OnLaunchArgumentsReceived;
             WindowsLog.Info("Window lifecycle attached; tray refresh deferred until main window bindings");
         }
         catch (Exception ex)
         {
             WindowsLog.Error("Window lifecycle attach failed", ex);
+        }
+    }
+
+    private static void OnLaunchArgumentsReceived(IReadOnlyList<string> launchArguments)
+    {
+        try
+        {
+            var deepLink = WindowsDeepLinkActivationService.CaptureForwardedArguments(launchArguments);
+            if (deepLink is not null)
+            {
+                WindowsLog.Info($"Forwarded deeplink ready: {deepLink.Scheme}://auth/reset-password");
+            }
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("Forwarded launch argument processing failed", ex);
         }
     }
 

@@ -1,4 +1,7 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
 using NeuralV.Windows.Services;
 
 WindowsLog.StartSession("windows-launcher");
@@ -15,7 +18,7 @@ try
     WindowsLog.Info($"Public updater path: {updaterPath}");
     WindowsLog.Info($"GUI core path: {guiPath}");
 
-    if (TryActivateExistingInstance(guiPath))
+    if (TryActivateExistingInstance(guiPath, args))
     {
         WindowsLog.Info("Existing GUI instance detected, activated, and launch skipped");
         return;
@@ -83,7 +86,7 @@ catch (Exception ex)
     Environment.ExitCode = 1;
 }
 
-static bool TryActivateExistingInstance(string guiPath)
+static bool TryActivateExistingInstance(string guiPath, string[] launchArguments)
 {
     try
     {
@@ -119,6 +122,7 @@ static bool TryActivateExistingInstance(string guiPath)
                 continue;
             }
 
+            TryForwardLaunchArguments(hwnd, launchArguments);
             LauncherNativeMethods.ShowWindow(hwnd, LauncherNativeMethods.SwRestore);
             LauncherNativeMethods.ShowWindow(hwnd, LauncherNativeMethods.SwShow);
             LauncherNativeMethods.SetForegroundWindow(hwnd);
@@ -133,14 +137,78 @@ static bool TryActivateExistingInstance(string guiPath)
     return false;
 }
 
+static void TryForwardLaunchArguments(IntPtr hwnd, IReadOnlyList<string> launchArguments)
+{
+    if (hwnd == IntPtr.Zero || launchArguments.Count == 0)
+    {
+        return;
+    }
+
+    var payload = JsonSerializer.Serialize(launchArguments);
+    var bytes = Encoding.Unicode.GetBytes(payload + "\0");
+    var buffer = Marshal.AllocHGlobal(bytes.Length);
+
+    try
+    {
+        Marshal.Copy(bytes, 0, buffer, bytes.Length);
+        var copyData = new LauncherNativeMethods.CopyDataStruct
+        {
+            dwData = new IntPtr(InstallLayout.LaunchArgsCopyDataSignature),
+            cbData = bytes.Length,
+            lpData = buffer
+        };
+
+        var result = LauncherNativeMethods.SendMessageTimeout(
+            hwnd,
+            LauncherNativeMethods.WmCopyData,
+            IntPtr.Zero,
+            ref copyData,
+            LauncherNativeMethods.SmtoAbortIfHung,
+            2000,
+            out _);
+
+        WindowsLog.Info(result == IntPtr.Zero
+            ? "Launch argument handoff skipped: existing window did not accept payload"
+            : $"Forwarded launch arguments to existing GUI instance: count={launchArguments.Count}");
+    }
+    catch (Exception ex)
+    {
+        WindowsLog.Error("Launch argument handoff failed", ex);
+    }
+    finally
+    {
+        Marshal.FreeHGlobal(buffer);
+    }
+}
+
 internal static class LauncherNativeMethods
 {
     public const uint SwRestore = 9;
     public const uint SwShow = 5;
+    public const uint WmCopyData = 0x004A;
+    public const uint SmtoAbortIfHung = 0x0002;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct CopyDataStruct
+    {
+        public IntPtr dwData;
+        public int cbData;
+        public IntPtr lpData;
+    }
 
     [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
     public static extern bool ShowWindow(IntPtr hwnd, uint command);
 
     [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
     public static extern bool SetForegroundWindow(IntPtr hwnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SendMessageTimeout(
+        IntPtr hwnd,
+        uint message,
+        IntPtr wParam,
+        ref CopyDataStruct lParam,
+        uint flags,
+        uint timeoutMilliseconds,
+        out IntPtr result);
 }

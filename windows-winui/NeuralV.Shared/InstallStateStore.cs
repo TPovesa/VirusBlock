@@ -87,6 +87,8 @@ public static class InstallStateStore
             if (string.IsNullOrWhiteSpace(state.CliBinary)) state.CliBinary = InstallLayout.CliBinaryName;
             if (string.IsNullOrWhiteSpace(state.UpdaterBinary)) state.UpdaterBinary = InstallLayout.UpdaterBinaryName;
             if (string.IsNullOrWhiteSpace(state.UpdaterHostBinary)) state.UpdaterHostBinary = InstallLayout.UpdaterHostBinaryName;
+            if (state.ProtocolSchemes is null || state.ProtocolSchemes.Length == 0) state.ProtocolSchemes = InstallLayout.UriSchemes.ToArray();
+            if (string.IsNullOrWhiteSpace(state.ProtocolHandlerBinary)) state.ProtocolHandlerBinary = InstallLayout.LauncherBinaryName;
             return state;
         }
         catch (Exception ex)
@@ -99,6 +101,13 @@ public static class InstallStateStore
     public static void Save(InstallState state)
     {
         state.InstallRoot = InstallLayout.NormalizeInstallRoot(state.InstallRoot);
+        state.ProtocolSchemes = state.ProtocolSchemes is { Length: > 0 } ? WindowsProtocolRegistration.NormalizeSchemes(state.ProtocolSchemes) : InstallLayout.UriSchemes.ToArray();
+        if (string.IsNullOrWhiteSpace(state.ProtocolHandlerBinary))
+        {
+            state.ProtocolHandlerBinary = string.IsNullOrWhiteSpace(state.LauncherBinary)
+                ? InstallLayout.LauncherBinaryName
+                : state.LauncherBinary;
+        }
         state.UpdatedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         Directory.CreateDirectory(InstallLayout.LibsDirectory(state.InstallRoot));
         var metadataPath = InstallLayout.MetadataPath(state.InstallRoot);
@@ -109,6 +118,8 @@ public static class InstallStateStore
         key?.SetValue(InstallLayout.RegistryInstallRootValue, state.InstallRoot, RegistryValueKind.String);
         key?.SetValue(InstallLayout.RegistryVersionValue, state.Version ?? string.Empty, RegistryValueKind.String);
         key?.SetValue(InstallLayout.RegistryAutoStartValue, state.AutoStartEnabled ? 1 : 0, RegistryValueKind.DWord);
+        key?.SetValue(InstallLayout.RegistryProtocolHandlerValue, Path.Combine(state.InstallRoot, state.ProtocolHandlerBinary), RegistryValueKind.String);
+        key?.SetValue(InstallLayout.RegistryProtocolSchemesValue, WindowsProtocolRegistration.SerializeSchemes(state.ProtocolSchemes), RegistryValueKind.String);
     }
 
     public static void UpdateAutoStartPreference(bool enabled, string? executablePath = null)
