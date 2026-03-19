@@ -13,6 +13,7 @@ using Microsoft.UI.Xaml.Media.Imaging;
 using NeuralV.Windows.Models;
 using NeuralV.Windows.Services;
 using Windows.Foundation;
+using Windows.System;
 using Windows.Storage.Pickers;
 using UiColor = global::Windows.UI.Color;
 using UiEllipse = Microsoft.UI.Xaml.Shapes.Ellipse;
@@ -881,6 +882,8 @@ public sealed partial class MainWindow : Window
         cardStack.Children.Add(CreateFieldLabel("Пароль"));
         LoginPasswordBox = CreatePasswordBox();
         cardStack.Children.Add(LoginPasswordBox);
+        WireEnterAdvance(LoginEmailBox, LoginPasswordBox);
+        WireEnterSubmit(LoginPasswordBox, () => OnStartLoginClick(LoginPasswordBox, new RoutedEventArgs()));
         var resetButton = CreateTonalButton("Сбросить пароль", OnRequestPasswordResetClick);
         resetButton.HorizontalAlignment = HorizontalAlignment.Left;
         cardStack.Children.Add(resetButton);
@@ -906,6 +909,10 @@ public sealed partial class MainWindow : Window
         cardStack.Children.Add(CreateFieldLabel("Повтори пароль"));
         RegisterPasswordRepeatBox = CreatePasswordBox();
         cardStack.Children.Add(RegisterPasswordRepeatBox);
+        WireEnterAdvance(RegisterNameBox, RegisterEmailBox);
+        WireEnterAdvance(RegisterEmailBox, RegisterPasswordBox);
+        WireEnterAdvance(RegisterPasswordBox, RegisterPasswordRepeatBox);
+        WireEnterSubmit(RegisterPasswordRepeatBox, () => OnStartRegisterClick(RegisterPasswordRepeatBox, new RoutedEventArgs()));
         cardStack.Children.Add(CreateActionRow(
             CreateTonalButton("Назад", OnBackToWelcomeClick),
             CreateFilledButton("Создать аккаунт", OnStartRegisterClick)));
@@ -920,6 +927,7 @@ public sealed partial class MainWindow : Window
         cardStack.Children.Add(CodeHintText);
         cardStack.Children.Add(CreateFieldLabel("Код"));
         VerificationCodeBox = CreateTextBox("123456");
+        WireEnterSubmit(VerificationCodeBox, () => OnVerifyCodeClick(VerificationCodeBox, new RoutedEventArgs()));
         cardStack.Children.Add(VerificationCodeBox);
         cardStack.Children.Add(CreateActionRow(
             CreateTonalButton("Назад", OnBackFromCodeClick),
@@ -1697,11 +1705,11 @@ public sealed partial class MainWindow : Window
         {
             SetHistoryDetailState(false);
         }
-        UpdateHeader();
-        ApplySessionState();
-        UpdateHomeState();
-        UpdateHistoryState();
-        UpdateSettingsState();
+        SafeUiRefresh("UpdateHeader", UpdateHeader);
+        SafeUiRefresh("ApplySessionState", ApplySessionState);
+        SafeUiRefresh("UpdateHomeState", UpdateHomeState);
+        SafeUiRefresh("UpdateHistoryState", UpdateHistoryState);
+        SafeUiRefresh("UpdateSettingsState", UpdateSettingsState);
     }
 
     private void UpdateHeader()
@@ -4090,6 +4098,75 @@ public sealed partial class MainWindow : Window
             PasswordRevealMode = PasswordRevealMode.Peek,
             VerticalContentAlignment = VerticalAlignment.Center
         };
+    }
+
+    private static void WireEnterAdvance(TextBox current, Control? nextControl)
+    {
+        current.KeyDown += (_, e) =>
+        {
+            if (e.Key != VirtualKey.Enter)
+            {
+                return;
+            }
+
+            e.Handled = true;
+            nextControl?.Focus(FocusState.Programmatic);
+        };
+    }
+
+    private static void WireEnterAdvance(PasswordBox current, Control? nextControl)
+    {
+        current.KeyDown += (_, e) =>
+        {
+            if (e.Key != VirtualKey.Enter)
+            {
+                return;
+            }
+
+            e.Handled = true;
+            nextControl?.Focus(FocusState.Programmatic);
+        };
+    }
+
+    private static void WireEnterSubmit(TextBox current, Action submit)
+    {
+        current.KeyDown += (_, e) =>
+        {
+            if (e.Key != VirtualKey.Enter)
+            {
+                return;
+            }
+
+            e.Handled = true;
+            submit();
+        };
+    }
+
+    private static void WireEnterSubmit(PasswordBox current, Action submit)
+    {
+        current.KeyDown += (_, e) =>
+        {
+            if (e.Key != VirtualKey.Enter)
+            {
+                return;
+            }
+
+            e.Handled = true;
+            submit();
+        };
+    }
+
+    private static void SafeUiRefresh(string label, Action action)
+    {
+        try
+        {
+            WindowsLog.Info($"ShowScreen: {label}");
+            action();
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error($"ShowScreen refresh failed: {label}", ex);
+        }
     }
 
     private static Button CreateSafeOverlayButton(string text, RoutedEventHandler handler, bool emphasized)

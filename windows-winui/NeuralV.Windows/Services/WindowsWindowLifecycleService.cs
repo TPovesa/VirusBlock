@@ -593,7 +593,15 @@ public sealed class WindowsWindowLifecycleService : IDisposable
             IntPtr.Zero);
         if (_trayWindow == IntPtr.Zero)
         {
-            throw new InvalidOperationException($"Не удалось создать tray helper window. Win32={Marshal.GetLastWin32Error()}");
+            var error = Marshal.GetLastWin32Error();
+            WindowsLog.Info($"Tray helper window unavailable, falling back to main window. Win32={error}");
+            if (_trayWindowClassRegistered && !string.IsNullOrWhiteSpace(_trayWindowClassName))
+            {
+                UnregisterClass(_trayWindowClassName, moduleHandle);
+            }
+            _trayWindowClassRegistered = false;
+            _trayWindowClassName = null;
+            return;
         }
     }
 
