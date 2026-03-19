@@ -208,9 +208,25 @@ public sealed partial class MainWindow : Window
             ApplyAmbientPalette();
             WindowsLog.Info("Preparing interactive auth background");
             await InitializeAsync();
-            WindowsLog.Info("Ensuring window lifecycle after initialization");
-            App.EnsureWindowLifecycle(this);
-            HookWindowLifecycle();
+            WindowsLog.Info("Scheduling window lifecycle after initialization");
+            if (!DispatcherQueue.TryEnqueue(() =>
+                {
+                    try
+                    {
+                        WindowsLog.Info("Ensuring window lifecycle on deferred UI tick");
+                        App.EnsureWindowLifecycle(this);
+                        HookWindowLifecycle();
+                    }
+                    catch (Exception lifecycleEx)
+                    {
+                        WindowsLog.Error("Deferred window lifecycle attach failed", lifecycleEx);
+                    }
+                }))
+            {
+                WindowsLog.Info("Dispatcher queue unavailable, attaching window lifecycle immediately");
+                App.EnsureWindowLifecycle(this);
+                HookWindowLifecycle();
+            }
         }
         catch (Exception ex)
         {

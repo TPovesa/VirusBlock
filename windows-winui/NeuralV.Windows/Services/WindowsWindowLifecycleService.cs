@@ -90,7 +90,6 @@ public sealed class WindowsWindowLifecycleService : IDisposable
             throw new InvalidOperationException("Не удалось повесить Win32 hook на окно NeuralV.");
         }
         _attached = true;
-        RefreshTrayState();
         WindowsLog.Info($"Window lifecycle service attached hwnd=0x{_hwnd.ToInt64():X}");
     }
 

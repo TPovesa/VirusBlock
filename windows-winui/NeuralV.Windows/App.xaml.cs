@@ -203,8 +203,7 @@ public partial class App : Application
                 InitialTrayState = WindowsTrayProgressService.CreateIdle(),
                 TrayStateProvider = () => WindowsTrayProgressService.CreateIdle()
             });
-            WindowLifecycle.RefreshTrayState();
-            WindowsLog.Info("Window lifecycle attached");
+            WindowsLog.Info("Window lifecycle attached; tray refresh deferred until main window bindings");
         }
         catch (Exception ex)
         {
