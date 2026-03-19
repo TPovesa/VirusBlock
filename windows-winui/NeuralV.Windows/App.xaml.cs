@@ -87,10 +87,6 @@ public partial class App : Application
 
             _window.Activate();
             WindowsLog.Info("Main window activated");
-            if (_window is MainWindow)
-            {
-                TryAttachWindowLifecycle(_window);
-            }
         }
         catch (Exception ex)
         {
@@ -148,6 +144,11 @@ public partial class App : Application
         Preferences = preferences ?? new ClientPreferences();
         Palette = WallpaperPaletteService.Load(Preferences.ThemeMode, Preferences.DynamicColorsEnabled);
         ApplyPalette(Current.Resources, Palette);
+    }
+
+    public static void EnsureWindowLifecycle(Window window)
+    {
+        TryAttachWindowLifecycle(window);
     }
 
     private static SolidColorBrush Brush(Color color) => new(color);

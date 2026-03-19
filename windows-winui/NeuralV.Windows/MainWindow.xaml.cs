@@ -200,6 +200,8 @@ public sealed partial class MainWindow : Window
         {
             WindowsLog.Info("Configuring window handle");
             TryConfigureWindowHandle();
+            WindowsLog.Info("Ensuring window lifecycle on load");
+            App.EnsureWindowLifecycle(this);
             HookWindowLifecycle();
             WindowsLog.Info("Applying ambient palette on load");
             ApplyAmbientPalette();
