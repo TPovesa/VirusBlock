@@ -18,7 +18,7 @@ const {
     registerFailure,
     clearFailures
 } = require('../utils/loginAttempts');
-const { sendMail, isMailConfigured } = require('../utils/mail');
+const { sendMail, isMailConfigured, queueMailTask } = require('../utils/mail');
 
 const AUTH_CODE_TTL_MINUTES = parseInt(process.env.AUTH_CODE_TTL_MINUTES || '15', 10);
 const PASSWORD_RESET_TTL_MINUTES = parseInt(process.env.PASSWORD_RESET_TTL_MINUTES || '30', 10);
@@ -55,10 +55,73 @@ function passwordResetExpiresAt(now = nowMs()) {
     return now + PASSWORD_RESET_TTL_MINUTES * 60 * 1000;
 }
 
-function getResetUrl(token, email) {
-    const baseUrl = (process.env.APP_RESET_URL || 'neuralv://auth/reset-password').trim();
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function appendQuery(baseUrl, params) {
     const separator = baseUrl.includes('?') ? '&' : '?';
-    return `${baseUrl}${separator}token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
+    const query = Object.entries(params)
+        .filter(([, value]) => value !== undefined && value !== null && value !== '')
+        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+        .join('&');
+    return query ? `${baseUrl}${separator}${query}` : baseUrl;
+}
+
+function getResetLinks(token, email) {
+    const configuredBases = [
+        process.env.APP_RESET_URL || 'shieldsecurity://auth/reset-password',
+        process.env.APP_RESET_ALT_URL || 'neuralv://auth/reset-password',
+        process.env.APP_RESET_WEB_URL || ''
+    ]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+        .filter((value, index, list) => list.indexOf(value) === index);
+
+    const links = configuredBases.map((baseUrl) =>
+        appendQuery(baseUrl, {
+            token,
+            email
+        })
+    );
+
+    return {
+        primary: links[0],
+        alternates: links.slice(1)
+    };
+}
+
+function renderMailShell({ eyebrow, title, bodyHtml, ctaLabel, ctaHref, footerHtml }) {
+    const buttonHtml = ctaLabel && ctaHref
+        ? `<p style="margin:24px 0 20px;"><a href="${escapeHtml(ctaHref)}" style="display:inline-block;padding:14px 22px;border-radius:999px;background:#214f3a;color:#f4fff8;text-decoration:none;font-weight:700;">${escapeHtml(ctaLabel)}</a></p>`
+        : '';
+
+    return `
+        <div style="background:#f4f7f6;padding:28px 16px;font-family:Segoe UI,Arial,sans-serif;color:#1c1f1d;">
+            <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:24px;padding:28px;border:1px solid rgba(33,79,58,0.08);box-shadow:0 12px 32px rgba(18,38,29,0.08);">
+                ${eyebrow ? `<div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#5e6b63;margin-bottom:10px;">${escapeHtml(eyebrow)}</div>` : ''}
+                <h1 style="margin:0 0 14px;font-size:28px;line-height:1.15;color:#112018;">${escapeHtml(title)}</h1>
+                <div style="font-size:15px;line-height:1.7;color:#314039;">${bodyHtml}</div>
+                ${buttonHtml}
+                ${footerHtml ? `<div style="margin-top:22px;font-size:13px;line-height:1.6;color:#68756d;">${footerHtml}</div>` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function queueAuthCodeEmail(email, code, purpose) {
+    queueMailTask(`auth-code:${purpose.toLowerCase()}:${email}`, () =>
+        sendAuthCodeEmail(email, code, purpose)
+    );
+}
+
+function queuePasswordResetEmail(email, resetLinks) {
+    queueMailTask(`password-reset:${email}`, () => sendPasswordResetEmail(email, resetLinks));
 }
 
 function parsePayload(jsonValue) {
@@ -169,7 +232,7 @@ async function refreshChallengeCode(challenge) {
          WHERE id = ?`,
         [hashToken(code), now, expiresAt, challenge.id]
     );
-    await sendAuthCodeEmail(challenge.email, code, challenge.purpose);
+    queueAuthCodeEmail(challenge.email, code, challenge.purpose);
     return { id: challenge.id, expiresAt };
 }
 
@@ -179,16 +242,42 @@ async function sendAuthCodeEmail(email, code, purpose) {
         to: email,
         subject: `NeuralV: код ${actionLabel}`,
         text: `Ваш код ${actionLabel}: ${code}. Код действует ${AUTH_CODE_TTL_MINUTES} минут.`,
-        html: `<p>Ваш код ${actionLabel}: <strong>${code}</strong></p><p>Код действует ${AUTH_CODE_TTL_MINUTES} минут.</p>`
+        html: renderMailShell({
+            eyebrow: 'NeuralV',
+            title: `Код ${actionLabel}`,
+            bodyHtml: `<p style="margin:0 0 12px;">Введите этот код в приложении NeuralV.</p><div style="display:inline-block;padding:14px 18px;border-radius:18px;background:#eff7f2;border:1px solid rgba(33,79,58,0.14);font-size:30px;font-weight:800;letter-spacing:0.24em;color:#214f3a;">${escapeHtml(code)}</div>`,
+            footerHtml: `Код действует ${AUTH_CODE_TTL_MINUTES} минут. Если письмо пришло с задержкой, просто введите этот код в приложение.`
+        })
     });
 }
 
-async function sendPasswordResetEmail(email, link) {
+async function sendPasswordResetEmail(email, resetLinks) {
+    const fallbackLinks = [resetLinks.primary, ...resetLinks.alternates].filter(Boolean);
+    const fallbackLinksHtml = fallbackLinks
+        .map((link, index) => `<div style="margin-top:${index === 0 ? '0' : '10px'};"><a href="${escapeHtml(link)}" style="color:#214f3a;text-decoration:none;word-break:break-all;">${escapeHtml(link)}</a></div>`)
+        .join('');
+
     await sendMail({
         to: email,
         subject: 'NeuralV: сброс пароля',
-        text: `Перейдите по ссылке, чтобы сбросить пароль: ${link}`,
-        html: `<p>Чтобы сбросить пароль, откройте ссылку:</p><p><a href="${link}">${link}</a></p>`
+        text: [
+            'Откройте NeuralV по ссылке ниже, чтобы сбросить пароль.',
+            resetLinks.primary,
+            ...resetLinks.alternates,
+            `Ссылка действует ${PASSWORD_RESET_TTL_MINUTES} минут.`
+        ].filter(Boolean).join('\n'),
+        html: renderMailShell({
+            eyebrow: 'NeuralV',
+            title: 'Сброс пароля',
+            bodyHtml: '<p style="margin:0 0 12px;">Откройте письмо на устройстве с NeuralV и нажмите кнопку ниже. Приложение откроет экран сброса пароля сразу с готовым deep link.</p>',
+            ctaLabel: 'Открыть сброс пароля в NeuralV',
+            ctaHref: resetLinks.primary,
+            footerHtml: [
+                `<div>Если кнопка не открылась, используйте одну из ссылок вручную:</div>`,
+                `<div style="margin-top:10px;">${fallbackLinksHtml}</div>`,
+                `<div style="margin-top:12px;">Ссылка действует ${PASSWORD_RESET_TTL_MINUTES} минут.</div>`
+            ].join('')
+        })
     });
 }
 
@@ -243,7 +332,7 @@ async function startRegisterChallenge(name, normalizedEmail, password) {
             password_hash: passwordHash
         })
     });
-    await sendAuthCodeEmail(normalizedEmail, code, 'REGISTER');
+    queueAuthCodeEmail(normalizedEmail, code, 'REGISTER');
     return challenge;
 }
 
@@ -255,7 +344,7 @@ async function startLoginChallenge(user) {
         purpose: 'LOGIN',
         code
     });
-    await sendAuthCodeEmail(user.email, code, 'LOGIN');
+    queueAuthCodeEmail(user.email, code, 'LOGIN');
     return challenge;
 }
 
@@ -283,6 +372,7 @@ router.post('/register/start', async (req, res) => {
             challenge_id: challenge.id,
             expires_at: challenge.expiresAt,
             email: normalizedEmail,
+            delivery: 'queued',
             message: 'Verification code sent to email'
         });
     } catch (e) {
@@ -315,6 +405,7 @@ router.post('/register/resend', async (req, res) => {
             challenge_id: refreshed.id,
             expires_at: refreshed.expiresAt,
             email: challenge.email,
+            delivery: 'queued',
             message: 'Verification code sent to email'
         });
     } catch (e) {
@@ -427,6 +518,7 @@ router.post('/login/start', async (req, res) => {
             challenge_id: challenge.id,
             expires_at: challenge.expiresAt,
             email: normalizedEmail,
+            delivery: 'queued',
             message: 'Verification code sent to email'
         });
     } catch (e) {
@@ -459,6 +551,7 @@ router.post('/login/resend', async (req, res) => {
             challenge_id: refreshed.id,
             expires_at: refreshed.expiresAt,
             email: challenge.email,
+            delivery: 'queued',
             message: 'Verification code sent to email'
         });
     } catch (e) {
@@ -535,7 +628,11 @@ router.post('/password-reset/request', async (req, res) => {
         );
 
         if (rows.length === 0) {
-            return res.json({ success: true, message: 'If the email exists, a reset link has been sent' });
+            return res.json({
+                success: true,
+                delivery: 'queued',
+                message: 'If the email exists, a reset link has been sent'
+            });
         }
 
         const user = rows[0];
@@ -555,8 +652,18 @@ router.post('/password-reset/request', async (req, res) => {
             [uuidv4(), user.id, user.email, tokenHash, now, expiresAt]
         );
 
-        await sendPasswordResetEmail(user.email, getResetUrl(token, user.email));
-        res.json({ success: true, message: 'Reset link sent to email' });
+        const resetLinks = getResetLinks(token, user.email);
+        queuePasswordResetEmail(user.email, resetLinks);
+        res.json({
+            success: true,
+            message: 'Reset link sent to email',
+            delivery: 'queued',
+            deeplink: {
+                primary: resetLinks.primary,
+                alternates: resetLinks.alternates,
+                query: ['token', 'email']
+            }
+        });
     } catch (e) {
         console.error('Password reset request error:', e);
         if (e.code === 'MAIL_NOT_CONFIGURED') {

@@ -859,7 +859,7 @@ public sealed partial class MainWindow : Window
         LoginPasswordBox = CreatePasswordBox();
         cardStack.Children.Add(LoginPasswordBox);
         var resetButton = CreateTonalButton("Сбросить пароль", OnRequestPasswordResetClick);
-        resetButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        resetButton.HorizontalAlignment = HorizontalAlignment.Left;
         cardStack.Children.Add(resetButton);
         cardStack.Children.Add(CreateActionRow(
             CreateTonalButton("Назад", OnBackToWelcomeClick),
@@ -2263,7 +2263,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             WindowsLog.Error("OnStartLoginClick failed", ex);
-            SetStatus(ex.Message);
+            SetStatus(HumanizeAuthActionError(ex, "Не удалось начать вход."));
         }
         finally
         {
@@ -2299,7 +2299,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             WindowsLog.Error("OnStartRegisterClick failed", ex);
-            SetStatus(ex.Message);
+            SetStatus(HumanizeAuthActionError(ex, "Не удалось начать регистрацию."));
         }
         finally
         {
@@ -2314,6 +2314,21 @@ public sealed partial class MainWindow : Window
         SafeSetText(CodeHintText, hint);
         SetStatus(null);
         ShowScreen(AppScreen.Code);
+    }
+
+    private static string HumanizeAuthActionError(Exception ex, string fallbackMessage)
+    {
+        if (ex is TaskCanceledException or TimeoutException)
+        {
+            return "Сервер отвечает слишком долго. Код может уже прийти на почту, но лучше попробуй ещё раз через пару секунд.";
+        }
+
+        if (ex is HttpRequestException)
+        {
+            return "Не удалось связаться с сервером. Проверь подключение и попробуй ещё раз.";
+        }
+
+        return string.IsNullOrWhiteSpace(ex.Message) ? fallbackMessage : ex.Message;
     }
 
     private async void OnRequestPasswordResetClick(object sender, RoutedEventArgs e)
@@ -2334,7 +2349,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             WindowsLog.Error("OnRequestPasswordResetClick failed", ex);
-            SetStatus(ex.Message);
+            SetStatus(HumanizeAuthActionError(ex, "Не удалось отправить письмо для сброса."));
         }
         finally
         {
@@ -2376,7 +2391,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             WindowsLog.Error("OnVerifyCodeClick failed", ex);
-            SetStatus(ex.Message);
+            SetStatus(HumanizeAuthActionError(ex, "Не удалось подтвердить код."));
         }
         finally
         {
@@ -3438,7 +3453,7 @@ public sealed partial class MainWindow : Window
             Foreground = ThemeBrush("AppTextBrush"),
             BorderBrush = ThemeBrush("AppOutlineBrush"),
             BorderThickness = new Thickness(1),
-            Padding = new Thickness(16, 14, 16, 14),
+            Padding = new Thickness(16),
             MinHeight = 56,
             CornerRadius = new CornerRadius(18),
             VerticalContentAlignment = VerticalAlignment.Center
@@ -3453,10 +3468,10 @@ public sealed partial class MainWindow : Window
             Foreground = ThemeBrush("AppTextBrush"),
             BorderBrush = ThemeBrush("AppOutlineBrush"),
             BorderThickness = new Thickness(1),
-            Padding = new Thickness(16, 14, 16, 14),
+            Padding = new Thickness(16),
             MinHeight = 56,
             CornerRadius = new CornerRadius(18),
-            PasswordRevealMode = PasswordRevealMode.Visible,
+            PasswordRevealMode = PasswordRevealMode.Peek,
             VerticalContentAlignment = VerticalAlignment.Center
         };
     }

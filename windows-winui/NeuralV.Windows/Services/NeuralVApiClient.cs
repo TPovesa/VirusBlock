@@ -19,7 +19,7 @@ public sealed class NeuralVApiClient : IDisposable
         _httpClient = new HttpClient
         {
             BaseAddress = new Uri("https://sosiskibot.ru/basedata/"),
-            Timeout = TimeSpan.FromSeconds(90)
+            Timeout = TimeSpan.FromSeconds(120)
         };
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
     }
