@@ -390,6 +390,36 @@ function summarizeDesktopCoverage(normalized) {
     };
 }
 
+function hasCoverageDrivenMetadata(metadata) {
+    const normalized = normalizeObject(metadata);
+    return Boolean(normalized.coverageMode)
+        || (Array.isArray(normalized.installRoots) && normalized.installRoots.length > 0)
+        || (Array.isArray(normalized.scanRoots) && normalized.scanRoots.length > 0)
+        || (Array.isArray(normalized.relatedBinaryRoots) && normalized.relatedBinaryRoots.length > 0)
+        || (Array.isArray(normalized.metadataRoots) && normalized.metadataRoots.length > 0)
+        || (Array.isArray(normalized.candidatePaths) && normalized.candidatePaths.length > 0)
+        || (Array.isArray(normalized.packageInventory) && normalized.packageInventory.length > 0)
+        || Number(normalized.packageCount || 0) > 0
+        || Number(normalized.candidateCount || 0) > 0;
+}
+
+function requiresDesktopArtifactUpload(normalized) {
+    const metadata = normalizeObject(normalized?.artifactMetadata);
+    const artifactKind = String(normalized?.artifactKind || '').trim().toUpperCase();
+
+    if (metadata.uploadRequired) {
+        return true;
+    }
+
+    // Coverage-driven scans send filesystem/package inventory metadata and should
+    // start server-side analysis immediately instead of waiting for a binary upload.
+    if (hasCoverageDrivenMetadata(metadata)) {
+        return false;
+    }
+
+    return ['PACKAGE', 'SCRIPT', 'ARCHIVE'].includes(artifactKind);
+}
+
 function normalizeDesktopScanPayload(payload) {
     const envelope = normalizeObject(payload);
     const nestedPayload = normalizeObject(
@@ -545,7 +575,16 @@ function normalizeDesktopScanPayload(payload) {
             64
         ),
         scanRoots: normalizePathList(
-            artifactMetadata.scan_roots || artifactMetadata.scanRoots || artifactMetadata.search_roots || artifactMetadata.searchRoots,
+            artifactMetadata.scan_roots
+            || artifactMetadata.scanRoots
+            || artifactMetadata.coverage_roots
+            || artifactMetadata.coverageRoots
+            || artifactMetadata.search_roots
+            || artifactMetadata.searchRoots
+            || source.scan_roots
+            || source.scanRoots
+            || source.coverage_roots
+            || source.coverageRoots,
             256,
             700
         ),
@@ -852,6 +891,7 @@ module.exports = {
     SUPPORTED_PLATFORMS,
     SUPPORTED_MODES,
     normalizeDesktopScanPayload,
+    requiresDesktopArtifactUpload,
     validateDesktopScanPayload,
     analyzeDesktopMetadata,
     summarizeDesktopCoverage,

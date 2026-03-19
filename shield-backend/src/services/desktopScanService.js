@@ -8,6 +8,7 @@ const { nowMs } = require('../utils/security');
 const {
     normalizeDesktopScanPayload,
     validateDesktopScanPayload,
+    requiresDesktopArtifactUpload,
     analyzeDesktopMetadata,
     summarizeDesktopCoverage,
     buildFinding,
@@ -483,10 +484,7 @@ async function createDesktopScanJob(userId, payload) {
 
     const id = crypto.randomUUID();
     const createdAt = nowMs();
-    const artifactRequired = Boolean(normalized.artifactMetadata?.uploadRequired)
-        || ['ARTIFACT', 'PACKAGE', 'SCRIPT', 'ARCHIVE'].includes(String(normalized.artifactKind || '').toUpperCase())
-        || normalized.mode === 'ARTIFACT'
-        || normalized.mode === 'SELECTIVE';
+    const artifactRequired = requiresDesktopArtifactUpload(normalized);
     const schema = await getDesktopScanSchema();
     const modeForSchema = normalizeModeForSchema(normalized.mode, schema);
     const columns = [
