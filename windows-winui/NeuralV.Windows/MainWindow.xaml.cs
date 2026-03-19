@@ -149,10 +149,7 @@ public sealed partial class MainWindow : Window
         {
             _deviceId = EnsureDeviceIdSafe();
             Content = _windowRoot;
-            _windowRoot.Background = ThemeBrush("AppBackgroundBrush");
             _windowRoot.Loaded += OnRootLoaded;
-            _windowRoot.PointerMoved += OnAuthBackdropPointerMoved;
-            _windowRoot.PointerExited += OnAuthBackdropPointerExited;
             Closed += OnClosed;
 
             _shapeTimer.Interval = TimeSpan.FromMilliseconds(16);
@@ -200,6 +197,9 @@ public sealed partial class MainWindow : Window
         WindowsLog.Info("Main window root loaded");
         try
         {
+            _windowRoot.Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x10, 0x12, 0x18));
+            _windowRoot.PointerMoved += OnAuthBackdropPointerMoved;
+            _windowRoot.PointerExited += OnAuthBackdropPointerExited;
             WindowsLog.Info("Building full layout after bootstrap");
             EnsureFullLayoutBuilt();
             WindowsLog.Info("Configuring window handle");
@@ -239,31 +239,10 @@ public sealed partial class MainWindow : Window
     {
         _windowRoot.Children.Clear();
 
-        var boot = new Grid();
-        var shell = new StackPanel
+        var boot = new Grid
         {
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Spacing = 10
+            Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x10, 0x12, 0x18))
         };
-        shell.Children.Add(new TextBlock
-        {
-            Text = "NeuralV",
-            Foreground = ThemeBrush("AppTextBrush"),
-            FontSize = 28,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            TextAlignment = TextAlignment.Center
-        });
-        shell.Children.Add(new TextBlock
-        {
-            Text = "Запуск",
-            Foreground = ThemeBrush("AppMutedTextBrush"),
-            FontSize = 14,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            TextAlignment = TextAlignment.Center
-        });
-        boot.Children.Add(shell);
         _windowRoot.Children.Add(boot);
         _layoutBuilt = false;
     }
