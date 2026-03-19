@@ -3598,7 +3598,7 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(textStack, 1);
         grid.Children.Add(textStack);
 
-        var action = CreateModeSplitButton("Выбрать", handler, OnSelectFileScanClick, OnSelectFolderScanClick);
+        var action = CreateModeActionButton("Выбрать", handler, true);
         action.HorizontalAlignment = HorizontalAlignment.Right;
         Grid.SetRow(action, 2);
         grid.Children.Add(action);
@@ -3680,43 +3680,6 @@ public sealed partial class MainWindow : Window
         button.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
         button.HorizontalContentAlignment = HorizontalAlignment.Center;
         return button;
-    }
-
-    private SplitButton CreateModeSplitButton(string text, RoutedEventHandler primaryHandler, RoutedEventHandler fileHandler, RoutedEventHandler folderHandler)
-    {
-        var splitButton = new SplitButton
-        {
-            Content = text,
-            Background = ThemeBrush("AppPrimaryContainerBrush"),
-            Foreground = ThemeBrush("AppOnAccentBrush"),
-            BorderBrush = ThemeBrush("AppPrimaryContainerBrush"),
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(24, 16, 24, 16),
-            MinHeight = 72,
-            MinWidth = 206,
-            CornerRadius = new CornerRadius(24),
-            FontSize = 18,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-        splitButton.Click += (sender, _) => primaryHandler(sender, new RoutedEventArgs());
-
-        var flyout = new MenuFlyout();
-        var fileItem = new MenuFlyoutItem
-        {
-            Text = "Файл"
-        };
-        fileItem.Click += fileHandler;
-        flyout.Items.Add(fileItem);
-        var folderItem = new MenuFlyoutItem
-        {
-            Text = "Папка"
-        };
-        folderItem.Click += folderHandler;
-        flyout.Items.Add(folderItem);
-        splitButton.Flyout = flyout;
-        return splitButton;
     }
 
     private Button CreateRoundActionButton(string glyph, RoutedEventHandler handler, bool emphasized)
