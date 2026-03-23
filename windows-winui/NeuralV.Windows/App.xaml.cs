@@ -37,16 +37,16 @@ public partial class App : Application
             StringComparison.OrdinalIgnoreCase);
         IsSmokeTest = smokeFromArgs || smokeFromEnv;
 
-        var pendingResetPasswordDeepLink = WindowsDeepLinkActivationService.CaptureStartupArguments(launchArguments);
+        if (TryRedirectResetPasswordDeepLink(launchArguments, "startup"))
+        {
+            Current.Exit();
+            return;
+        }
 
         try
         {
             WindowsLog.Info($"Launch arguments count: {launchArguments.Length}");
             WindowsLog.Info($"Smoke test mode: {IsSmokeTest}");
-            if (pendingResetPasswordDeepLink is not null)
-            {
-                WindowsLog.Info($"Startup deeplink ready: {pendingResetPasswordDeepLink.Scheme}://auth/reset-password");
-            }
             WindowsLog.Info("Loading client preferences");
             Preferences = ClientPreferencesStore.Load();
             WindowsLog.Info("Client preferences loaded");
@@ -234,11 +234,7 @@ public partial class App : Application
     {
         try
         {
-            var deepLink = WindowsDeepLinkActivationService.CaptureForwardedArguments(launchArguments);
-            if (deepLink is not null)
-            {
-                WindowsLog.Info($"Forwarded deeplink ready: {deepLink.Scheme}://auth/reset-password");
-            }
+            TryRedirectResetPasswordDeepLink(launchArguments, "forwarded");
         }
         catch (Exception ex)
         {
@@ -380,5 +376,45 @@ public partial class App : Application
         catch
         {
         }
+    }
+
+    private static bool TryRedirectResetPasswordDeepLink(IEnumerable<string> launchArguments, string source)
+    {
+        foreach (var argument in launchArguments)
+        {
+            var deepLink = WindowsDeepLinkActivationService.TryParseResetPasswordDeepLink(argument);
+            if (deepLink is null)
+            {
+                continue;
+            }
+
+            var websiteUrl = BuildWebsiteResetRoute(deepLink.Token, deepLink.Email);
+            WindowsLog.Info($"Redirecting {source} reset-password deeplink to website");
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = websiteUrl,
+                UseShellExecute = true
+            });
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string BuildWebsiteResetRoute(string token, string email)
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            query.Add($"token={Uri.EscapeDataString(token.Trim())}");
+        }
+        if (!string.IsNullOrWhiteSpace(email))
+        {
+            query.Add($"email={Uri.EscapeDataString(email.Trim())}");
+        }
+
+        return query.Count == 0
+            ? "https://sosiskibot.ru/neuralv/reset-password"
+            : $"https://sosiskibot.ru/neuralv/reset-password?{string.Join("&", query)}";
     }
 }

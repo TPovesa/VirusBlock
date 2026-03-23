@@ -900,7 +900,7 @@ public sealed partial class MainWindow : Window
         cardStack.Children.Add(LoginPasswordBox);
         WireEnterAdvance(LoginEmailBox, LoginPasswordBox);
         WireEnterSubmit(LoginPasswordBox, () => OnStartLoginClick(LoginPasswordBox, new RoutedEventArgs()));
-        var resetButton = CreateTonalButton("Сбросить пароль", OnRequestPasswordResetClick);
+        var resetButton = CreateTonalButton("Сбросить на сайте", OnRequestPasswordResetClick);
         resetButton.HorizontalAlignment = HorizontalAlignment.Left;
         cardStack.Children.Add(resetButton);
         cardStack.Children.Add(CreateActionRow(
@@ -2743,30 +2743,41 @@ public sealed partial class MainWindow : Window
         return string.IsNullOrWhiteSpace(ex.Message) ? fallbackMessage : ex.Message;
     }
 
-    private async void OnRequestPasswordResetClick(object sender, RoutedEventArgs e)
+    private void OnRequestPasswordResetClick(object sender, RoutedEventArgs e)
     {
         var email = LoginEmailBox?.Text?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(email))
-        {
-            SetStatus("Сначала введи e-mail для сброса пароля.");
-            return;
-        }
-
-        SetBusy(true, "Отправляем письмо для сброса");
         try
         {
-            var result = await _apiClient.RequestPasswordResetAsync(email);
-            SetStatus(result.error ?? result.message ?? "Проверь почту: письмо для сброса уже отправлено.");
+            var url = BuildWebsiteResetRoute(email: email);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+            SetStatus("Открываем страницу сброса пароля на сайте.");
         }
         catch (Exception ex)
         {
             WindowsLog.Error("OnRequestPasswordResetClick failed", ex);
-            SetStatus(HumanizeAuthActionError(ex, "Не удалось отправить письмо для сброса."));
+            SetStatus("Не удалось открыть страницу сброса пароля на сайте.");
         }
-        finally
+    }
+
+    private static string BuildWebsiteResetRoute(string? token = null, string? email = null)
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(token))
         {
-            SetBusy(false);
+            query.Add($"token={Uri.EscapeDataString(token.Trim())}");
         }
+        if (!string.IsNullOrWhiteSpace(email))
+        {
+            query.Add($"email={Uri.EscapeDataString(email.Trim())}");
+        }
+
+        return query.Count == 0
+            ? "https://sosiskibot.ru/neuralv/reset-password"
+            : $"https://sosiskibot.ru/neuralv/reset-password?{string.Join("&", query)}";
     }
 
     private async void OnVerifyCodeClick(object sender, RoutedEventArgs e)

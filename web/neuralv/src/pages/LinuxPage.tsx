@@ -1,177 +1,52 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useReleaseManifest } from '../hooks/useReleaseManifest';
 import { getArtifact, getArtifactSystemRequirements, getArtifactVersion } from '../lib/manifest';
-import { getPackage, getPackageVariant, PackageVariant } from '../lib/packages';
-import { usePackageRegistry } from '../hooks/usePackageRegistry';
 
-type DirectPackageKey = 'ubuntu' | 'fedora' | 'arch' | 'appimage' | 'tarball';
-
-type DirectPackageMetadata = {
-  packageType?: string;
-  artifactPath?: string;
-  downloadUrl?: string;
-  url?: string;
-  repoCommands?: string[];
-  installCommands?: string[];
-  updateCommands?: string[];
-};
-
-type LinuxVariantMetadata = {
-  directPackages?: Partial<Record<DirectPackageKey, DirectPackageMetadata>>;
-  packages?: Partial<Record<DirectPackageKey, DirectPackageMetadata>>;
-  source_repo?: string;
-  source_branch?: string;
-  stableArtifactUrl?: string;
-};
-
-type DirectOption = {
-  key: DirectPackageKey;
-  label: string;
-  buttonLabel: string;
-};
-
-const linuxBootstrapCommand = 'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh';
-const linuxInstallCommand = 'nv install @lvls/neuralv';
-
-const directOptions: DirectOption[] = [
-  { key: 'ubuntu', label: '.deb / APT', buttonLabel: 'Скачать .deb' },
-  { key: 'fedora', label: '.rpm / DNF', buttonLabel: 'Скачать .rpm' },
-  { key: 'arch', label: 'Arch repo', buttonLabel: 'Открыть для Arch' },
-  { key: 'appimage', label: 'AppImage', buttonLabel: 'Скачать AppImage' },
-  { key: 'tarball', label: '.tar.gz', buttonLabel: 'Скачать .tar.gz' }
-];
-
-function getVariantMetadata(variant?: PackageVariant): LinuxVariantMetadata | undefined {
-  return variant?.metadata && typeof variant.metadata === 'object'
-    ? (variant.metadata as LinuxVariantMetadata)
-    : undefined;
-}
-
-function getDirectPackage(variant: PackageVariant | undefined, key: DirectPackageKey): DirectPackageMetadata | undefined {
-  const metadata = getVariantMetadata(variant);
-  return metadata?.directPackages?.[key] ?? metadata?.packages?.[key];
-}
-
-function buildArtifactUrl(variant: PackageVariant | undefined, relativePath?: string, fallbackUrl?: string): string | undefined {
-  if (relativePath) {
-    const metadata = getVariantMetadata(variant);
-    const repo = String(metadata?.source_repo ?? 'Perdonus/fatalerror').trim();
-    const branch = String(metadata?.source_branch ?? 'linux-gui-builds').trim();
-    return `https://raw.githubusercontent.com/${repo}/${branch}/${String(relativePath).replace(/^\/+/, '')}`;
-  }
-  return fallbackUrl || variant?.download_url;
-}
-
-function buildCommandText(pkg: DirectPackageMetadata | undefined, fallbackCommand: string): string {
-  const repoCommands = Array.isArray(pkg?.repoCommands)
-    ? pkg.repoCommands.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-    : [];
-  const installCommands = Array.isArray(pkg?.installCommands)
-    ? pkg.installCommands.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-    : [];
-  if (repoCommands.length === 0 && installCommands.length === 0) {
-    return fallbackCommand;
-  }
-  return [...repoCommands, ...(repoCommands.length > 0 && installCommands.length > 0 ? [''] : []), ...installCommands].join('\n');
-}
+const linuxVariants = [
+  { title: 'NV', description: 'Основной путь установки: ставит продукт через менеджер пакетов NV.', body: 'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh\nnv install @lvls/neuralv' },
+  { title: '.deb / .rpm / AppImage / .tar.gz', description: 'Если нужен прямой пакет, он доступен отдельно ниже на странице или через release-ветки.', body: 'Прямые пакеты идут как вторичный путь, когда NV не подходит под окружение.' }
+] as const;
 
 export function LinuxPage() {
-  const linuxManifestState = useReleaseManifest('linux');
-  const { catalog } = usePackageRegistry();
-  const neuralvPackage = useMemo(() => getPackage(catalog, '@lvls/neuralv'), [catalog]);
-  const linuxVariant = useMemo(() => getPackageVariant(neuralvPackage, 'linux'), [neuralvPackage]);
-  const linuxArtifact = useMemo(() => getArtifact(linuxManifestState.manifest, 'linux'), [linuxManifestState.manifest]);
-  const shellManifestState = useReleaseManifest('shell');
-  const shellArtifact = useMemo(() => getArtifact(shellManifestState.manifest, 'shell'), [shellManifestState.manifest]);
-  const linuxVersion = getArtifactVersion(linuxManifestState.manifest, 'linux') || linuxVariant?.version || 'pending';
+  const linuxState = useReleaseManifest('linux');
+  const shellState = useReleaseManifest('shell');
+  const linuxArtifact = useMemo(() => getArtifact(linuxState.manifest, 'linux'), [linuxState.manifest]);
+  const shellArtifact = useMemo(() => getArtifact(shellState.manifest, 'shell'), [shellState.manifest]);
+  const version = getArtifactVersion(linuxState.manifest, 'linux') || 'pending';
+  const shellVersion = getArtifactVersion(shellState.manifest, 'shell') || 'pending';
   const requirements = [
-    ...getArtifactSystemRequirements(linuxArtifact, linuxManifestState.manifest),
-    ...getArtifactSystemRequirements(shellArtifact, shellManifestState.manifest)
-  ].filter((entry, index, list) => list.indexOf(entry) === index);
-
-  const [directKey, setDirectKey] = useState<DirectPackageKey>('ubuntu');
-  const selectedOption = directOptions.find((item) => item.key === directKey) ?? directOptions[0];
-  const selectedPackage = getDirectPackage(linuxVariant, directKey);
-  const directDownloadUrl = buildArtifactUrl(
-    linuxVariant,
-    selectedPackage?.artifactPath,
-    selectedPackage?.downloadUrl || selectedPackage?.url || (directKey === 'tarball' ? linuxArtifact?.downloadUrl : undefined)
-  );
-  const directCommand = buildCommandText(
-    selectedPackage,
-    directKey === 'appimage'
-      ? 'curl -L "<appimage-url>" -o NeuralV.AppImage\nchmod +x NeuralV.AppImage\n./NeuralV.AppImage'
-      : directKey === 'tarball'
-        ? 'tar -xzf neuralv-linux.tar.gz\n./NeuralV/bin/NeuralV'
-        : 'sudo apt install neuralv'
-  );
+    ...getArtifactSystemRequirements(linuxArtifact, linuxState.manifest),
+    ...getArtifactSystemRequirements(shellArtifact, shellState.manifest)
+  ].filter((item, index, list) => list.indexOf(item) === index);
 
   return (
     <div className="page-stack">
-      <section className="hero-card platform-hero platform-hero-simple linux-hero">
-        <div className="hero-copy">
+      <section className="hero-shell platform-shell">
+        <div className="hero-copy hero-copy-tight">
+          <span className="eyebrow">Linux client</span>
           <h1>NeuralV для Linux</h1>
+          <p>GUI и CLI остаются одним продуктом, но install flow остаётся прямолинейным.</p>
           <div className="hero-actions">
-            <a className="nv-button" href="#linux-install">Установить</a>
+            <a className="nv-button" href="#linux-install">Открыть установку</a>
           </div>
-          <span className="hero-support-text">Версия Linux: {linuxVersion}</span>
-          <span className="hero-support-text">Требования: {requirements[0] || 'пока нет в manifest.'}</span>
         </div>
-      </section>
 
-      <section id="linux-install" className="section-block">
-        <article className="content-card install-card install-card-wide install-card-unified">
-          <div className="install-card-head simple-head">
-            <div className="install-card-copy">
-              <h3>Через NV</h3>
-            </div>
-          </div>
-
-          <div className="command-shell light-shell install-shell">
-            <pre>{`# 1. Поставить NV\n${linuxBootstrapCommand}\n\n# 2. Поставить NeuralV\n${linuxInstallCommand}`}</pre>
-          </div>
+        <article className="surface-card platform-summary-card accent-card">
+          <span className="summary-kicker">Актуальные версии</span>
+          <strong>GUI {version}</strong>
+          <span>CLI {shellVersion}</span>
+          <span>{requirements[0] || 'Требования ещё не дошли в manifest.'}</span>
         </article>
       </section>
 
-      <section className="section-block">
-        <article className="content-card install-card install-card-wide install-card-unified">
-          <div className="install-card-head simple-head">
-            <div className="install-card-copy">
-              <h3>Прямые пакеты</h3>
-            </div>
-          </div>
-
-          <div className="install-options-stack install-picker-stack">
-            <div className="distro-grid distro-grid-top">
-              {directOptions.map((option) => (
-                <button
-                  key={option.key}
-                  type="button"
-                  className={`distro-pill${option.key === directKey ? ' is-active' : ''}`}
-                  onClick={() => setDirectKey(option.key)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="command-shell light-shell install-shell">
-              <pre>{directCommand}</pre>
-            </div>
-
-            <div className="install-card-footer install-download-row">
-              {directDownloadUrl ? (
-                <a className="nv-button" href={directDownloadUrl} target="_blank" rel="noreferrer">
-                  {selectedOption.buttonLabel}
-                </a>
-              ) : (
-                <button className="nv-button is-disabled" type="button" disabled>
-                  {selectedOption.buttonLabel}
-                </button>
-              )}
-            </div>
-          </div>
-        </article>
+      <section className="section-grid section-grid-platform" id="linux-install">
+        {linuxVariants.map((item) => (
+          <article key={item.title} className="surface-card platform-install-card">
+            <div className="card-heading"><h2>{item.title}</h2></div>
+            <p>{item.description}</p>
+            <div className="command-card"><pre>{item.body}</pre></div>
+          </article>
+        ))}
       </section>
     </div>
   );

@@ -1,10 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-
-type ThemePreference = 'light' | 'dark';
-
-const THEME_STORAGE_KEY = 'neuralv-site-theme';
-const MEDIA_QUERY = '(prefers-color-scheme: dark)';
+import { useSiteAuth } from './SiteAuthProvider';
 
 const navItems = [
   { to: '/', label: 'Главная' },
@@ -13,101 +8,15 @@ const navItems = [
   { to: '/linux', label: 'Linux' }
 ];
 
-function readStoredPreference(): ThemePreference | null {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return stored === 'light' || stored === 'dark' ? stored : null;
-}
-
-function getSystemTheme(): ThemePreference {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return 'light';
-  }
-
-  return window.matchMedia(MEDIA_QUERY).matches ? 'dark' : 'light';
-}
-
-function SunIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="4.5" fill="currentColor" />
-      <path
-        d="M12 1.75v3M12 19.25v3M4.75 4.75l2.1 2.1M17.15 17.15l2.1 2.1M1.75 12h3M19.25 12h3M4.75 19.25l2.1-2.1M17.15 6.85l2.1-2.1"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.8"
-      />
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M15.6 2.55a8.95 8.95 0 1 0 5.85 15.7 8.35 8.35 0 0 1-3.95 1 8.95 8.95 0 0 1-8.95-8.95 8.37 8.37 0 0 1 7.05-8.25Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-
 export function AppShell() {
-  const [themePreference, setThemePreference] = useState<ThemePreference | null>(() => readStoredPreference());
-  const [systemTheme, setSystemTheme] = useState<ThemePreference>(() => getSystemTheme());
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-      return undefined;
-    }
-
-    const media = window.matchMedia(MEDIA_QUERY);
-    const handleChange = (event: MediaQueryListEvent) => {
-      setSystemTheme(event.matches ? 'dark' : 'light');
-    };
-
-    setSystemTheme(media.matches ? 'dark' : 'light');
-
-    if (typeof media.addEventListener === 'function') {
-      media.addEventListener('change', handleChange);
-      return () => media.removeEventListener('change', handleChange);
-    }
-
-    media.addListener(handleChange);
-    return () => media.removeListener(handleChange);
-  }, []);
-
-  const resolvedTheme = useMemo(() => themePreference ?? systemTheme, [systemTheme, themePreference]);
-
-  useEffect(() => {
-    if (typeof document === 'undefined') {
-      return;
-    }
-
-    const root = document.documentElement;
-    root.dataset.theme = resolvedTheme;
-    root.dataset.themePreference = themePreference ?? 'system';
-    root.style.colorScheme = resolvedTheme;
-
-    if (typeof window !== 'undefined') {
-      if (themePreference) {
-        window.localStorage.setItem(THEME_STORAGE_KEY, themePreference);
-      } else {
-        window.localStorage.removeItem(THEME_STORAGE_KEY);
-      }
-    }
-  }, [resolvedTheme, themePreference]);
-
-  const nextTheme = resolvedTheme === 'dark' ? 'light' : 'dark';
-  const themeLabel = resolvedTheme === 'dark' ? 'Тёмная тема' : 'Светлая тема';
+  const { ready, session, user } = useSiteAuth();
   const currentYear = new Date().getFullYear();
 
   return (
     <div className="app-shell">
+      <div className="site-noise site-noise-a" aria-hidden="true" />
+      <div className="site-noise site-noise-b" aria-hidden="true" />
+
       <header className="shell-header">
         <div className="shell-header-inner">
           <a className="brand-link" href="/neuralv/" aria-label="NeuralV home">
@@ -116,6 +25,7 @@ export function AppShell() {
             </span>
             <span className="brand-text">
               <span className="brand-name">NeuralV</span>
+              <span className="brand-tag">Антивирус для Android, Windows и Linux</span>
             </span>
           </a>
 
@@ -132,24 +42,22 @@ export function AppShell() {
             ))}
           </nav>
 
-          <button
-            type="button"
-            className="theme-toggle"
-            data-mode={resolvedTheme}
-            aria-pressed={resolvedTheme === 'dark'}
-            aria-label={`${themeLabel}. Переключить на ${nextTheme === 'dark' ? 'тёмную' : 'светлую'}.`}
-            title={`${themeLabel}. Переключить.`}
-            onClick={() => setThemePreference(nextTheme)}
-          >
-            <span className="theme-toggle-icons" aria-hidden="true">
-              <span className={`theme-icon theme-icon-sun${resolvedTheme === 'light' ? ' is-active' : ''}`}>
-                <SunIcon />
-              </span>
-              <span className={`theme-icon theme-icon-moon${resolvedTheme === 'dark' ? ' is-active' : ''}`}>
-                <MoonIcon />
-              </span>
-            </span>
-          </button>
+          <div className="shell-actions">
+            {ready && session ? (
+              <NavLink className={({ isActive }) => `shell-link shell-auth-link${isActive ? ' is-active' : ''}`} to="/profile">
+                {user?.name || 'Профиль'}
+              </NavLink>
+            ) : (
+              <>
+                <NavLink className={({ isActive }) => `shell-link shell-auth-link${isActive ? ' is-active' : ''}`} to="/login">
+                  Войти
+                </NavLink>
+                <NavLink className="nv-button shell-button" to="/register">
+                  Регистрация
+                </NavLink>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -158,14 +66,20 @@ export function AppShell() {
       </main>
 
       <footer className="site-footer">
-        <nav className="site-footer-links" aria-label="Навигация внизу сайта">
-          {navItems.map((item) => (
-            <a key={item.to} className="shell-link footer-link" href={`/neuralv${item.to === '/' ? '/' : item.to}`}>
-              {item.label}
-            </a>
-          ))}
-        </nav>
-        <p className="site-footer-copy">NeuralV © {currentYear}</p>
+        <div className="site-footer-grid">
+          <div>
+            <div className="footer-title">NeuralV</div>
+            <p className="footer-copy">Один аккаунт, несколько степеней проверки, отдельные клиенты под Android, Windows и Linux.</p>
+          </div>
+          <nav className="site-footer-links" aria-label="Навигация внизу сайта">
+            {navItems.map((item) => (
+              <a key={item.to} className="footer-link" href={`/neuralv${item.to === '/' ? '/' : item.to}`}>
+                {item.label}
+              </a>
+            ))}
+          </nav>
+          <div className="footer-meta">NeuralV © {currentYear}</div>
+        </div>
       </footer>
     </div>
   );

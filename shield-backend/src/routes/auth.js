@@ -31,9 +31,37 @@ const {
 
 const AUTH_CODE_TTL_MINUTES = parseInt(process.env.AUTH_CODE_TTL_MINUTES || '15', 10);
 const PASSWORD_RESET_TTL_MINUTES = parseInt(process.env.PASSWORD_RESET_TTL_MINUTES || '30', 10);
+const PASSWORD_MIN_LENGTH = 8;
+const SITE_RESET_WEB_URL = String(process.env.APP_RESET_WEB_URL || 'https://sosiskibot.ru/neuralv/reset-password').trim();
+const SITE_ACCOUNT_ACTION_WEB_URL = String(process.env.APP_ACCOUNT_ACTION_WEB_URL || 'https://sosiskibot.ru/neuralv/account-action').trim();
+
+const SITE_ACTION_PURPOSES = {
+    'profile-name': 'PROFILE_NAME_CHANGE',
+    'profile-email': 'PROFILE_EMAIL_CHANGE',
+    'profile-password': 'PROFILE_PASSWORD_CHANGE'
+};
+const PROFILE_LINK_TTL_MINUTES = parseInt(process.env.PROFILE_LINK_TTL_MINUTES || '30', 10);
+
+const CHALLENGE_SCOPE_LOGIN = 'auth-login';
+const CHALLENGE_SCOPE_REGISTER = 'auth-register';
+const WEBSITE_PROFILE_ACTION_KIND = 'WEBSITE_PROFILE_ACTION';
+const PROFILE_ACTION_NAME_CHANGE = 'profile_name_change';
+const PROFILE_ACTION_EMAIL_CHANGE = 'profile_email_change';
+const PROFILE_ACTION_PASSWORD_CHANGE = 'profile_password_change';
 
 function normalizeEmail(email) {
     return String(email || '').trim().toLowerCase();
+}
+
+function normalizeDisplayName(name) {
+    return String(name || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 100);
+}
+
+function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
 }
 
 function getClientIp(req) {
@@ -64,6 +92,27 @@ function passwordResetExpiresAt(now = nowMs()) {
     return now + PASSWORD_RESET_TTL_MINUTES * 60 * 1000;
 }
 
+function validatePasswordPolicy(password) {
+    const value = String(password || '');
+    if (value.length < PASSWORD_MIN_LENGTH) {
+        return `Пароль должен быть не короче ${PASSWORD_MIN_LENGTH} символов`;
+    }
+    if (!/[A-ZА-ЯЁ]/.test(value)) {
+        return 'Пароль должен содержать заглавную букву';
+    }
+    if (!/\d/.test(value)) {
+        return 'Пароль должен содержать цифру';
+    }
+    if (!/[^A-Za-zА-Яа-яЁё\d]/.test(value)) {
+        return 'Пароль должен содержать спецсимвол';
+    }
+    return null;
+}
+
+function profileLinkExpiresAt(now = nowMs()) {
+    return now + PROFILE_LINK_TTL_MINUTES * 60 * 1000;
+}
+
 function escapeHtml(value) {
     return String(value || '')
         .replace(/&/g, '&amp;')
@@ -82,28 +131,84 @@ function appendQuery(baseUrl, params) {
     return query ? `${baseUrl}${separator}${query}` : baseUrl;
 }
 
+function maskEmail(email) {
+    const normalized = normalizeEmail(email);
+    const [localPart, domainPart] = normalized.split('@');
+    if (!localPart || !domainPart) {
+        return normalized;
+    }
+
+    const visibleLocal = localPart.length <= 2
+        ? `${localPart[0] || '*'}*`
+        : `${localPart.slice(0, 2)}***`;
+    const domainChunks = domainPart.split('.');
+    const host = domainChunks.shift() || '';
+    const maskedHost = host.length <= 2
+        ? `${host[0] || '*'}*`
+        : `${host.slice(0, 2)}***`;
+    return `${visibleLocal}@${[maskedHost, ...domainChunks].filter(Boolean).join('.')}`;
+}
+
 function getResetLinks(token, email) {
-    const webBaseUrl = String(process.env.APP_RESET_WEB_URL || 'https://sosiskibot.ru/neuralv/reset-password').trim();
-    const configuredAppBases = [
-        process.env.APP_RESET_URL || 'shieldsecurity://auth/reset-password',
-        process.env.APP_RESET_ALT_URL || 'neuralv://auth/reset-password'
-    ]
-        .map((value) => String(value || '').trim())
-        .filter(Boolean)
-        .filter((value, index, list) => list.indexOf(value) === index);
-
-    const appLinks = configuredAppBases.map((baseUrl) =>
-        appendQuery(baseUrl, {
-            token,
-            email
-        })
-    );
-
     return {
-        web: webBaseUrl ? appendQuery(webBaseUrl, { token, email }) : '',
-        primary: appLinks[0],
-        alternates: appLinks.slice(1)
+        web: SITE_RESET_WEB_URL ? appendQuery(SITE_RESET_WEB_URL, { token, email, action: 'reset-password' }) : '',
+        primary: '',
+        alternates: []
     };
+}
+
+function getSiteActionLink(action, token, email) {
+    const baseUrl = action === 'reset-password' ? SITE_RESET_WEB_URL : SITE_ACCOUNT_ACTION_WEB_URL;
+    return baseUrl
+        ? appendQuery(baseUrl, { action, token, email })
+        : '';
+}
+
+function getProfileActionWebBaseUrl(action) {
+    const map = {
+        [PROFILE_ACTION_NAME_CHANGE]: process.env.APP_PROFILE_NAME_CHANGE_WEB_URL || SITE_ACCOUNT_ACTION_WEB_URL,
+        [PROFILE_ACTION_EMAIL_CHANGE]: process.env.APP_PROFILE_EMAIL_CHANGE_WEB_URL || SITE_ACCOUNT_ACTION_WEB_URL,
+        [PROFILE_ACTION_PASSWORD_CHANGE]: process.env.APP_PROFILE_PASSWORD_CHANGE_WEB_URL || SITE_ACCOUNT_ACTION_WEB_URL
+    };
+    return String(map[action] || process.env.APP_PROFILE_ACTION_WEB_URL || SITE_ACCOUNT_ACTION_WEB_URL || 'https://sosiskibot.ru/neuralv/account-action').trim();
+}
+
+function getProfileActionLink(action, token) {
+    const baseUrl = getProfileActionWebBaseUrl(action);
+    return baseUrl ? appendQuery(baseUrl, { token, action }) : '';
+}
+
+function getProfileActionDescriptor(action) {
+    switch (action) {
+        case PROFILE_ACTION_NAME_CHANGE:
+            return {
+                title: 'Подтвердить новое имя',
+                buttonLabel: 'Открыть изменение имени',
+                subject: 'NeuralV: подтвердите изменение имени',
+                successMessage: 'Имя профиля обновлено'
+            };
+        case PROFILE_ACTION_EMAIL_CHANGE:
+            return {
+                title: 'Подтвердить новый e-mail',
+                buttonLabel: 'Открыть подтверждение e-mail',
+                subject: 'NeuralV: подтвердите новый e-mail',
+                successMessage: 'E-mail обновлён'
+            };
+        case PROFILE_ACTION_PASSWORD_CHANGE:
+            return {
+                title: 'Подтвердить смену пароля',
+                buttonLabel: 'Открыть смену пароля',
+                subject: 'NeuralV: подтвердите смену пароля',
+                successMessage: 'Пароль обновлён'
+            };
+        default:
+            return {
+                title: 'Подтвердить действие',
+                buttonLabel: 'Открыть подтверждение',
+                subject: 'NeuralV: подтвердите действие',
+                successMessage: 'Действие подтверждено'
+            };
+    }
 }
 
 function renderMailShell({ eyebrow, title, bodyHtml, ctaLabel, ctaHref, footerHtml }) {
@@ -138,6 +243,12 @@ function queuePasswordResetCodeEmail(email, code) {
     queueMailTask(`password-reset-code:${email}`, () => sendPasswordResetCodeEmail(email, code));
 }
 
+function queueProfileActionEmail(email, action, actionLink, detailsHtml = '', footerHtml = '') {
+    queueMailTask(`profile-action:${action}:${email}`, () =>
+        sendProfileActionEmail(email, action, actionLink, detailsHtml, footerHtml)
+    );
+}
+
 function parsePayload(jsonValue) {
     if (!jsonValue) return {};
     try {
@@ -145,6 +256,53 @@ function parsePayload(jsonValue) {
     } catch (_) {
         return {};
     }
+}
+
+function challengeScopeFromRow(challenge, fallbackPurpose = '') {
+    const payload = parsePayload(challenge?.payload_json);
+    const payloadScope = String(payload?._scope || '').trim();
+    if (payloadScope) {
+        return payloadScope;
+    }
+    if (String(fallbackPurpose).toUpperCase() === 'REGISTER') {
+        return CHALLENGE_SCOPE_REGISTER;
+    }
+    if (String(fallbackPurpose).toUpperCase() === 'LOGIN') {
+        return CHALLENGE_SCOPE_LOGIN;
+    }
+    return '';
+}
+
+async function deletePendingChallengesByScope(email, purpose, replaceScope, userId = null) {
+    if (!replaceScope) {
+        await pool.query(
+            `DELETE FROM email_auth_challenges
+             WHERE email = ? AND purpose = ? AND consumed_at IS NULL`,
+            [email, purpose]
+        );
+        return;
+    }
+
+    const scopedSql = userId
+        ? `SELECT id, payload_json, purpose
+           FROM email_auth_challenges
+           WHERE user_id = ? AND purpose = ? AND consumed_at IS NULL`
+        : `SELECT id, payload_json, purpose
+           FROM email_auth_challenges
+           WHERE email = ? AND purpose = ? AND consumed_at IS NULL`;
+    const [rows] = await pool.query(scopedSql, userId ? [userId, purpose] : [email, purpose]);
+    const ids = rows
+        .filter((row) => challengeScopeFromRow(row, row.purpose) === replaceScope)
+        .map((row) => row.id);
+    if (ids.length === 0) {
+        return;
+    }
+
+    await pool.query(
+        `DELETE FROM email_auth_challenges
+         WHERE id IN (${ids.map(() => '?').join(', ')})`,
+        ids
+    );
 }
 
 async function selectUserByEmail(db, email, { withPassword = false } = {}) {
@@ -253,16 +411,11 @@ async function revokeSession(sessionId, userId, reason, db = pool) {
     );
 }
 
-async function createEmailChallenge({ email, userId = null, purpose, code, payloadJson = null }) {
+async function createEmailChallenge({ email, userId = null, purpose, code, payloadJson = null, expiresAt = authCodeExpiresAt(nowMs()), replaceScope = null }) {
     const id = uuidv4();
     const now = nowMs();
-    const expiresAt = authCodeExpiresAt(now);
 
-    await pool.query(
-        `DELETE FROM email_auth_challenges
-         WHERE email = ? AND purpose = ? AND consumed_at IS NULL`,
-        [email, purpose]
-    );
+    await deletePendingChallengesByScope(email, purpose, replaceScope, userId);
 
     await pool.query(
         `INSERT INTO email_auth_challenges
@@ -358,24 +511,236 @@ async function createPasswordResetToken(user, rawToken) {
     return { expiresAt };
 }
 
+async function createSiteLinkChallenge({ email, userId, purpose, payloadJson = null }) {
+    const token = createRefreshToken();
+    const challenge = await createEmailChallenge({
+        email,
+        userId,
+        purpose,
+        code: token,
+        payloadJson
+    });
+    return {
+        ...challenge,
+        token
+    };
+}
+
+async function clearUserSiteActionChallenges(userId, purpose) {
+    await pool.query(
+        `DELETE FROM email_auth_challenges
+         WHERE user_id = ? AND purpose = ? AND consumed_at IS NULL`,
+        [userId, purpose]
+    );
+}
+
+async function fetchLinkChallenge(email, purpose, token) {
+    const [rows] = await pool.query(
+        `SELECT id, email, user_id, purpose, code_hash, payload_json, attempts, max_attempts, expires_at, consumed_at
+         FROM email_auth_challenges
+         WHERE email = ? AND purpose = ? AND code_hash = ?`,
+        [email, purpose, hashToken(token)]
+    );
+    return rows[0] || null;
+}
+
+function validateLinkChallengeFreshness(challenge, res) {
+    if (!challenge) {
+        res.status(404).json({ error: 'Ссылка не найдена' });
+        return false;
+    }
+    if (challenge.consumed_at) {
+        res.status(410).json({ error: 'Ссылка уже использована' });
+        return false;
+    }
+    if (challenge.expires_at <= nowMs()) {
+        res.status(410).json({ error: 'Срок действия ссылки истёк' });
+        return false;
+    }
+    return true;
+}
+
 async function sendPasswordResetEmail(email, resetLinks) {
     await sendMail({
         to: email,
         subject: 'NeuralV: сброс пароля',
         text: [
-            'Откройте страницу NeuralV по ссылке ниже, чтобы перейти к сбросу пароля.',
+            'Откройте страницу NeuralV по ссылке ниже, чтобы перейти к сбросу пароля на сайте.',
             resetLinks.web,
             `Ссылка действует ${PASSWORD_RESET_TTL_MINUTES} минут.`
         ].filter(Boolean).join('\n'),
         html: renderMailShell({
             eyebrow: 'NeuralV',
             title: 'Сброс пароля',
-            bodyHtml: '<p style="margin:0 0 12px;">Нажмите кнопку ниже. Откроется страница NeuralV, которая сразу попробует перевести вас в приложение на экран сброса пароля.</p>',
-            ctaLabel: 'Открыть сброс пароля',
+            bodyHtml: '<p style="margin:0 0 12px;">Нажмите кнопку ниже. Откроется страница NeuralV, где вы зададите новый пароль прямо на сайте.</p>',
+            ctaLabel: 'Открыть страницу сброса',
             ctaHref: resetLinks.web || resetLinks.primary,
             footerHtml: `Ссылка действует ${PASSWORD_RESET_TTL_MINUTES} минут.`
         })
     });
+}
+
+async function sendProfileActionEmail(email, action, actionLink, detailsHtml = '', footerHtml = '') {
+    const descriptor = getProfileActionDescriptor(action);
+    await sendMail({
+        to: email,
+        subject: descriptor.subject,
+        text: [
+            descriptor.title,
+            actionLink,
+            `Ссылка действует ${PROFILE_LINK_TTL_MINUTES} минут.`
+        ].filter(Boolean).join('\n'),
+        html: renderMailShell({
+            eyebrow: 'NeuralV',
+            title: descriptor.title,
+            bodyHtml: [
+                '<p style="margin:0 0 12px;">Подтвердите действие по кнопке ниже. Откроется страница NeuralV на сайте.</p>',
+                detailsHtml
+            ].filter(Boolean).join(''),
+            ctaLabel: descriptor.buttonLabel,
+            ctaHref: actionLink,
+            footerHtml: footerHtml || `Ссылка действует ${PROFILE_LINK_TTL_MINUTES} минут. Если это были не вы, просто проигнорируйте письмо.`
+        })
+    });
+}
+
+async function createWebsiteProfileActionChallenge({ user, action, confirmationEmail, payload }) {
+    const token = createRefreshToken();
+    const expiresAt = profileLinkExpiresAt();
+    const scope = `website:${action}`;
+    const challengePayload = JSON.stringify({
+        _kind: WEBSITE_PROFILE_ACTION_KIND,
+        _scope: scope,
+        action,
+        requested_by_user_id: user.id,
+        requested_at: nowMs(),
+        ...(payload || {})
+    });
+    const challenge = await createEmailChallenge({
+        email: confirmationEmail,
+        userId: user.id,
+        purpose: 'LOGIN',
+        code: token,
+        payloadJson: challengePayload,
+        expiresAt,
+        replaceScope: scope
+    });
+    return {
+        challenge_id: challenge.id,
+        token,
+        expires_at: expiresAt,
+        open_url: getProfileActionLink(action, token)
+    };
+}
+
+async function fetchWebsiteProfileActionChallenge(token, expectedAction = '') {
+    const normalizedToken = String(token || '').trim();
+    if (!normalizedToken) {
+        return null;
+    }
+
+    const [rows] = await pool.query(
+        `SELECT id, email, user_id, purpose, code_hash, payload_json, attempts, max_attempts, expires_at, consumed_at
+         FROM email_auth_challenges
+         WHERE purpose = ? AND code_hash = ?`,
+        ['LOGIN', hashToken(normalizedToken)]
+    );
+
+    for (const row of rows) {
+        const payload = parsePayload(row.payload_json);
+        if (payload?._kind !== WEBSITE_PROFILE_ACTION_KIND) {
+            continue;
+        }
+        if (expectedAction && payload.action !== expectedAction) {
+            continue;
+        }
+        return {
+            ...row,
+            payload
+        };
+    }
+
+    return null;
+}
+
+function buildWebsiteActionInspectPayload(challenge) {
+    const action = String(challenge?.payload?.action || '').trim();
+    const payload = challenge?.payload || {};
+    const base = {
+        kind: action,
+        expires_at: challenge.expires_at,
+        email: challenge.email
+    };
+
+    switch (action) {
+        case PROFILE_ACTION_NAME_CHANGE:
+            return {
+                ...base,
+                title: 'Подтверждение нового имени',
+                pending_name: String(payload.next_name || payload.name || '').trim()
+            };
+        case PROFILE_ACTION_EMAIL_CHANGE:
+            return {
+                ...base,
+                title: 'Подтверждение нового e-mail',
+                current_email: String(payload.current_email || '').trim(),
+                next_email: String(payload.next_email || '').trim()
+            };
+        case PROFILE_ACTION_PASSWORD_CHANGE:
+            return {
+                ...base,
+                title: 'Подтверждение смены пароля',
+                masked_email: maskEmail(challenge.email),
+                requires_password: true
+            };
+        default:
+            return {
+                ...base,
+                title: 'Подтверждение действия'
+            };
+    }
+}
+
+function respondInvalidWebsiteAction(res, challenge) {
+    if (!challenge) {
+        return res.status(404).json({ error: 'Ссылка не найдена или уже недействительна.' });
+    }
+    if (challenge.consumed_at) {
+        return res.status(410).json({ error: 'Эта ссылка уже была использована.' });
+    }
+    if (challenge.expires_at <= nowMs()) {
+        return res.status(410).json({ error: 'Срок действия ссылки истёк.' });
+    }
+    return null;
+}
+
+async function fetchPasswordResetRecord(token, email) {
+    const normalizedToken = String(token || '').trim();
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedToken || !normalizedEmail) {
+        return null;
+    }
+
+    const [rows] = await pool.query(
+        `SELECT id, user_id, email, expires_at, consumed_at
+         FROM password_reset_tokens
+         WHERE token_hash = ? AND email = ?`,
+        [hashToken(normalizedToken), normalizedEmail]
+    );
+    return rows[0] || null;
+}
+
+function respondInvalidPasswordResetLink(res, resetToken) {
+    if (!resetToken) {
+        return res.status(404).json({ error: 'Ссылка для сброса пароля не найдена.' });
+    }
+    if (resetToken.consumed_at) {
+        return res.status(410).json({ error: 'Ссылка для сброса пароля уже использована.' });
+    }
+    if (resetToken.expires_at <= nowMs()) {
+        return res.status(410).json({ error: 'Срок действия ссылки для сброса пароля истёк.' });
+    }
+    return null;
 }
 
 function ensureMailConfigured(res) {
@@ -425,9 +790,11 @@ async function startRegisterChallenge(name, normalizedEmail, password) {
         purpose: 'REGISTER',
         code,
         payloadJson: JSON.stringify({
+            _scope: CHALLENGE_SCOPE_REGISTER,
             name: name.trim(),
             password_hash: passwordHash
-        })
+        }),
+        replaceScope: CHALLENGE_SCOPE_REGISTER
     });
     queueAuthCodeEmail(normalizedEmail, code, 'REGISTER');
     return challenge;
@@ -439,7 +806,11 @@ async function startLoginChallenge(user) {
         email: user.email,
         userId: user.id,
         purpose: 'LOGIN',
-        code
+        code,
+        payloadJson: JSON.stringify({
+            _scope: CHALLENGE_SCOPE_LOGIN
+        }),
+        replaceScope: CHALLENGE_SCOPE_LOGIN
     });
     queueAuthCodeEmail(user.email, code, 'LOGIN');
     return challenge;
@@ -456,8 +827,9 @@ router.post('/register/start', async (req, res) => {
             return res.status(400).json({ error: 'All fields are required' });
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail))
             return res.status(400).json({ error: 'Invalid email address' });
-        if (password.length < 6)
-            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        const passwordPolicyError = validatePasswordPolicy(password);
+        if (passwordPolicyError)
+            return res.status(400).json({ error: passwordPolicyError });
 
         const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
         if (existing.length > 0)
@@ -749,6 +1121,34 @@ router.post('/password-reset/request', async (req, res) => {
     }
 });
 
+// GET /api/auth/password-reset/inspect
+router.get('/password-reset/inspect', async (req, res) => {
+    try {
+        const token = String(req.query.token || '').trim();
+        const normalizedEmail = normalizeEmail(req.query.email);
+        if (!token || !normalizedEmail) {
+            return res.status(400).json({ error: 'token and email required' });
+        }
+
+        const resetToken = await fetchPasswordResetRecord(token, normalizedEmail);
+        const invalidResponse = respondInvalidPasswordResetLink(res, resetToken);
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
+        return res.json({
+            success: true,
+            action: 'password_reset',
+            title: 'Сброс пароля',
+            email: normalizedEmail,
+            expires_at: resetToken.expires_at
+        });
+    } catch (e) {
+        console.error('Password reset inspect error:', e);
+        return res.status(500).json({ error: 'Не удалось проверить ссылку для сброса пароля.' });
+    }
+});
+
 // POST /api/auth/password-reset/code/request
 router.post('/password-reset/code/request', async (req, res) => {
     if (!ensureMailConfigured(res)) return;
@@ -798,8 +1198,9 @@ router.post('/password-reset/code/confirm', async (req, res) => {
         if (!normalizedEmail || !code || !password) {
             return res.status(400).json({ error: 'code, email and password required' });
         }
-        if (password.length < 6) {
-            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        const passwordPolicyError = validatePasswordPolicy(password);
+        if (passwordPolicyError) {
+            return res.status(400).json({ error: passwordPolicyError });
         }
 
         const [rows] = await pool.query(
@@ -861,8 +1262,9 @@ router.post('/password-reset/confirm', async (req, res) => {
         if (!token || !normalizedEmail || !password) {
             return res.status(400).json({ error: 'token, email and password required' });
         }
-        if (password.length < 6) {
-            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        const passwordPolicyError = validatePasswordPolicy(password);
+        if (passwordPolicyError) {
+            return res.status(400).json({ error: passwordPolicyError });
         }
 
         const [rows] = await pool.query(
@@ -914,6 +1316,286 @@ router.post('/password-reset/confirm', async (req, res) => {
     }
 });
 
+// POST /api/auth/profile/name-change/request
+router.post('/profile/name-change/request', auth, async (req, res) => {
+    if (!ensureMailConfigured(res)) return;
+    try {
+        const user = await fetchUserById(req.userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const nextName = normalizeDisplayName(req.body?.name || req.body?.username);
+        if (!nextName) {
+            return res.status(400).json({ error: 'Name required' });
+        }
+        if (nextName === String(user.name || '').trim()) {
+            return res.status(400).json({ error: 'Укажите новое имя профиля.' });
+        }
+
+        const request = await createWebsiteProfileActionChallenge({
+            user,
+            action: PROFILE_ACTION_NAME_CHANGE,
+            confirmationEmail: user.email,
+            payload: {
+                next_name: nextName
+            }
+        });
+
+        queueProfileActionEmail(
+            user.email,
+            PROFILE_ACTION_NAME_CHANGE,
+            request.open_url,
+            `<p style="margin:0;">Новое имя: <strong>${escapeHtml(nextName)}</strong></p>`
+        );
+
+        return res.status(202).json({
+            success: true,
+            delivery: 'queued',
+            action: PROFILE_ACTION_NAME_CHANGE,
+            challenge_id: request.challenge_id,
+            expires_at: request.expires_at,
+            open_url: request.open_url,
+            message: 'Письмо для подтверждения изменения имени отправлено.'
+        });
+    } catch (e) {
+        console.error('Profile name change request error:', e);
+        if (e.code === 'MAIL_NOT_CONFIGURED') {
+            return res.status(503).json({ error: 'Mail service is not configured' });
+        }
+        return res.status(500).json({ error: 'Не удалось подготовить изменение имени.' });
+    }
+});
+
+// POST /api/auth/profile/email-change/request
+router.post('/profile/email-change/request', auth, async (req, res) => {
+    if (!ensureMailConfigured(res)) return;
+    try {
+        const user = await fetchUserById(req.userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const nextEmail = normalizeEmail(req.body?.email);
+        if (!isValidEmail(nextEmail)) {
+            return res.status(400).json({ error: 'Invalid email address' });
+        }
+        if (nextEmail === normalizeEmail(user.email)) {
+            return res.status(400).json({ error: 'Укажите новый e-mail.' });
+        }
+
+        const existingUser = await fetchUserByEmail(nextEmail);
+        if (existingUser && existingUser.id !== user.id) {
+            return res.status(409).json({ error: 'Email already registered' });
+        }
+
+        const request = await createWebsiteProfileActionChallenge({
+            user,
+            action: PROFILE_ACTION_EMAIL_CHANGE,
+            confirmationEmail: nextEmail,
+            payload: {
+                current_email: user.email,
+                next_email: nextEmail
+            }
+        });
+
+        queueProfileActionEmail(
+            nextEmail,
+            PROFILE_ACTION_EMAIL_CHANGE,
+            request.open_url,
+            [
+                `<p style="margin:0 0 12px;">Старый адрес: <strong>${escapeHtml(maskEmail(user.email))}</strong></p>`,
+                `<p style="margin:0;">Новый адрес: <strong>${escapeHtml(nextEmail)}</strong></p>`
+            ].join('')
+        );
+
+        return res.status(202).json({
+            success: true,
+            delivery: 'queued',
+            action: PROFILE_ACTION_EMAIL_CHANGE,
+            challenge_id: request.challenge_id,
+            expires_at: request.expires_at,
+            open_url: request.open_url,
+            message: 'Письмо для подтверждения нового e-mail отправлено.'
+        });
+    } catch (e) {
+        console.error('Profile email change request error:', e);
+        if (e.code === 'MAIL_NOT_CONFIGURED') {
+            return res.status(503).json({ error: 'Mail service is not configured' });
+        }
+        return res.status(500).json({ error: 'Не удалось подготовить изменение e-mail.' });
+    }
+});
+
+// POST /api/auth/profile/password-change/request
+router.post('/profile/password-change/request', auth, async (req, res) => {
+    if (!ensureMailConfigured(res)) return;
+    try {
+        const user = await fetchUserById(req.userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const request = await createWebsiteProfileActionChallenge({
+            user,
+            action: PROFILE_ACTION_PASSWORD_CHANGE,
+            confirmationEmail: user.email,
+            payload: {}
+        });
+
+        queueProfileActionEmail(
+            user.email,
+            PROFILE_ACTION_PASSWORD_CHANGE,
+            request.open_url,
+            `<p style="margin:0;">Подтвердите смену пароля для аккаунта <strong>${escapeHtml(maskEmail(user.email))}</strong>.</p>`
+        );
+
+        return res.status(202).json({
+            success: true,
+            delivery: 'queued',
+            action: PROFILE_ACTION_PASSWORD_CHANGE,
+            challenge_id: request.challenge_id,
+            expires_at: request.expires_at,
+            open_url: request.open_url,
+            message: 'Письмо для подтверждения смены пароля отправлено.'
+        });
+    } catch (e) {
+        console.error('Profile password change request error:', e);
+        if (e.code === 'MAIL_NOT_CONFIGURED') {
+            return res.status(503).json({ error: 'Mail service is not configured' });
+        }
+        return res.status(500).json({ error: 'Не удалось подготовить смену пароля.' });
+    }
+});
+
+// GET /api/auth/profile/action/inspect
+router.get('/profile/action/inspect', async (req, res) => {
+    try {
+        const token = String(req.query.token || '').trim();
+        if (!token) {
+            return res.status(400).json({ error: 'token required' });
+        }
+
+        const challenge = await fetchWebsiteProfileActionChallenge(token);
+        const invalidResponse = respondInvalidWebsiteAction(res, challenge);
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
+        return res.json({
+            success: true,
+            action: buildWebsiteActionInspectPayload(challenge)
+        });
+    } catch (e) {
+        console.error('Profile action inspect error:', e);
+        return res.status(500).json({ error: 'Не удалось проверить ссылку действия.' });
+    }
+});
+
+// POST /api/auth/profile/action/confirm
+router.post('/profile/action/confirm', async (req, res) => {
+    try {
+        const token = String(req.body?.token || req.query?.token || '').trim();
+        if (!token) {
+            return res.status(400).json({ error: 'token required' });
+        }
+
+        const challenge = await fetchWebsiteProfileActionChallenge(token);
+        const invalidResponse = respondInvalidWebsiteAction(res, challenge);
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
+        const action = String(challenge.payload?.action || '').trim();
+        const connection = await pool.getConnection();
+        try {
+            await connection.beginTransaction();
+            const user = await fetchUserById(challenge.user_id, { db: connection, includeCreatedAt: true, forUpdate: true });
+            if (!user) {
+                await connection.rollback();
+                return res.status(404).json({ error: 'User not found' });
+            }
+
+            let message = getProfileActionDescriptor(action).successMessage;
+            let requiresRelogin = false;
+
+            if (action === PROFILE_ACTION_NAME_CHANGE) {
+                const nextName = normalizeDisplayName(challenge.payload?.next_name || challenge.payload?.name);
+                if (!nextName) {
+                    await connection.rollback();
+                    return res.status(400).json({ error: 'Новое имя не найдено в ссылке.' });
+                }
+                await connection.query(
+                    'UPDATE users SET name = ?, updated_at = ? WHERE id = ?',
+                    [nextName, nowMs(), user.id]
+                );
+            } else if (action === PROFILE_ACTION_EMAIL_CHANGE) {
+                const nextEmail = normalizeEmail(challenge.payload?.next_email);
+                if (!isValidEmail(nextEmail)) {
+                    await connection.rollback();
+                    return res.status(400).json({ error: 'Новый e-mail в ссылке недействителен.' });
+                }
+                const existingUser = await fetchUserByEmail(nextEmail, { db: connection, forUpdate: true });
+                if (existingUser && existingUser.id !== user.id) {
+                    await connection.rollback();
+                    return res.status(409).json({ error: 'Email already registered' });
+                }
+                await connection.query(
+                    'UPDATE users SET email = ?, updated_at = ? WHERE id = ?',
+                    [nextEmail, nowMs(), user.id]
+                );
+                await connection.query(
+                    `UPDATE auth_sessions
+                     SET revoked_at = ?, revoke_reason = ?, updated_at = ?
+                     WHERE user_id = ? AND revoked_at IS NULL`,
+                    [nowMs(), 'profile_email_change', nowMs(), user.id]
+                );
+                requiresRelogin = true;
+            } else if (action === PROFILE_ACTION_PASSWORD_CHANGE) {
+                const nextPassword = String(req.body?.new_password || req.body?.password || '');
+                const passwordPolicyError = validatePasswordPolicy(nextPassword);
+                if (passwordPolicyError) {
+                    await connection.rollback();
+                    return res.status(400).json({ error: passwordPolicyError });
+                }
+                await connection.query(
+                    'UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?',
+                    [await hashPassword(nextPassword), nowMs(), user.id]
+                );
+                await connection.query(
+                    `UPDATE auth_sessions
+                     SET revoked_at = ?, revoke_reason = ?, updated_at = ?
+                     WHERE user_id = ? AND revoked_at IS NULL`,
+                    [nowMs(), 'profile_password_change', nowMs(), user.id]
+                );
+                requiresRelogin = true;
+            } else {
+                await connection.rollback();
+                return res.status(400).json({ error: 'Неизвестный тип действия в ссылке.' });
+            }
+
+            await markChallengeConsumed(challenge.id, connection);
+            await connection.commit();
+
+            const updatedUser = await fetchUserById(challenge.user_id, { includeCreatedAt: true });
+            return res.json({
+                success: true,
+                message,
+                requires_relogin: requiresRelogin,
+                user: updatedUser ? sanitizeUser(updatedUser) : null
+            });
+        } catch (e) {
+            await connection.rollback();
+            throw e;
+        } finally {
+            connection.release();
+        }
+    } catch (e) {
+        console.error('Profile action confirm error:', e);
+        return res.status(500).json({ error: 'Не удалось подтвердить действие профиля.' });
+    }
+});
+
 // POST /api/auth/register (legacy direct register)
 router.post('/register', async (req, res) => {
     try {
@@ -925,8 +1607,9 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ error: 'All fields are required' });
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail))
             return res.status(400).json({ error: 'Invalid email address' });
-        if (password.length < 6)
-            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        const passwordPolicyError = validatePasswordPolicy(password);
+        if (passwordPolicyError)
+            return res.status(400).json({ error: passwordPolicyError });
 
         const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
         if (existing.length > 0)

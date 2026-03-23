@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text.Json;
 
 namespace NeuralV.Windows.Services;
 
@@ -14,63 +13,6 @@ public sealed class ResetPasswordDeepLink
 
 public static class WindowsDeepLinkActivationService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        WriteIndented = true
-    };
-
-    private static readonly object SyncRoot = new();
-
-    static WindowsDeepLinkActivationService()
-    {
-        PendingResetPasswordDeepLink = LoadPendingResetPasswordDeepLink();
-    }
-
-    public static event Action<ResetPasswordDeepLink>? ResetPasswordDeepLinkReceived;
-
-    public static string PendingResetPasswordPath => Path.Combine(SessionStore.AppDirectory, "pending-reset-password.json");
-
-    public static ResetPasswordDeepLink? PendingResetPasswordDeepLink { get; private set; }
-
-    public static ResetPasswordDeepLink? CaptureStartupArguments(IEnumerable<string> launchArguments) =>
-        CaptureArguments(launchArguments, "startup");
-
-    public static ResetPasswordDeepLink? CaptureForwardedArguments(IEnumerable<string> launchArguments) =>
-        CaptureArguments(launchArguments, "forwarded");
-
-    public static ResetPasswordDeepLink? PeekPendingResetPasswordDeepLink()
-    {
-        lock (SyncRoot)
-        {
-            PendingResetPasswordDeepLink ??= LoadPendingResetPasswordDeepLink();
-            return PendingResetPasswordDeepLink;
-        }
-    }
-
-    public static ResetPasswordDeepLink? ConsumePendingResetPasswordDeepLink()
-    {
-        lock (SyncRoot)
-        {
-            PendingResetPasswordDeepLink ??= LoadPendingResetPasswordDeepLink();
-            var current = PendingResetPasswordDeepLink;
-            PendingResetPasswordDeepLink = null;
-
-            try
-            {
-                if (File.Exists(PendingResetPasswordPath))
-                {
-                    File.Delete(PendingResetPasswordPath);
-                }
-            }
-            catch (Exception ex)
-            {
-                WindowsLog.Error("Delete pending reset-password deeplink failed", ex);
-            }
-
-            return current;
-        }
-    }
-
     public static ResetPasswordDeepLink? TryParseResetPasswordDeepLink(string rawUri)
     {
         var trimmed = (rawUri ?? string.Empty).Trim().Trim('"');
@@ -114,62 +56,6 @@ public static class WindowsDeepLinkActivationService
             Email = email,
             ReceivedAt = DateTimeOffset.UtcNow
         };
-    }
-
-    private static ResetPasswordDeepLink? CaptureArguments(IEnumerable<string> launchArguments, string source)
-    {
-        foreach (var argument in launchArguments ?? Array.Empty<string>())
-        {
-            var deepLink = TryParseResetPasswordDeepLink(argument);
-            if (deepLink is null)
-            {
-                continue;
-            }
-
-            PersistPendingResetPasswordDeepLink(deepLink);
-            WindowsLog.Info($"Reset-password deeplink captured via {source} ({deepLink.Scheme}://auth/reset-password)");
-            ResetPasswordDeepLinkReceived?.Invoke(deepLink);
-            return deepLink;
-        }
-
-        return null;
-    }
-
-    private static void PersistPendingResetPasswordDeepLink(ResetPasswordDeepLink deepLink)
-    {
-        lock (SyncRoot)
-        {
-            PendingResetPasswordDeepLink = deepLink;
-            try
-            {
-                Directory.CreateDirectory(SessionStore.AppDirectory);
-                var payload = JsonSerializer.Serialize(deepLink, JsonOptions);
-                File.WriteAllText(PendingResetPasswordPath, payload);
-            }
-            catch (Exception ex)
-            {
-                WindowsLog.Error("Persist pending reset-password deeplink failed", ex);
-            }
-        }
-    }
-
-    private static ResetPasswordDeepLink? LoadPendingResetPasswordDeepLink()
-    {
-        try
-        {
-            if (!File.Exists(PendingResetPasswordPath))
-            {
-                return null;
-            }
-
-            var payload = File.ReadAllText(PendingResetPasswordPath);
-            return JsonSerializer.Deserialize<ResetPasswordDeepLink>(payload, JsonOptions);
-        }
-        catch (Exception ex)
-        {
-            WindowsLog.Error("Load pending reset-password deeplink failed", ex);
-            return null;
-        }
     }
 
     private static Dictionary<string, string> ParseQuery(string query)
