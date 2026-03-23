@@ -135,6 +135,56 @@ public sealed class NeuralVApiClient : IDisposable
         return response.IsSuccessStatusCode;
     }
 
+    public async Task<(SessionUser? user, bool developerMode, string? message, string? error)> GetDeveloperStateAsync(
+        SessionData current,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await GetJsonAsync("api/auth/developer/state", cancellationToken, current.AccessToken);
+        if (response.error is not null)
+        {
+            return (null, false, null, response.error);
+        }
+
+        var user = ParseSessionUser(response.root.GetPropertyOrDefault("user"));
+        var developerMode = response.root.ReadBoolean("developer_mode", user?.IsDeveloperMode ?? false);
+        return (user, developerMode, response.root.ReadString("message"), null);
+    }
+
+    public async Task<(SessionUser? user, bool developerMode, string? message, string? error)> ActivateDeveloperModeAsync(
+        SessionData current,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostJsonAsync("api/auth/developer/activate", new
+        {
+            key
+        }, cancellationToken, current.AccessToken);
+
+        if (response.error is not null)
+        {
+            return (null, false, null, response.error);
+        }
+
+        var user = ParseSessionUser(response.root.GetPropertyOrDefault("user"));
+        var developerMode = response.root.ReadBoolean("developer_mode", user?.IsDeveloperMode ?? false);
+        return (user, developerMode, response.root.ReadString("message"), null);
+    }
+
+    public async Task<(SessionUser? user, bool developerMode, string? message, string? error)> DeactivateDeveloperModeAsync(
+        SessionData current,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostJsonAsync("api/auth/developer/deactivate", new { }, cancellationToken, current.AccessToken);
+        if (response.error is not null)
+        {
+            return (null, false, null, response.error);
+        }
+
+        var user = ParseSessionUser(response.root.GetPropertyOrDefault("user"));
+        var developerMode = response.root.ReadBoolean("developer_mode", user?.IsDeveloperMode ?? false);
+        return (user, developerMode, response.root.ReadString("message"), null);
+    }
+
     public async Task<(DesktopScanState? scan, string? error)> StartDesktopScanAsync(
         SessionData current,
         string mode,
@@ -304,6 +354,23 @@ public sealed class NeuralVApiClient : IDisposable
         }
 
         return session;
+    }
+
+    private static SessionUser? ParseSessionUser(JsonElement? root)
+    {
+        if (root is null)
+        {
+            return null;
+        }
+
+        return new SessionUser
+        {
+            Id = root.Value.ReadString("id"),
+            Name = root.Value.ReadString("name"),
+            Email = root.Value.ReadString("email"),
+            IsPremium = root.Value.ReadBoolean("is_premium"),
+            IsDeveloperMode = root.Value.ReadBoolean("is_developer_mode") || root.Value.ReadBoolean("is_dev_mode")
+        };
     }
 
     private static DesktopScanState ParseScan(JsonElement? root)

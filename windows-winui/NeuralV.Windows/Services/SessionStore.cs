@@ -34,9 +34,9 @@ public static class SessionStore
             try
             {
                 var installRoot = InstallLayout.ResolveInstallRootFromExecutablePath(Environment.ProcessPath ?? AppContext.BaseDirectory);
-                var binPath = InstallLayout.BinDirectory(installRoot);
-                Directory.CreateDirectory(binPath);
-                return binPath;
+                var libsPath = InstallLayout.LibsDirectory(installRoot);
+                Directory.CreateDirectory(libsPath);
+                return libsPath;
             }
             catch
             {
@@ -123,24 +123,44 @@ public static class SessionStore
     {
         yield return SessionFilePath;
 
-        foreach (var fileName in LegacySessionFileNames)
+        foreach (var directory in EnumerateLegacySessionDirectories())
         {
-            var path = Path.Combine(AppDirectory, fileName);
-            if (!string.Equals(path, SessionFilePath, StringComparison.OrdinalIgnoreCase))
+            foreach (var fileName in LegacySessionFileNames)
             {
-                yield return path;
+                var path = Path.Combine(directory, fileName);
+                if (!string.Equals(path, SessionFilePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    yield return path;
+                }
             }
+        }
+    }
+
+    private static IEnumerable<string> EnumerateLegacySessionDirectories()
+    {
+        yield return AppDirectory;
+
+        try
+        {
+            var installRoot = InstallLayout.ResolveInstallRootFromExecutablePath(Environment.ProcessPath ?? AppContext.BaseDirectory);
+            yield return InstallLayout.BinDirectory(installRoot);
+        }
+        catch
+        {
         }
     }
 
     private static void DeleteLegacySessionCopies()
     {
-        foreach (var fileName in LegacySessionFileNames)
+        foreach (var directory in EnumerateLegacySessionDirectories())
         {
-            var path = Path.Combine(AppDirectory, fileName);
-            if (!string.Equals(path, SessionFilePath, StringComparison.OrdinalIgnoreCase) && File.Exists(path))
+            foreach (var fileName in LegacySessionFileNames)
             {
-                File.Delete(path);
+                var path = Path.Combine(directory, fileName);
+                if (!string.Equals(path, SessionFilePath, StringComparison.OrdinalIgnoreCase) && File.Exists(path))
+                {
+                    File.Delete(path);
+                }
             }
         }
     }
