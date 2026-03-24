@@ -758,6 +758,17 @@ async function updateTopicIndicator(chatRow, db = pool) {
     );
 }
 
+function queueTopicIndicatorUpdate(chatRow, db = pool) {
+    const task = setTimeout(() => {
+        updateTopicIndicator(chatRow, db).catch((error) => {
+            console.error('Failed to refresh support topic indicator:', error);
+        });
+    }, 0);
+    if (typeof task?.unref === 'function') {
+        task.unref();
+    }
+}
+
 async function ensureForumTopicForChat(chatRow, user, db = pool) {
     const config = getSupportConfig();
     if (!config.available || !chatRow) {
@@ -996,7 +1007,7 @@ async function ingestTelegramUpdate(update, db = pool) {
         [createdAt, nowMs(), chat.id]
     );
 
-    await updateTopicIndicator({
+    queueTopicIndicatorUpdate({
         ...chat,
         last_message_from: 'support',
         last_message_at: createdAt
@@ -1340,7 +1351,7 @@ async function sendSupportChatMessage(userId, payload = {}, db = pool) {
         [timestamp, timestamp, chat.id]
     );
 
-    await updateTopicIndicator({
+    queueTopicIndicatorUpdate({
         ...chat,
         last_message_from: 'client',
         last_message_at: timestamp
