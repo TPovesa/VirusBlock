@@ -1773,6 +1773,11 @@ body .field-button {
   align-self: stretch;
 }
 
+.page-decor-platform,
+.auth-page-decor {
+  align-self: stretch;
+}
+
 .platform-detail-grid {
   align-items: stretch;
 }
