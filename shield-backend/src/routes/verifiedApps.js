@@ -3,6 +3,7 @@ const auth = require('../middleware/auth');
 const {
     getDeveloperStatus,
     createDeveloperApplication,
+    reviewDeveloperApplicationAction,
     createVerificationJob,
     listMyVerifiedApps,
     listPublicVerifiedApps,
@@ -32,6 +33,8 @@ function mapServiceError(error) {
         case 'MAIL_NOT_CONFIGURED':
         case 'DEVELOPER_APPLICATION_EMAIL_NOT_CONFIGURED':
             return { status: 503, error: 'Отправка заявок временно недоступна.' };
+        case 'DEVELOPER_APPLICATION_ACTION_SECRET_NOT_CONFIGURED':
+            return { status: 503, error: 'Ссылки для заявок временно недоступны.' };
         case 'ALREADY_VERIFIED_DEVELOPER':
             return { status: 409, error: 'Статус разработчика уже подтверждён.' };
         case 'DEVELOPER_APPLICATION_ALREADY_PENDING':
@@ -42,6 +45,13 @@ function mapServiceError(error) {
                 error: 'Повторную заявку можно отправить позже.',
                 retry_after_ms: Number(error?.retryAfterMs || 0) || undefined
             };
+        case 'DEVELOPER_APPLICATION_NOT_FOUND':
+            return { status: 404, error: 'Заявка не найдена.' };
+        case 'DEVELOPER_APPLICATION_ACTION_INVALID':
+        case 'DEVELOPER_APPLICATION_ACTION_INVALID_TOKEN':
+            return { status: 403, error: 'Ссылка подтверждения недействительна.' };
+        case 'DEVELOPER_APPLICATION_ALREADY_REVIEWED':
+            return { status: 409, error: 'Заявка уже рассмотрена.', application: error?.application || null };
         case 'VERIFIED_DEVELOPER_REQUIRED':
             return { status: 403, error: 'Сначала нужно получить статус разработчика.' };
         case 'UNSUPPORTED_PLATFORM':
@@ -109,6 +119,32 @@ async function handleDeveloperApply(req, res) {
     }
 }
 
+async function handleDeveloperApplicationReview(req, res) {
+    try {
+        const application = await reviewDeveloperApplicationAction(
+            req.params.id,
+            req.params.action,
+            req.query?.token
+        );
+
+        const approved = String(application?.status || '') === 'APPROVED';
+        const title = approved ? 'Заявка принята' : 'Заявка отклонена';
+        const description = approved
+            ? 'Статус разработчика подтверждён.'
+            : 'Заявка разработчика отклонена.';
+        res
+            .status(200)
+            .type('html')
+            .send(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head><body style="margin:0;background:#111315;color:#eef1ef;font:16px/1.6 Segoe UI,Arial,sans-serif;display:grid;place-items:center;min-height:100vh;padding:24px;"><div style="max-width:560px;width:100%;background:#181b1e;border:1px solid rgba(255,255,255,0.08);border-radius:24px;padding:28px;"><h1 style="margin:0 0 12px;font-size:28px;">${title}</h1><p style="margin:0 0 8px;">${description}</p><p style="margin:0;color:#98a19d;">ID заявки: ${application.id}</p></div></body></html>`);
+    } catch (error) {
+        const payload = mapServiceError(error);
+        res
+            .status(payload.status)
+            .type('html')
+            .send(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Не удалось обработать заявку</title></head><body style="margin:0;background:#111315;color:#eef1ef;font:16px/1.6 Segoe UI,Arial,sans-serif;display:grid;place-items:center;min-height:100vh;padding:24px;"><div style="max-width:560px;width:100%;background:#181b1e;border:1px solid rgba(255,255,255,0.08);border-radius:24px;padding:28px;"><h1 style="margin:0 0 12px;font-size:28px;">Не удалось обработать заявку</h1><p style="margin:0;">${payload.error}</p></div></body></html>`);
+    }
+}
+
 async function handleMyVerifiedApps(req, res) {
     try {
         const apps = await listMyVerifiedApps(req.userId);
@@ -141,6 +177,7 @@ async function handleCreateVerificationJob(req, res) {
 
 router.get(['/verified-apps/developer/status', '/profile/developer/status'], auth, handleDeveloperStatus);
 router.post(['/verified-apps/developer/apply', '/profile/developer/apply'], auth, handleDeveloperApply);
+router.get('/verified-apps/developer/applications/:id/:action', handleDeveloperApplicationReview);
 router.get(['/verified-apps/mine', '/profile/developer/apps'], auth, handleMyVerifiedApps);
 router.post(['/verified-apps/mine', '/profile/developer/apps/verify'], auth, handleCreateVerificationJob);
 

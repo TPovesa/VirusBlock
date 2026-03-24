@@ -24,7 +24,8 @@ const { resumePendingDeepScans } = require('./services/deepScanService');
 const { resumePendingDesktopScans } = require('./services/desktopScanService');
 const { resumePendingVerifiedAppsJobs } = require('./services/verifiedAppsService');
 const { ensureSupportChatSchema } = require('./services/supportChatService');
-const { ensureReleaseNotifierSchema, syncReleaseNotifierCommands } = require('./services/releaseNotifierService');
+const { ensureReleaseNotifierSchema, syncReleaseNotifierCommands, startReleaseNotifierPolling } = require('./services/releaseNotifierService');
+const { startSupportChatPolling } = require('./services/supportChatService');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -147,12 +148,14 @@ app.listen(PORT, '0.0.0.0', () => {
     ensureSupportChatSchema().catch((error) => {
         console.error('Failed to ensure support chat schema:', error);
     });
+    startSupportChatPolling();
     ensureReleaseNotifierSchema().catch((error) => {
         console.error('Failed to ensure release notifier schema:', error);
     });
     syncReleaseNotifierCommands().catch((error) => {
         console.error('Failed to sync release notifier bot commands:', error);
     });
+    startReleaseNotifierPolling();
 });
 
 module.exports = app;

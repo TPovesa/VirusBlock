@@ -1,8 +1,8 @@
-@import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
 
 :root {
   color-scheme: dark;
-  font-family: 'M PLUS Rounded 1c', 'Segoe UI Variable', 'Segoe UI', sans-serif;
+  font-family: 'Nunito', 'Segoe UI Variable', 'Segoe UI', sans-serif;
   --nv-bg: #090b0e;
   --nv-bg-soft: #101319;
   --nv-bg-elevated: #151920;
@@ -37,7 +37,7 @@ html, body, #root { min-height: 100%; }
 html { scroll-behavior: smooth; }
 body {
   margin: 0;
-  font-family: 'M PLUS Rounded 1c', 'Segoe UI Variable', 'Segoe UI', sans-serif;
+  font-family: 'Nunito', 'Segoe UI Variable', 'Segoe UI', sans-serif;
   color: var(--nv-text);
   background:
     radial-gradient(circle at 50% -10%, rgba(201, 96, 108, 0.08), transparent 28%),
@@ -2503,7 +2503,7 @@ body {
   height: 34px;
   display: inline-grid;
   place-items: center;
-  gap: 4px;
+  gap: 1.5px;
   padding: 0;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -2520,7 +2520,7 @@ body {
 }
 
 .shell-burger-line {
-  width: 9px;
+  width: 10px;
   height: 1.5px;
   border-radius: 999px;
   background: var(--nv-text);
@@ -2528,7 +2528,7 @@ body {
 }
 
 .shell-burger.is-open .shell-burger-line:nth-child(1) {
-  transform: translateY(5.5px) rotate(45deg);
+  transform: translateY(3.5px) rotate(45deg);
 }
 
 .shell-burger.is-open .shell-burger-line:nth-child(2) {
@@ -2536,7 +2536,7 @@ body {
 }
 
 .shell-burger.is-open .shell-burger-line:nth-child(3) {
-  transform: translateY(-5.5px) rotate(-45deg);
+  transform: translateY(-3.5px) rotate(-45deg);
 }
 
 .shell-overlay-scrim,
@@ -2765,7 +2765,7 @@ body {
   }
 
   .shell-burger-line {
-    width: 8px;
+    width: 9px;
   }
 
   .shell-drawer {
@@ -2822,7 +2822,11 @@ body {
 }
 
 .telegram-hero-shell {
-  grid-template-columns: 1fr;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+  gap: clamp(18px, 3vw, 36px);
+  align-items: center;
 }
 
 .telegram-hero-card {
@@ -2833,6 +2837,261 @@ body {
 .telegram-hero-copy {
   max-width: 760px;
   justify-items: start;
+}
+
+.telegram-sticker-stage {
+  position: relative;
+  width: min(100%, 360px);
+  min-height: 296px;
+  justify-self: center;
+  display: grid;
+  place-items: center;
+  isolation: isolate;
+}
+
+.telegram-sticker-stage::before,
+.telegram-sticker-stage::after {
+  content: '';
+  position: absolute;
+  inset: 12% 10%;
+  border-radius: 34px;
+  pointer-events: none;
+}
+
+.telegram-sticker-stage::before {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at 22% 24%, rgba(98, 182, 255, 0.1), transparent 26%),
+    radial-gradient(circle at 74% 72%, rgba(214, 90, 117, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 20px 50px rgba(0, 0, 0, 0.22);
+}
+
+.telegram-sticker-stage::after {
+  inset: 22% 18%;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  opacity: 0.7;
+}
+
+.telegram-sticker-core {
+  position: relative;
+  z-index: 2;
+  min-width: 164px;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 18px 20px;
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(18, 22, 30, 0.95), rgba(10, 13, 19, 0.98));
+  box-shadow:
+    0 18px 36px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transform: translateZ(0);
+  animation: telegramCoreFloat 5.6s ease-in-out infinite;
+}
+
+.telegram-sticker-core strong {
+  font-size: 1.18rem;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--nv-text);
+}
+
+.telegram-sticker-core span:last-child {
+  color: var(--nv-text-soft);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+}
+
+.telegram-sticker-core-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(118, 198, 255, 0.95), rgba(77, 138, 255, 0.95));
+  box-shadow:
+    0 0 0 6px rgba(84, 151, 255, 0.12),
+    0 0 16px rgba(84, 151, 255, 0.26);
+}
+
+.telegram-sticker-orbit {
+  position: absolute;
+  inset: 18% 14%;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.telegram-sticker-orbit-a {
+  transform: rotate(-14deg);
+  animation: telegramOrbitA 7.8s linear infinite;
+}
+
+.telegram-sticker-orbit-b {
+  inset: 26% 20%;
+  border-color: rgba(255, 255, 255, 0.05);
+  transform: rotate(18deg);
+  animation: telegramOrbitB 9.4s linear infinite;
+}
+
+.telegram-sticker-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.telegram-sticker {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(17, 21, 29, 0.94), rgba(11, 14, 19, 0.98));
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  color: var(--nv-text);
+  transform: translateZ(0);
+}
+
+.telegram-sticker::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 62%);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.telegram-sticker-emoji {
+  position: relative;
+  z-index: 1;
+  font-size: 1.1rem;
+  line-height: 1;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.18));
+}
+
+.telegram-sticker-label {
+  position: relative;
+  z-index: 1;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.telegram-sticker-floating {
+  position: absolute;
+  left: var(--sticker-x, 0);
+  top: var(--sticker-y, 0);
+  transform: rotate(var(--sticker-rotate, 0deg));
+  animation: telegramStickerFloat 5.4s ease-in-out infinite;
+  animation-delay: var(--sticker-delay, 0s);
+}
+
+.telegram-sticker-cluster-compact {
+  justify-content: center;
+}
+
+.telegram-sticker-cluster-compact .telegram-sticker {
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 16px;
+  animation: telegramStickerBob 4.8s ease-in-out infinite;
+  animation-delay: var(--sticker-delay, 0s);
+}
+
+.telegram-artifact-stickers {
+  margin-bottom: 2px;
+}
+
+.telegram-sticker-sky {
+  border-color: rgba(108, 181, 255, 0.18);
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(91, 155, 255, 0.06);
+}
+
+.telegram-sticker-rose {
+  border-color: rgba(219, 98, 126, 0.2);
+}
+
+.telegram-sticker-mint {
+  border-color: rgba(106, 205, 182, 0.2);
+}
+
+.telegram-sticker-amber {
+  border-color: rgba(232, 182, 101, 0.22);
+}
+
+@keyframes telegramCoreFloat {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -8px, 0);
+  }
+}
+
+@keyframes telegramOrbitA {
+  0% {
+    transform: rotate(-14deg) scale(0.98);
+  }
+  50% {
+    transform: rotate(-8deg) scale(1.02);
+  }
+  100% {
+    transform: rotate(-14deg) scale(0.98);
+  }
+}
+
+@keyframes telegramOrbitB {
+  0% {
+    transform: rotate(18deg) scale(0.96);
+  }
+  50% {
+    transform: rotate(24deg) scale(1);
+  }
+  100% {
+    transform: rotate(18deg) scale(0.96);
+  }
+}
+
+@keyframes telegramStickerFloat {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) rotate(var(--sticker-rotate, 0deg));
+  }
+  50% {
+    transform: translate3d(0, -10px, 0) rotate(calc(var(--sticker-rotate, 0deg) + 1.4deg));
+  }
+}
+
+@keyframes telegramStickerBob {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) rotate(var(--sticker-rotate, 0deg));
+  }
+  50% {
+    transform: translate3d(0, -4px, 0) rotate(calc(var(--sticker-rotate, 0deg) + 1deg));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .telegram-sticker-core,
+  .telegram-sticker-orbit,
+  .telegram-sticker-floating,
+  .telegram-sticker-cluster-compact .telegram-sticker {
+    animation: none !important;
+  }
 }
 
 .telegram-hero-copy h1 {
@@ -2917,10 +3176,16 @@ body {
 }
 
 @media (max-width: 980px) {
+  .telegram-hero-shell,
   .telegram-note-grid,
   .telegram-artifact-grid,
   .telegram-artifact-meta {
     grid-template-columns: 1fr;
+  }
+
+  .telegram-hero-copy {
+    justify-items: center;
+    text-align: center;
   }
 
   .telegram-artifact-head {
@@ -2932,5 +3197,32 @@ body {
   .telegram-hero-pills {
     grid-auto-flow: row;
     grid-auto-columns: auto;
+  }
+
+  .telegram-sticker-stage {
+    width: min(100%, 320px);
+    min-height: 252px;
+  }
+
+  .telegram-sticker-stage::before {
+    inset: 10% 6%;
+  }
+
+  .telegram-sticker-core {
+    min-width: 148px;
+    padding: 16px 18px;
+  }
+
+  .telegram-sticker {
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .telegram-sticker-label {
+    font-size: 0.74rem;
+  }
+
+  .telegram-sticker-floating {
+    max-width: 126px;
   }
 }

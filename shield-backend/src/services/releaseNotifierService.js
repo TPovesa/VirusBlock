@@ -7,10 +7,14 @@ const RELEASE_NOTIFIER_TELEGRAM_API_BASE = String(process.env.RELEASE_NOTIFIER_T
 const RELEASE_NOTIFIER_BOT_USERNAME = String(process.env.RELEASE_NOTIFIER_TELEGRAM_BOT_USERNAME || '').trim();
 const RELEASE_NOTIFIER_ALLOWED_USER_IDS = parseCsvSet(process.env.RELEASE_NOTIFIER_TELEGRAM_ALLOWED_USER_IDS);
 const RELEASE_NOTIFIER_MESSAGE_MAX_LENGTH = Math.max(512, Math.min(3900, Number(process.env.RELEASE_NOTIFIER_MESSAGE_MAX_LENGTH || 3600) || 3600));
+const RELEASE_NOTIFIER_POLL_INTERVAL_MS = Math.max(1500, Number(process.env.RELEASE_NOTIFIER_POLL_INTERVAL_MS || 4000) || 4000);
+const RELEASE_NOTIFIER_CURL_MAX_TIME_SEC = Math.max(8, Math.min(25, Number(process.env.RELEASE_NOTIFIER_CURL_MAX_TIME_SEC || 18) || 18));
 
 let schemaReady = false;
 let schemaReadyPromise = null;
-let cachedBotIdentity = null;
+let syncPromise = null;
+let pollerStarted = false;
+let pollerTimer = null;
 const execFileAsync = promisify(execFile);
 
 function nowMs() {
@@ -123,6 +127,17 @@ function getReleaseNotifierConfig() {
     };
 }
 
+function shouldUseReleaseNotifierPolling() {
+    const forced = String(process.env.RELEASE_NOTIFIER_FORCE_POLLING || '').trim().toLowerCase();
+    if (forced === '1' || forced === 'true') {
+        return true;
+    }
+    if (forced === '0' || forced === 'false') {
+        return false;
+    }
+    return !String(process.env.RELEASE_NOTIFIER_TELEGRAM_WEBHOOK_SECRET || '').trim();
+}
+
 async function ensureReleaseNotifierSchema(db = pool) {
     if (schemaReady) {
         return;
@@ -220,12 +235,14 @@ async function callReleaseNotifierTelegram(method, payload) {
         return json.result;
     } catch (error) {
         const { stdout } = await execFileAsync('curl', [
+            '--noproxy', '*',
+            '--ipv4',
             '-sS',
-            '--retry', '2',
+            '--retry', '1',
             '--retry-all-errors',
             '--retry-delay', '1',
-            '--connect-timeout', '20',
-            '--max-time', '60',
+            '--connect-timeout', '10',
+            '--max-time', String(RELEASE_NOTIFIER_CURL_MAX_TIME_SEC),
             '-X', 'POST',
             '-H', 'content-type: application/json',
             '--data', requestBody,
@@ -244,18 +261,6 @@ async function callReleaseNotifierTelegram(method, payload) {
 
         return json.result;
     }
-}
-
-async function getBotIdentity() {
-    if (cachedBotIdentity) {
-        return cachedBotIdentity;
-    }
-    const me = await callReleaseNotifierTelegram('getMe', {});
-    cachedBotIdentity = {
-        id: Number(me.id || 0) || null,
-        username: String(me.username || RELEASE_NOTIFIER_BOT_USERNAME || '').trim() || null
-    };
-    return cachedBotIdentity;
 }
 
 function extractCommandText(message) {
@@ -282,6 +287,22 @@ function isSetChatCommand(text, botUsername) {
     }
 
     return Boolean(botUsername) && mentionedBot === String(botUsername || '').trim().toLowerCase();
+}
+
+function extractThreadId(message) {
+    const direct = Number(message?.message_thread_id || 0) || null;
+    if (direct) {
+        return direct;
+    }
+    const replyThread = Number(message?.reply_to_message?.message_thread_id || 0) || null;
+    if (replyThread) {
+        return replyThread;
+    }
+    const forumCreatedThread = Number(message?.reply_to_message?.forum_topic_created?.message_thread_id || 0) || null;
+    if (forumCreatedThread) {
+        return forumCreatedThread;
+    }
+    return null;
 }
 
 async function loadReleaseNotifierTarget(db = pool) {
@@ -485,13 +506,13 @@ async function handleSetChatCommand(message, updateId, db = pool) {
     const fromId = String(message?.from?.id || '').trim();
     const chatId = String(message?.chat?.id || '').trim();
     const chatType = String(message?.chat?.type || '').trim();
-    const threadId = Number(message?.message_thread_id || 0) || null;
+    const threadId = extractThreadId(message);
     const chatTitle = normalizeOptionalText(message?.chat?.title || message?.chat?.username || '', 255);
     const username = normalizeOptionalText(message?.from?.username || '', 120);
     const isTopicMessage = message?.is_topic_message === true;
 
     if (!isAuthorizedSetChatUser(fromId)) {
-        await callReleaseNotifierTelegram('sendMessage', {
+        void callReleaseNotifierTelegram('sendMessage', {
             chat_id: chatId,
             text: 'Эта команда недоступна для вашего аккаунта.',
             message_thread_id: threadId || undefined
@@ -505,7 +526,7 @@ async function handleSetChatCommand(message, updateId, db = pool) {
 
     if (!chatId || !['group', 'supergroup'].includes(chatType)) {
         if (chatId) {
-            await callReleaseNotifierTelegram('sendMessage', {
+            void callReleaseNotifierTelegram('sendMessage', {
                 chat_id: chatId,
                 text: 'Выполните /setchat в нужной группе или в нужной теме форума.',
                 message_thread_id: threadId || undefined
@@ -515,6 +536,18 @@ async function handleSetChatCommand(message, updateId, db = pool) {
             accepted: false,
             ignored: false,
             reason: 'wrong-chat-type'
+        };
+    }
+
+    if (chatType === 'supergroup' && !threadId && message?.chat?.is_forum !== false) {
+        void callReleaseNotifierTelegram('sendMessage', {
+            chat_id: chatId,
+            text: 'Откройте нужную тему форума и выполните /setchat внутри неё. Тогда анонсы будут приходить именно в эту тему.'
+        }).catch(() => {});
+        return {
+            accepted: false,
+            ignored: false,
+            reason: 'forum-topic-required'
         };
     }
 
@@ -534,7 +567,7 @@ async function handleSetChatCommand(message, updateId, db = pool) {
         ? `тема ${target.thread_id} в ${target.chat_title || target.chat_id}`
         : `${target.chat_title || target.chat_id}`;
 
-    await callReleaseNotifierTelegram('sendMessage', {
+    void callReleaseNotifierTelegram('sendMessage', {
         chat_id: chatId,
         message_thread_id: threadId || undefined,
         text: `Бот живой. Анонсы релизов теперь будут приходить сюда: ${targetLabel}.`
@@ -570,8 +603,7 @@ async function receiveReleaseNotifierWebhook(update, db = pool) {
         };
     }
 
-    const botIdentity = await getBotIdentity().catch(() => ({ id: null, username: config.botUsername || null }));
-    if (botIdentity.id && Number(message.from?.id || 0) === Number(botIdentity.id)) {
+    if (message.from?.is_bot === true) {
         return {
             availability: true,
             accepted: false,
@@ -581,7 +613,7 @@ async function receiveReleaseNotifierWebhook(update, db = pool) {
     }
 
     const text = extractCommandText(message);
-    if (!isSetChatCommand(text, botIdentity.username || config.botUsername)) {
+    if (!isSetChatCommand(text, config.botUsername)) {
         return {
             availability: true,
             accepted: false,
@@ -591,10 +623,68 @@ async function receiveReleaseNotifierWebhook(update, db = pool) {
     }
 
     const result = await handleSetChatCommand(message, update?.update_id, db);
+    if (Number(update?.update_id || 0) > 0) {
+        await setMeta('telegram_update_offset', String(Number(update.update_id) + 1), db);
+    }
     return {
         availability: true,
         ...result
     };
+}
+
+async function syncReleaseNotifierUpdates(db = pool) {
+    if (syncPromise) {
+        return syncPromise;
+    }
+
+    syncPromise = (async () => {
+        const config = getReleaseNotifierConfig();
+        if (!config.available) {
+            return { availability: false, message: config.message };
+        }
+        if (!shouldUseReleaseNotifierPolling()) {
+            return {
+                availability: true,
+                synced: false,
+                updates: 0
+            };
+        }
+
+        await ensureReleaseNotifierSchema(db);
+        const offsetRaw = await getMeta('telegram_update_offset', db);
+        const offset = Math.max(0, Number(offsetRaw || 0) || 0);
+        const updates = await callReleaseNotifierTelegram('getUpdates', {
+            offset,
+            limit: 100,
+            timeout: 0,
+            allowed_updates: ['message', 'edited_message']
+        });
+
+        if (!Array.isArray(updates) || updates.length === 0) {
+            return {
+                availability: true,
+                synced: true,
+                updates: 0
+            };
+        }
+
+        let nextOffset = offset;
+        for (const update of updates) {
+            await receiveReleaseNotifierWebhook(update, db);
+            nextOffset = Math.max(nextOffset, Number(update.update_id || 0) + 1);
+            await setMeta('telegram_update_offset', String(nextOffset), db);
+        }
+
+        return {
+            availability: true,
+            synced: true,
+            updates: updates.length
+        };
+    })().finally(() => {
+        syncPromise = null;
+    });
+
+    return syncPromise;
 }
 
 async function syncReleaseNotifierCommands() {
@@ -622,6 +712,31 @@ async function syncReleaseNotifierCommands() {
     };
 }
 
+function startReleaseNotifierPolling() {
+    if (pollerStarted) {
+        return;
+    }
+    if (!shouldUseReleaseNotifierPolling()) {
+        return;
+    }
+    pollerStarted = true;
+
+    const run = () => {
+        syncReleaseNotifierUpdates().catch((error) => {
+            if (String(error?.message || '').includes('getUpdates')) {
+                return;
+            }
+            console.error('Release notifier background sync failed:', error);
+        });
+    };
+
+    pollerTimer = setInterval(run, RELEASE_NOTIFIER_POLL_INTERVAL_MS);
+    if (typeof pollerTimer?.unref === 'function') {
+        pollerTimer.unref();
+    }
+    setTimeout(run, 300);
+}
+
 module.exports = {
     getReleaseNotifierConfig,
     getReleaseNotifierState,
@@ -629,6 +744,8 @@ module.exports = {
     verifyReleaseNotifierWebhookSecret,
     verifyReleaseNotifierAnnounceSecret,
     receiveReleaseNotifierWebhook,
+    syncReleaseNotifierUpdates,
     sendReleaseAnnouncement,
-    syncReleaseNotifierCommands
+    syncReleaseNotifierCommands,
+    startReleaseNotifierPolling
 };

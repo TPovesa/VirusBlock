@@ -16,24 +16,6 @@ type RegisterPageProps = {
   onAuthenticated?: (session: SiteAuthSession) => void;
 };
 
-function RegisterAside({ session }: { session: SiteAuthSession | null }) {
-  if (session) {
-    return (
-      <article className="content-card auth-session-card auth-session-empty">
-        <h3>Аккаунт готов</h3>
-        <p>{session.user.email} подтверждён. Теперь можно перейти в профиль и продолжить настройку.</p>
-      </article>
-    );
-  }
-
-  return (
-    <article className="content-card auth-session-card auth-session-empty">
-      <h3>Что понадобится</h3>
-      <p>Имя, почта и пароль. После этого останется подтвердить адрес кодом из письма.</p>
-    </article>
-  );
-}
-
 export function RegisterPage({ onAuthenticated }: RegisterPageProps) {
   const { setSession: setAuthSession } = useSiteAuth();
   const navigate = useNavigate();
@@ -46,7 +28,6 @@ export function RegisterPage({ onAuthenticated }: RegisterPageProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const [session, setSession] = useState<SiteAuthSession | null>(null);
 
   const passwordError = useMemo(() => validatePasswordStrength(password), [password]);
   const passwordsMatch = confirmPassword.length > 0 && confirmPassword === password;
@@ -91,7 +72,6 @@ export function RegisterPage({ onAuthenticated }: RegisterPageProps) {
       return;
     }
 
-    setSession(result.data);
     setAuthSession(result.data);
     setInfo('Аккаунт создан.');
     onAuthenticated?.(result.data);
@@ -118,11 +98,7 @@ export function RegisterPage({ onAuthenticated }: RegisterPageProps) {
   }
 
   return (
-    <AuthPageLayout
-      title="Регистрация"
-      aside={<RegisterAside session={session} />}
-      footer={<span className="hero-support-text">Пароль проверяется сразу, чтобы письмо пришло уже на готовый сценарий.</span>}
-    >
+    <AuthPageLayout title="Регистрация">
       {challenge ? (
         <AuthCodeStep
           email={challenge.email}

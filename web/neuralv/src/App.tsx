@@ -29,6 +29,20 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return children;
 }
 
+function RequireGuest({ children }: { children: ReactNode }) {
+  const { ready, session } = useSiteAuth();
+
+  if (!ready) {
+    return <div className="route-skeleton">Загружаем аккаунт...</div>;
+  }
+
+  if (session) {
+    return <Navigate to="/profile" replace />;
+  }
+
+  return children;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -39,8 +53,8 @@ export default function App() {
         <Route path="/linux" element={<LinuxPage />} />
         <Route path="/telegram" element={<TelegramPage />} />
         <Route path="/verified-apps" element={<VerifiedAppsPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/login" element={<RequireGuest><LoginPage /></RequireGuest>} />
+        <Route path="/register" element={<RequireGuest><RegisterPage /></RequireGuest>} />
         <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/account-action" element={<AccountActionPage />} />

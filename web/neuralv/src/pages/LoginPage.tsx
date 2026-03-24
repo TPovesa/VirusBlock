@@ -16,24 +16,6 @@ type LoginPageProps = {
 
 const initialChallenge: SiteAuthChallenge | null = null;
 
-function LoginAside({ session }: { session: SiteAuthSession | null }) {
-  if (session) {
-    return (
-      <article className="content-card auth-session-card auth-session-empty">
-        <h3>Вход подтверждён</h3>
-        <p>{session.user.name || 'Аккаунт NeuralV'} подключён. Теперь можно перейти к профилю и настройкам.</p>
-      </article>
-    );
-  }
-
-  return (
-    <article className="content-card auth-session-card auth-session-empty">
-      <h3>Как это работает</h3>
-      <p>Сначала проверяется пароль, потом на почту приходит короткий код подтверждения.</p>
-    </article>
-  );
-}
-
 export function LoginPage({ onAuthenticated }: LoginPageProps) {
   const { setSession: setAuthSession } = useSiteAuth();
   const navigate = useNavigate();
@@ -46,7 +28,6 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const [session, setSession] = useState<SiteAuthSession | null>(null);
 
   const ready = useMemo(() => email.trim().length > 0 && password.trim().length > 0, [email, password]);
 
@@ -87,7 +68,6 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
       return;
     }
 
-    setSession(result.data);
     setAuthSession(result.data);
     setInfo('Вход выполнен.');
     onAuthenticated?.(result.data);
@@ -117,11 +97,7 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
   }
 
   return (
-    <AuthPageLayout
-      title="Вход в NeuralV"
-      aside={<LoginAside session={session} />}
-      footer={<span className="hero-support-text">Код приходит на почту только после проверки пароля.</span>}
-    >
+    <AuthPageLayout title="Вход в NeuralV">
       {challenge ? (
         <AuthCodeStep
           email={challenge.email}

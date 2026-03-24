@@ -366,9 +366,14 @@ export function AppShell() {
           <div className="footer-title">NeuralV</div>
           <nav className="site-footer-links" aria-label="Навигация внизу сайта">
             {productLinks.concat(clientLinks).map((item) => (
-              <a key={item.to} className="footer-link" href={`/neuralv${item.to === '/' ? '/' : item.to}`}>
+              <NavLink
+                key={item.to}
+                className="footer-link"
+                to={item.to}
+                end={item.to === '/'}
+              >
                 {item.label}
-              </a>
+              </NavLink>
             ))}
           </nav>
           <div className="footer-meta">NeuralV © {currentYear}</div>

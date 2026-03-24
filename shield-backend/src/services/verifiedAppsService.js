@@ -146,6 +146,25 @@ function adminDeveloperApplicationsEmail() {
     ).trim();
 }
 
+function getDeveloperApplicationActionSecret() {
+    return String(
+        process.env.DEVELOPER_APPLICATION_ACTION_SECRET
+        || process.env.NEURALV_DEVELOPER_APPLICATION_ACTION_SECRET
+        || process.env.JWT_SECRET
+        || process.env.REFRESH_TOKEN_SECRET
+        || ''
+    ).trim();
+}
+
+function developerApplicationActionBaseUrl() {
+    return String(
+        process.env.PUBLIC_API_BASE_URL
+        || process.env.API_BASE_URL
+        || process.env.SITE_API_BASE_URL
+        || 'https://sosiskibot.ru/basedata/api'
+    ).replace(/\/+$/, '');
+}
+
 function normalizePlatform(value) {
     const normalized = String(value || '').trim().toLowerCase();
     switch (normalized) {
@@ -444,6 +463,18 @@ async function getLastDeveloperApplication(userId, db = pool) {
     return rows[0] || null;
 }
 
+async function getDeveloperApplicationById(applicationId, db = pool) {
+    await ensureVerifiedAppsSchema(db);
+    const [rows] = await db.query(
+        `SELECT id, user_id, applicant_name, applicant_email, message, status, created_at, updated_at, mailed_at, reviewed_at, review_note
+         FROM developer_applications
+         WHERE id = ?
+         LIMIT 1`,
+        [applicationId]
+    );
+    return rows[0] || null;
+}
+
 async function getDeveloperApplicationStats(userId, db = pool) {
     await ensureVerifiedAppsSchema(db);
     const [rows] = await db.query(
@@ -511,13 +542,19 @@ function renderMailShell({ title, bodyHtml }) {
 }
 
 async function sendDeveloperApplicationEmail({ user, application, adminEmail }) {
+    const approveUrl = buildDeveloperApplicationActionUrl(application, 'approve');
+    const rejectUrl = buildDeveloperApplicationActionUrl(application, 'reject');
     const detailsHtml = [
         `<p style="margin:0 0 10px;"><strong>Пользователь:</strong> ${escapeHtml(user.name)}</p>`,
         `<p style="margin:0 0 10px;"><strong>E-mail:</strong> ${escapeHtml(user.email)}</p>`,
         `<p style="margin:0 0 10px;"><strong>User ID:</strong> ${escapeHtml(user.id)}</p>`,
         application.message
             ? `<p style="margin:16px 0 0;"><strong>Сообщение:</strong><br>${escapeHtml(application.message)}</p>`
-            : '<p style="margin:16px 0 0;color:#98a19d;">Сообщение не указано.</p>'
+            : '<p style="margin:16px 0 0;color:#98a19d;">Сообщение не указано.</p>',
+        `<div style="margin:20px 0 0;display:flex;gap:12px;flex-wrap:wrap;">
+            <a href="${escapeHtml(approveUrl)}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:#1f8f52;color:#f7fffb;text-decoration:none;font-weight:700;">Принять</a>
+            <a href="${escapeHtml(rejectUrl)}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:#b53434;color:#fff7f7;text-decoration:none;font-weight:700;">Отклонить</a>
+        </div>`
     ].join('');
 
     await sendMail({
@@ -529,13 +566,126 @@ async function sendDeveloperApplicationEmail({ user, application, adminEmail }) 
             `Имя: ${user.name}`,
             `E-mail: ${user.email}`,
             `User ID: ${user.id}`,
-            application.message ? `Сообщение: ${application.message}` : 'Сообщение не указано.'
+            application.message ? `Сообщение: ${application.message}` : 'Сообщение не указано.',
+            `Принять: ${approveUrl}`,
+            `Отклонить: ${rejectUrl}`
         ].join('\n'),
         html: renderMailShell({
             title: 'Новая заявка разработчика',
             bodyHtml: detailsHtml
         })
     });
+}
+
+function buildDeveloperApplicationActionToken(application, action) {
+    const secret = getDeveloperApplicationActionSecret();
+    if (!secret) {
+        const error = new Error('Developer application action secret is not configured');
+        error.code = 'DEVELOPER_APPLICATION_ACTION_SECRET_NOT_CONFIGURED';
+        throw error;
+    }
+
+    const payload = [
+        String(application.id || ''),
+        String(application.user_id || ''),
+        String(application.created_at || ''),
+        String(action || '').trim().toLowerCase()
+    ].join(':');
+
+    return crypto
+        .createHmac('sha256', secret)
+        .update(payload)
+        .digest('hex');
+}
+
+function buildDeveloperApplicationActionUrl(application, action) {
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    const token = buildDeveloperApplicationActionToken(application, normalizedAction);
+    return `${developerApplicationActionBaseUrl()}/verified-apps/developer/applications/${encodeURIComponent(application.id)}/${encodeURIComponent(normalizedAction)}?token=${encodeURIComponent(token)}`;
+}
+
+async function reviewDeveloperApplicationAction(applicationId, action, token, db = pool) {
+    await ensureVerifiedAppsSchema(db);
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    if (!['approve', 'reject'].includes(normalizedAction)) {
+        const error = new Error('Unsupported developer application action');
+        error.code = 'DEVELOPER_APPLICATION_ACTION_INVALID';
+        throw error;
+    }
+
+    const application = await getDeveloperApplicationById(applicationId, db);
+    if (!application) {
+        const error = new Error('Developer application not found');
+        error.code = 'DEVELOPER_APPLICATION_NOT_FOUND';
+        throw error;
+    }
+
+    const expectedToken = buildDeveloperApplicationActionToken(application, normalizedAction);
+    const left = Buffer.from(String(token || ''), 'utf8');
+    const right = Buffer.from(expectedToken, 'utf8');
+    if (left.length !== right.length || !crypto.timingSafeEqual(left, right)) {
+        const error = new Error('Developer application action token is invalid');
+        error.code = 'DEVELOPER_APPLICATION_ACTION_INVALID_TOKEN';
+        throw error;
+    }
+
+    if (application.status !== 'PENDING_REVIEW') {
+        const error = new Error('Developer application already reviewed');
+        error.code = 'DEVELOPER_APPLICATION_ALREADY_REVIEWED';
+        error.application = application;
+        throw error;
+    }
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        const freshApplication = await getDeveloperApplicationById(applicationId, connection);
+        if (!freshApplication) {
+            const error = new Error('Developer application not found');
+            error.code = 'DEVELOPER_APPLICATION_NOT_FOUND';
+            throw error;
+        }
+        if (freshApplication.status !== 'PENDING_REVIEW') {
+            const error = new Error('Developer application already reviewed');
+            error.code = 'DEVELOPER_APPLICATION_ALREADY_REVIEWED';
+            error.application = freshApplication;
+            throw error;
+        }
+
+        const reviewedAt = nowMs();
+        const nextStatus = normalizedAction === 'approve' ? 'APPROVED' : 'REJECTED';
+        const reviewNote = normalizedAction === 'approve'
+            ? 'Подтверждено из письма.'
+            : 'Отклонено из письма.';
+
+        await connection.query(
+            `UPDATE developer_applications
+             SET status = ?, reviewed_at = ?, review_note = ?, updated_at = ?
+             WHERE id = ?`,
+            [nextStatus, reviewedAt, reviewNote, reviewedAt, applicationId]
+        );
+
+        if (normalizedAction === 'approve') {
+            await connection.query(
+                `UPDATE users
+                 SET is_verified_developer = 1,
+                     verified_developer_at = ?,
+                     updated_at = ?
+                 WHERE id = ?`,
+                [reviewedAt, reviewedAt, freshApplication.user_id]
+            );
+        }
+
+        await connection.commit();
+    } catch (error) {
+        await connection.rollback().catch(() => {});
+        throw error;
+    } finally {
+        connection.release();
+    }
+
+    return getDeveloperApplicationById(applicationId, db);
 }
 
 function escapeHtml(value) {
@@ -1153,6 +1303,7 @@ module.exports = {
     adminDeveloperApplicationsEmail,
     getDeveloperStatus,
     createDeveloperApplication,
+    reviewDeveloperApplicationAction,
     createVerificationJob,
     listMyVerifiedApps,
     listPublicVerifiedApps,

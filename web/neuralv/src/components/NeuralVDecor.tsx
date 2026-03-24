@@ -5,12 +5,12 @@ type NeuralVDecorProps = {
   className?: string;
 };
 
-const labels: Record<NeuralVDecorVariant, { title: string; note: string }> = {
+const labels: Record<NeuralVDecorVariant, { title?: string; note?: string }> = {
   home: { title: 'NeuralV', note: 'Android / Windows / Linux' },
   android: { title: 'Android', note: 'Один APK' },
   windows: { title: 'Windows', note: 'Setup / portable / NV' },
   linux: { title: 'Linux', note: 'Установка через NV' },
-  account: { title: 'Аккаунт', note: 'Почта, профиль и подтверждения' }
+  account: {}
 };
 
 export function NeuralVDecor({ variant, className = '' }: NeuralVDecorProps) {
@@ -32,10 +32,12 @@ export function NeuralVDecor({ variant, className = '' }: NeuralVDecorProps) {
           <circle cx="248" cy="164" r="32" stroke="rgba(255,255,255,0.14)" strokeWidth="1.5" fill="none" />
           <rect x="70" y="62" width="180" height="12" rx="6" className="neuralv-decor-block-accent" />
         </svg>
-        <div className="neuralv-decor-copy">
-          <strong>{copy.title}</strong>
-          <span>{copy.note}</span>
-        </div>
+        {copy.title || copy.note ? (
+          <div className="neuralv-decor-copy">
+            {copy.title ? <strong>{copy.title}</strong> : null}
+            {copy.note ? <span>{copy.note}</span> : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );

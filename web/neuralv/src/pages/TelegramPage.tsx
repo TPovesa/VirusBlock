@@ -1,4 +1,5 @@
 import '../styles/story.css';
+import { TelegramStickerCluster } from '../components/TelegramStickerCluster';
 
 const telegramArtifacts = [
   {
@@ -8,7 +9,11 @@ const telegramArtifacts = [
     description: 'Подключает NeuralV прямо к ExteraGram и даёт быстрый вход без отдельного desktop-клиента.',
     version: '1.0',
     minimum: 'ExteraGram 11.12.1+',
-    downloadUrl: '/neuralv/telegram/NeuralV-3.plugin'
+    downloadUrl: '/neuralv/telegram/NeuralV-3.plugin',
+    stickers: [
+      { emoji: '💬', label: 'ExteraGram', tone: 'sky' as const },
+      { emoji: '⚡', label: 'Plugin', tone: 'rose' as const }
+    ]
   },
   {
     title: 'Heroku module',
@@ -17,7 +22,11 @@ const telegramArtifacts = [
     description: 'Отдельный модуль для Heroku, если Telegram-часть должна работать внутри сервера и жить своим потоком.',
     version: '1.0',
     minimum: 'Heroku Python runtime',
-    downloadUrl: '/neuralv/telegram/NeuralV.py'
+    downloadUrl: '/neuralv/telegram/NeuralV.py',
+    stickers: [
+      { emoji: '☁️', label: 'Heroku', tone: 'mint' as const },
+      { emoji: '🛡️', label: 'Bridge', tone: 'amber' as const }
+    ]
   }
 ];
 
@@ -33,12 +42,23 @@ export function TelegramPage() {
       <section className="platform-hero">
         <div className="platform-hero-center">
           <article className="platform-hero-card platform-hero-card-centered">
-            <div className="platform-hero-copy platform-hero-copy-centered">
-              <h1>NeuralV для Telegram</h1>
-              <div className="platform-hero-actions">
-                <a className="nv-button" href={telegramArtifacts[0].downloadUrl} download>Скачать plugin</a>
-                <a className="shell-chip" href={telegramArtifacts[1].downloadUrl} download>Скачать модуль</a>
+            <div className="telegram-hero-shell">
+              <div className="platform-hero-copy platform-hero-copy-centered telegram-hero-copy">
+                <h1>NeuralV для Telegram</h1>
+                <p>Два аккуратных формата для Telegram-направления: быстрый plugin для ExteraGram и отдельный модуль для серверного контура.</p>
+                <div className="platform-hero-actions">
+                  <a className="nv-button" href={telegramArtifacts[0].downloadUrl} download>Скачать plugin</a>
+                  <a className="shell-chip" href={telegramArtifacts[1].downloadUrl} download>Скачать модуль</a>
+                </div>
               </div>
+              <TelegramStickerCluster
+                items={[
+                  { emoji: '💬', label: 'чат', tone: 'sky' },
+                  { emoji: '🤖', label: 'бот', tone: 'rose' },
+                  { emoji: '✨', label: 'сцена', tone: 'amber' },
+                  { emoji: '🛡️', label: 'щит', tone: 'mint' }
+                ]}
+              />
             </div>
 
             <div className="platform-hero-grid platform-hero-grid-centered">
@@ -72,6 +92,7 @@ export function TelegramPage() {
         <div className="platform-install-grid platform-install-grid-centered">
           {telegramArtifacts.map((artifact) => (
             <article key={artifact.fileName} className="platform-install-card platform-install-card-centered">
+              <TelegramStickerCluster items={artifact.stickers} variant="compact" className="telegram-artifact-stickers" />
               <h2>{artifact.title}</h2>
               <p>{artifact.description}</p>
               <div className="platform-main-stat">

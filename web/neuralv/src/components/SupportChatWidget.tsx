@@ -54,9 +54,6 @@ export type SupportChatWidgetProps = {
   refreshLabel?: string;
 };
 
-const DEFAULT_EMPTY_TITLE = 'Поддержка на связи';
-const DEFAULT_EMPTY_DESCRIPTION = 'История переписки появится здесь, как только начнётся диалог.';
-
 function formatTimestamp(value?: string | number | Date | null) {
   if (!value) {
     return '';
@@ -91,16 +88,6 @@ function useControllableState<T>(controlled: T | undefined, defaultValue: T, onC
   return [value, setValue] as const;
 }
 
-function SupportChatSkeleton() {
-  return (
-    <div className="support-chat__skeleton" aria-hidden="true">
-      <span className="support-chat__skeleton-line support-chat__skeleton-line-short" />
-      <span className="support-chat__skeleton-line" />
-      <span className="support-chat__skeleton-line support-chat__skeleton-line-medium" />
-    </div>
-  );
-}
-
 export function SupportChatWidget({
   open,
   defaultOpen = false,
@@ -108,7 +95,6 @@ export function SupportChatWidget({
   title = 'Чат поддержки',
   launcherLabel = 'Чат поддержки',
   launcherUnreadCount = 0,
-  launcherPending = false,
   statusLabel,
   messages = [],
   loading = false,
@@ -122,8 +108,8 @@ export function SupportChatWidget({
   onValueChange,
   onSend,
   onRetryMessage,
-  emptyTitle = DEFAULT_EMPTY_TITLE,
-  emptyDescription = DEFAULT_EMPTY_DESCRIPTION,
+  emptyTitle = 'Поддержка на связи',
+  emptyDescription = 'История переписки появится здесь, как только начнётся диалог.',
   helperText = '',
   sendLabel = 'Отправить'
 }: SupportChatWidgetProps) {
@@ -225,7 +211,7 @@ export function SupportChatWidget({
     <>
       <div className="support-chat__dock" data-state={isUnavailable ? 'unavailable' : 'active'}>
         <button
-          className={`support-chat__launcher${launcherPending ? ' is-pending' : ''}`}
+          className="support-chat__launcher"
           type="button"
           onClick={handleOpen}
           aria-expanded={isOpen}
@@ -272,10 +258,9 @@ export function SupportChatWidget({
                 <>
                   <div className="support-chat__timeline" ref={listRef}>
                     {loading ? (
-                      <>
-                        <SupportChatSkeleton />
-                        <SupportChatSkeleton />
-                      </>
+                      <div className="support-chat__empty">
+                        <strong>Загружаем чат…</strong>
+                      </div>
                     ) : messages.length ? (
                       messages.map((message) => {
                         const timestamp = formatTimestamp(message.createdAt);

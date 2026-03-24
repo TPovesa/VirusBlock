@@ -9,11 +9,13 @@ const SUPPORT_TELEGRAM_API_BASE = String(process.env.SUPPORT_TELEGRAM_API_BASE |
 const SUPPORT_TELEGRAM_BOT_USERNAME = String(process.env.SUPPORT_TELEGRAM_BOT_USERNAME || 'fatalerrorsupportbot').trim();
 const SUPPORT_CHAT_MESSAGE_MAX_LENGTH = Math.max(400, Number(process.env.SUPPORT_CHAT_MESSAGE_MAX_LENGTH || 4000) || 4000);
 const SUPPORT_CHAT_POLL_INTERVAL_MS = Math.max(1500, Number(process.env.SUPPORT_CHAT_POLL_INTERVAL_MS || 4000) || 4000);
+const SUPPORT_TELEGRAM_CURL_MAX_TIME_SEC = Math.max(8, Math.min(25, Number(process.env.SUPPORT_TELEGRAM_CURL_MAX_TIME_SEC || 18) || 18));
 
 let schemaReady = false;
 let schemaReadyPromise = null;
 let syncPromise = null;
-let cachedBotIdentity = null;
+let pollerStarted = false;
+let pollerTimer = null;
 const execFileAsync = promisify(execFile);
 
 function createHttpError(status, message, code) {
@@ -53,8 +55,20 @@ function getAvailabilityState() {
         support_bot_username: config.botUsername,
         configured_group_chat_id: config.chatId || null,
         forum_topics_required: true,
+        delivery_mode: shouldUseSupportPolling() ? 'polling' : 'webhook',
         poll_after_ms: SUPPORT_CHAT_POLL_INTERVAL_MS
     };
+}
+
+function shouldUseSupportPolling() {
+    const forced = String(process.env.SUPPORT_TELEGRAM_FORCE_POLLING || '').trim().toLowerCase();
+    if (forced === '1' || forced === 'true') {
+        return true;
+    }
+    if (forced === '0' || forced === 'false') {
+        return false;
+    }
+    return !String(process.env.SUPPORT_TELEGRAM_WEBHOOK_SECRET || '').trim();
 }
 
 async function ensureSupportChatSchema(db = pool) {
@@ -182,12 +196,14 @@ async function callTelegram(method, payload) {
         return json.result;
     } catch (error) {
         const { stdout } = await execFileAsync('curl', [
+            '--noproxy', '*',
+            '--ipv4',
             '-sS',
-            '--retry', '2',
+            '--retry', '1',
             '--retry-all-errors',
             '--retry-delay', '1',
-            '--connect-timeout', '20',
-            '--max-time', '60',
+            '--connect-timeout', '10',
+            '--max-time', String(SUPPORT_TELEGRAM_CURL_MAX_TIME_SEC),
             '-X', 'POST',
             '-H', 'content-type: application/json',
             '--data', requestBody,
@@ -206,18 +222,6 @@ async function callTelegram(method, payload) {
 
         return json.result;
     }
-}
-
-async function getBotIdentity() {
-    if (cachedBotIdentity) {
-        return cachedBotIdentity;
-    }
-    const me = await callTelegram('getMe', {});
-    cachedBotIdentity = {
-        id: Number(me.id || 0) || null,
-        username: String(me.username || SUPPORT_TELEGRAM_BOT_USERNAME || '').trim() || null
-    };
-    return cachedBotIdentity;
 }
 
 function normalizeMessageText(text) {
@@ -502,8 +506,7 @@ async function ingestTelegramUpdate(update, db = pool) {
         return { accepted: false, reason: 'no-thread' };
     }
 
-    const botIdentity = await getBotIdentity().catch(() => ({ id: null }));
-    if (botIdentity.id && Number(message.from?.id || 0) === Number(botIdentity.id)) {
+    if (message.from?.is_bot === true) {
         return { accepted: false, reason: 'bot-message' };
     }
 
@@ -590,6 +593,13 @@ async function syncSupportUpdates(db = pool) {
         if (!availability.availability) {
             return availability;
         }
+        if (!shouldUseSupportPolling()) {
+            return {
+                ...availability,
+                synced: false,
+                message: 'Чат работает через webhook.'
+            };
+        }
 
         await ensureSupportChatSchema(db);
         const offsetRaw = await getMeta('telegram_update_offset', db);
@@ -657,8 +667,8 @@ async function getSupportChatState(userId, options = {}, db = pool) {
     }
 
     await ensureSupportChatSchema(db);
-    if (options.sync !== false) {
-        await syncSupportUpdates(db).catch(() => null);
+    if (options.sync === 'poll' && shouldUseSupportPolling()) {
+        syncSupportUpdates(db).catch(() => null);
     }
 
     let chat = await findOpenChatForUser(userId, db);
@@ -775,7 +785,32 @@ async function sendSupportChatMessage(userId, payload = {}, db = pool) {
         last_message_at: timestamp
     }, db);
 
-    return getSupportChatState(userId, { sync: true }, db);
+    return getSupportChatState(userId, { sync: false }, db);
+}
+
+function startSupportChatPolling() {
+    if (pollerStarted) {
+        return;
+    }
+    if (!shouldUseSupportPolling()) {
+        return;
+    }
+    pollerStarted = true;
+
+    const run = () => {
+        syncSupportUpdates().catch((error) => {
+            if (String(error?.message || '').includes('getUpdates')) {
+                return;
+            }
+            console.error('Support chat background sync failed:', error);
+        });
+    };
+
+    pollerTimer = setInterval(run, SUPPORT_CHAT_POLL_INTERVAL_MS);
+    if (typeof pollerTimer?.unref === 'function') {
+        pollerTimer.unref();
+    }
+    setTimeout(run, 250);
 }
 
 module.exports = {
@@ -785,6 +820,7 @@ module.exports = {
     createSupportChat,
     sendSupportChatMessage,
     syncSupportUpdates,
+    startSupportChatPolling,
     receiveSupportWebhook,
     verifyWebhookSecret,
     ensureSupportChatSchema
