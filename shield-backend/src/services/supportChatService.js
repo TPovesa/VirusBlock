@@ -272,7 +272,7 @@ function verifyWebhookSecret(receivedSecret) {
     return crypto.timingSafeEqual(left, right);
 }
 
-async function callTelegram(method, payload) {
+async function callTelegram(method, payload, options = {}) {
     const config = getSupportConfig();
     if (!config.available) {
         throw createHttpError(503, config.message, 'SUPPORT_TELEGRAM_UNAVAILABLE');
@@ -280,6 +280,9 @@ async function callTelegram(method, payload) {
 
     const url = `${SUPPORT_TELEGRAM_API_BASE}/bot${config.token}/${method}`;
     const requestBody = JSON.stringify(payload || {});
+    const curlMaxTimeSec = Math.max(4, Number(options.curlMaxTimeSec || SUPPORT_TELEGRAM_CURL_MAX_TIME_SEC) || SUPPORT_TELEGRAM_CURL_MAX_TIME_SEC);
+    const fetchTimeoutMs = Math.max(2000, Number(options.fetchTimeoutMs || SUPPORT_TELEGRAM_FETCH_TIMEOUT_MS) || SUPPORT_TELEGRAM_FETCH_TIMEOUT_MS);
+    const useFetchFallback = options.useFetchFallback !== false;
 
     try {
         const { stdout } = await execFileAsync('curl', [
@@ -290,7 +293,7 @@ async function callTelegram(method, payload) {
             '--retry-all-errors',
             '--retry-delay', '1',
             '--connect-timeout', '6',
-            '--max-time', String(SUPPORT_TELEGRAM_CURL_MAX_TIME_SEC),
+            '--max-time', String(curlMaxTimeSec),
             '-X', 'POST',
             '-H', 'content-type: application/json',
             '--data', requestBody,
@@ -307,22 +310,30 @@ async function callTelegram(method, payload) {
 
         return json.result;
     } catch (error) {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'content-type': 'application/json'
-            },
-            body: requestBody,
-            signal: AbortSignal.timeout(SUPPORT_TELEGRAM_FETCH_TIMEOUT_MS)
-        });
-
-        const json = await response.json().catch(() => null);
-        if (!response.ok || !json || json.ok !== true) {
-            const description = String(json?.description || `Telegram API ${response.status}`);
-            throw createHttpError(502, description, 'SUPPORT_TELEGRAM_API_ERROR');
+        if (!useFetchFallback) {
+            throw createHttpError(502, error?.message || 'Telegram API unavailable', 'SUPPORT_TELEGRAM_API_ERROR');
         }
 
-        return json.result;
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json'
+                },
+                body: requestBody,
+                signal: AbortSignal.timeout(fetchTimeoutMs)
+            });
+
+            const json = await response.json().catch(() => null);
+            if (!response.ok || !json || json.ok !== true) {
+                const description = String(json?.description || `Telegram API ${response.status}`);
+                throw createHttpError(502, description, 'SUPPORT_TELEGRAM_API_ERROR');
+            }
+
+            return json.result;
+        } catch (fallbackError) {
+            throw createHttpError(502, fallbackError?.message || error?.message || 'Telegram API unavailable', 'SUPPORT_TELEGRAM_API_ERROR');
+        }
     }
 }
 
@@ -1042,6 +1053,9 @@ async function syncSupportUpdates(db = pool) {
             limit: 100,
             timeout: 0,
             allowed_updates: ['message', 'edited_message', 'channel_post', 'edited_channel_post']
+        }, {
+            useFetchFallback: false,
+            curlMaxTimeSec: 8
         });
 
         if (!Array.isArray(updates) || updates.length === 0) {
