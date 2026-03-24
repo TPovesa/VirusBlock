@@ -20,44 +20,51 @@ export function LinuxPage() {
   return (
     <div className="page-stack platform-story-shell">
       <section className="platform-hero">
-        <article className="platform-hero-card">
-          <div className="platform-hero-copy">
-            <h1>NeuralV для Linux</h1>
-            <p>На Linux основной путь один: установка через NV. Это самый короткий и поддерживаемый сценарий.</p>
-            <div className="platform-hero-actions">
-              <a className="nv-button" href="#linux-install">Установка через NV</a>
+        <div className="platform-hero-center">
+          <article className="platform-hero-card platform-hero-card-centered">
+            <div className="platform-hero-copy platform-hero-copy-centered">
+              <h1>NeuralV для Linux</h1>
+              <p>На Linux основной и поддерживаемый путь один: установка через NV. Так проще держать клиент в актуальном состоянии и не плодить лишние сценарии.</p>
+              <div className="platform-hero-actions">
+                <a className="nv-button" href="#linux-install">Установка через NV</a>
+              </div>
             </div>
-          </div>
-          <div className="platform-hero-grid">
-            <div className="platform-main-stat">
-              <span className="story-scene-kicker">Версия и требования</span>
-              <strong>{version}</strong>
-              <p>{requirement}</p>
+            <div className="platform-hero-grid platform-hero-grid-centered">
+              <div className="platform-main-stat">
+                <span className="story-scene-kicker">Версия и требования</span>
+                <strong>{version}</strong>
+                <p>{requirement}</p>
+              </div>
+              <div className="platform-meta-chip">GUI {version}</div>
+              <div className="platform-meta-chip">CLI {shellVersion}</div>
+              <div className="platform-meta-chip">Только NV</div>
             </div>
-            <div className="platform-meta-chip">GUI {version}</div>
-            <div className="platform-meta-chip">CLI {shellVersion}</div>
-            <div className="platform-meta-chip">Только NV</div>
-          </div>
-        </article>
+          </article>
+        </div>
       </section>
 
       <div className="story-track">
         <StoryScene
           compact
           title="Один поддерживаемый маршрут"
-          body="NV ставит клиент и помогает держать установку в актуальном состоянии. Поэтому на Linux мы ведём сразу в этот сценарий."
-          accent="Без лишней витрины пакетов и длинных инструкций."
+          body="NV ставит клиент и помогает держать установку в актуальном состоянии. Поэтому на Linux мы не распыляемся на витрину из разных пакетов, а ведём сразу в основной сценарий."
+          accent="Один путь установки вместо набора случайных вариантов."
           visual="linux"
         />
       </div>
 
       <section className="platform-install-shell" id="linux-install">
-        <h2>Установка через NV</h2>
-        <article className="platform-command-card">
-          <h3>Команда</h3>
-          <p>Подходит для обычной установки и последующих обновлений.</p>
-          <div className="command-card"><pre>{'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh\nnv install @lvls/neuralv'}</pre></div>
-        </article>
+        <div className="platform-section-heading">
+          <h2>Установка через NV</h2>
+          <p>Обычная установка и дальнейшие обновления идут через одну командную цепочку.</p>
+        </div>
+        <div className="platform-install-grid platform-install-grid-single">
+          <article className="platform-command-card platform-command-card-wide">
+            <h3>Команда</h3>
+            <p>Подходит для новой установки и для поддержания клиента в актуальном состоянии.</p>
+            <div className="command-card"><pre>{'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh\nnv install @lvls/neuralv'}</pre></div>
+          </article>
+        </div>
       </section>
     </div>
   );
