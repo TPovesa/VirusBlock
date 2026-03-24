@@ -206,7 +206,6 @@ export function AppShell() {
         }
       }
       setSupportState(nextState);
-      setSupportOptimisticMessages((current) => current.filter((message) => message.failed));
       return;
     }
 
@@ -308,7 +307,7 @@ export function AppShell() {
     }
     setSupportOptimisticMessages((current) => current.filter((entry) => entry.id !== message.id));
     await handleSupportSend(payload);
-  }, []);
+  }, [handleSupportSend]);
 
   const widgetUnavailable = useMemo(() => {
     if (!ready) {

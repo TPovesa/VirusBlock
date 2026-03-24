@@ -1505,7 +1505,7 @@ function mapSupportChatMessage(value: Record<string, unknown> | null | undefined
                 : null,
             fileSizeBytes: typeof record.file_size_bytes === 'number'
               ? record.file_size_bytes
-              : Number(record.file_size_bytes || record.fileSizeBytes || 0) || null,
+              : Number(record.file_size_bytes || record.fileSizeBytes || record.size_bytes || 0) || null,
             width: typeof record.width === 'number' ? record.width : Number(record.width || 0) || null,
             height: typeof record.height === 'number' ? record.height : Number(record.height || 0) || null,
             durationSeconds: typeof record.duration_seconds === 'number'
