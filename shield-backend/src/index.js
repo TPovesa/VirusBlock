@@ -19,10 +19,12 @@ const logsRoutes = require('./routes/logs');
 const verifiedAppsRoutes = require('./routes/verifiedApps');
 const profileOverviewRoutes = require('./routes/profileOverview');
 const supportChatRoutes = require('./routes/supportChat');
+const releaseNotifierRoutes = require('./routes/releaseNotifier');
 const { resumePendingDeepScans } = require('./services/deepScanService');
 const { resumePendingDesktopScans } = require('./services/desktopScanService');
 const { resumePendingVerifiedAppsJobs } = require('./services/verifiedAppsService');
 const { ensureSupportChatSchema } = require('./services/supportChatService');
+const { ensureReleaseNotifierSchema, syncReleaseNotifierCommands } = require('./services/releaseNotifierService');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -98,6 +100,7 @@ app.use('/api/network-protection', networkProtectionRoutes);
 app.use('/api/releases', releasesRoutes);
 app.use('/api/profile', profileOverviewRoutes);
 app.use('/api', supportChatRoutes);
+app.use('/api', releaseNotifierRoutes);
 app.use('/api', verifiedAppsRoutes);
 
 function buildHealthPayload() {
@@ -143,6 +146,12 @@ app.listen(PORT, '0.0.0.0', () => {
     });
     ensureSupportChatSchema().catch((error) => {
         console.error('Failed to ensure support chat schema:', error);
+    });
+    ensureReleaseNotifierSchema().catch((error) => {
+        console.error('Failed to ensure release notifier schema:', error);
+    });
+    syncReleaseNotifierCommands().catch((error) => {
+        console.error('Failed to sync release notifier bot commands:', error);
     });
 });
 

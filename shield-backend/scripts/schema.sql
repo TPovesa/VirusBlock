@@ -116,6 +116,12 @@ CREATE TABLE IF NOT EXISTS support_chat_meta (
     updated_at BIGINT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS release_notifier_meta (
+    meta_key VARCHAR(120) PRIMARY KEY,
+    meta_value LONGTEXT DEFAULT NULL,
+    updated_at BIGINT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS auth_sessions (
     id VARCHAR(36) PRIMARY KEY,
     user_id VARCHAR(36) NOT NULL,
