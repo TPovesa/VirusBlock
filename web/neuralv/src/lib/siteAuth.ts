@@ -1457,64 +1457,63 @@ function mapSupportChatMessage(value: Record<string, unknown> | null | undefined
   if (!value || typeof value !== 'object') {
     return null;
   }
-  const attachments = Array.isArray(value.attachments)
-    ? value.attachments
-        .map((entry) => {
-          if (!entry || typeof entry !== 'object') {
-            return null;
-          }
-          const record = entry as Record<string, unknown>;
-          const kind = String(record.kind || '').trim().toLowerCase();
-          const fallbackKind = String(record.type || '').trim().toLowerCase();
-          const resolvedKind = kind === 'photo' || kind === 'video'
-            ? kind
-            : fallbackKind === 'photo' || fallbackKind === 'video'
-              ? fallbackKind
-              : '';
-          if (resolvedKind !== 'photo' && resolvedKind !== 'video') {
-            return null;
-          }
-          const url = typeof record.url === 'string'
-            ? record.url
-            : typeof record.media_url === 'string'
-              ? record.media_url
-              : typeof record.mediaUrl === 'string'
-                ? record.mediaUrl
-                : '';
-          if (!url) {
-            return null;
-          }
-          return {
-            id: typeof record.id === 'string' ? record.id : `${resolvedKind}-${Math.random().toString(36).slice(2)}`,
-            kind: resolvedKind,
-            url,
-            thumbnailUrl: typeof record.thumbnail_url === 'string'
-              ? record.thumbnail_url
-              : typeof record.thumbnailUrl === 'string'
-                ? record.thumbnailUrl
-                : null,
-            mimeType: typeof record.mime_type === 'string'
-              ? record.mime_type
-              : typeof record.mimeType === 'string'
-                ? record.mimeType
-                : null,
-            fileName: typeof record.file_name === 'string'
-              ? record.file_name
-              : typeof record.fileName === 'string'
-                ? record.fileName
-                : null,
-            fileSizeBytes: typeof record.file_size_bytes === 'number'
-              ? record.file_size_bytes
-              : Number(record.file_size_bytes || record.fileSizeBytes || record.size_bytes || 0) || null,
-            width: typeof record.width === 'number' ? record.width : Number(record.width || 0) || null,
-            height: typeof record.height === 'number' ? record.height : Number(record.height || 0) || null,
-            durationSeconds: typeof record.duration_seconds === 'number'
-              ? record.duration_seconds
-              : Number(record.duration_seconds || record.durationSeconds || 0) || null
-          } satisfies SiteSupportChatAttachment;
-        })
-        .filter((entry): entry is SiteSupportChatAttachment => Boolean(entry))
-    : [];
+  const attachments: SiteSupportChatAttachment[] = [];
+  if (Array.isArray(value.attachments)) {
+    value.attachments.forEach((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return;
+      }
+      const record = entry as Record<string, unknown>;
+      const kind = String(record.kind || '').trim().toLowerCase();
+      const fallbackKind = String(record.type || '').trim().toLowerCase();
+      const resolvedKind = kind === 'photo' || kind === 'video'
+        ? kind
+        : fallbackKind === 'photo' || fallbackKind === 'video'
+          ? fallbackKind
+          : '';
+      if (resolvedKind !== 'photo' && resolvedKind !== 'video') {
+        return;
+      }
+      const url = typeof record.url === 'string'
+        ? record.url
+        : typeof record.media_url === 'string'
+          ? record.media_url
+          : typeof record.mediaUrl === 'string'
+            ? record.mediaUrl
+            : '';
+      if (!url) {
+        return;
+      }
+      attachments.push({
+        id: typeof record.id === 'string' ? record.id : `${resolvedKind}-${Math.random().toString(36).slice(2)}`,
+        kind: resolvedKind as SiteSupportChatAttachmentKind,
+        url,
+        thumbnailUrl: typeof record.thumbnail_url === 'string'
+          ? record.thumbnail_url
+          : typeof record.thumbnailUrl === 'string'
+            ? record.thumbnailUrl
+            : null,
+        mimeType: typeof record.mime_type === 'string'
+          ? record.mime_type
+          : typeof record.mimeType === 'string'
+            ? record.mimeType
+            : null,
+        fileName: typeof record.file_name === 'string'
+          ? record.file_name
+          : typeof record.fileName === 'string'
+            ? record.fileName
+            : null,
+        fileSizeBytes: typeof record.file_size_bytes === 'number'
+          ? record.file_size_bytes
+          : Number(record.file_size_bytes || record.fileSizeBytes || record.size_bytes || 0) || null,
+        width: typeof record.width === 'number' ? record.width : Number(record.width || 0) || null,
+        height: typeof record.height === 'number' ? record.height : Number(record.height || 0) || null,
+        durationSeconds: typeof record.duration_seconds === 'number'
+          ? record.duration_seconds
+          : Number(record.duration_seconds || record.durationSeconds || 0) || null
+      });
+    });
+  }
   return {
     id: typeof value.id === 'string' ? value.id : `msg-${Math.random().toString(36).slice(2)}`,
     senderRole:
