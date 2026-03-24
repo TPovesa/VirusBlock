@@ -235,7 +235,6 @@ async function callReleaseNotifierTelegram(method, payload) {
         return json.result;
     } catch (error) {
         const { stdout } = await execFileAsync('curl', [
-            '--noproxy', '*',
             '--ipv4',
             '-sS',
             '--retry', '1',
