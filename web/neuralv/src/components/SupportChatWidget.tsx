@@ -137,6 +137,22 @@ export function SupportChatWidget({
   const listRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lastMessageId = messages[messages.length - 1]?.id;
+  const unreadBadge = launcherUnreadCount > 99 ? '99+' : launcherUnreadCount > 0 ? String(launcherUnreadCount) : null;
+  const unavailableState = unavailable ?? null;
+  const isUnavailable = Boolean(unavailableState);
+  const sendDisabled = inputDisabled || !canSend || !onSend || !draft.trim() || isSubmitting || sending || isUnavailable;
+  const surfaceStatus = useMemo(() => {
+    if (isUnavailable) {
+      return 'Недоступно';
+    }
+    if (sending || isSubmitting) {
+      return 'Отправка';
+    }
+    if (refreshing) {
+      return statusLabel || 'Обновляется';
+    }
+    return statusLabel || 'Онлайн';
+  }, [isSubmitting, isUnavailable, refreshing, sending, statusLabel]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -189,22 +205,6 @@ export function SupportChatWidget({
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, setIsOpen]);
-
-  const unreadBadge = launcherUnreadCount > 99 ? '99+' : launcherUnreadCount > 0 ? String(launcherUnreadCount) : null;
-  const isUnavailable = Boolean(unavailable);
-  const sendDisabled = inputDisabled || !canSend || !onSend || !draft.trim() || isSubmitting || sending || isUnavailable;
-  const surfaceStatus = useMemo(() => {
-    if (isUnavailable) {
-      return 'Недоступно';
-    }
-    if (sending || isSubmitting) {
-      return 'Отправка';
-    }
-    if (refreshing) {
-      return statusLabel || 'Обновляется';
-    }
-    return statusLabel || 'Онлайн';
-  }, [isSubmitting, isUnavailable, refreshing, sending, statusLabel]);
 
   const handleOpen = useCallback(() => setIsOpen(true), [setIsOpen]);
   const handleClose = useCallback(() => setIsOpen(false), [setIsOpen]);
@@ -292,11 +292,11 @@ export function SupportChatWidget({
             {isUnavailable ? (
               <div className="support-chat__unavailable">
                 <div className="support-chat__unavailable-icon" aria-hidden="true">!</div>
-                <strong>{unavailable.title || 'Чат сейчас недоступен'}</strong>
-                <p>{unavailable.description || 'Панель уже готова, но соединение с поддержкой пока не открыто.'}</p>
-                {unavailable.actionLabel && unavailable.onAction ? (
-                  <button className="nv-button" type="button" onClick={unavailable.onAction}>
-                    {unavailable.actionLabel}
+                <strong>{unavailableState?.title || 'Чат сейчас недоступен'}</strong>
+                <p>{unavailableState?.description || 'Панель уже готова, но соединение с поддержкой пока не открыто.'}</p>
+                {unavailableState?.actionLabel && unavailableState.onAction ? (
+                  <button className="nv-button" type="button" onClick={unavailableState.onAction}>
+                    {unavailableState.actionLabel}
                   </button>
                 ) : null}
               </div>
