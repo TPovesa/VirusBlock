@@ -167,8 +167,7 @@ export function AppShell() {
   const accountLinks = useMemo(() => {
     if (ready && session) {
       return [
-        { to: '/profile', label: user?.name || 'Профиль' },
-        { to: '/telegram-admin', label: 'Telegram Admin' }
+        { to: '/profile', label: user?.name || 'Профиль' }
       ];
     }
     return [

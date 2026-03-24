@@ -13,7 +13,6 @@ import { ProfilePage } from './pages/ProfilePage';
 import { AccountActionPage } from './pages/AccountActionPage';
 import { VerifiedAppsPage } from './pages/VerifiedAppsPage';
 import { TelegramPage } from './pages/TelegramPage';
-import { TelegramAdminPage } from './pages/TelegramAdminPage';
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { ready, session } = useSiteAuth();
@@ -53,7 +52,6 @@ export default function App() {
         <Route path="/windows" element={<WindowsPage />} />
         <Route path="/linux" element={<LinuxPage />} />
         <Route path="/telegram" element={<TelegramPage />} />
-        <Route path="/telegram-admin" element={<RequireAuth><TelegramAdminPage /></RequireAuth>} />
         <Route path="/verified-apps" element={<VerifiedAppsPage />} />
         <Route path="/login" element={<RequireGuest><LoginPage /></RequireGuest>} />
         <Route path="/register" element={<RequireGuest><RegisterPage /></RequireGuest>} />
