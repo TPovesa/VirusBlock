@@ -229,8 +229,8 @@
   gap: 30px;
   align-items: center;
   padding: 30px;
-  transform: translateY(calc((1 - var(--scene-progress, 0)) * 64px)) scale(calc(0.92 + var(--scene-progress, 0) * 0.08));
-  opacity: calc(0.24 + var(--scene-progress, 0) * 0.76);
+  transform: translateY(calc((1 - var(--scene-progress-eased, 0)) * 72px)) scale(calc(0.88 + var(--scene-progress-eased, 0) * 0.12));
+  opacity: calc(0.18 + var(--scene-progress-eased, 0) * 0.82);
   transition: transform 140ms linear, opacity 140ms linear;
 }
 
@@ -238,8 +238,8 @@
   display: grid;
   gap: 14px;
   align-content: start;
-  transform: translateY(calc((1 - var(--scene-progress, 0)) * 24px));
-  opacity: calc(0.5 + var(--scene-progress, 0) * 0.5);
+  transform: translateY(calc((1 - var(--scene-progress-eased, 0)) * 28px));
+  opacity: calc(0.42 + var(--scene-progress-eased, 0) * 0.58);
 }
 
 .story-scene-kicker {
@@ -275,7 +275,7 @@
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: linear-gradient(180deg, rgba(20, 23, 29, 0.96), rgba(12, 14, 18, 0.98));
   overflow: hidden;
-  transform: translateY(calc((1 - var(--scene-progress, 0)) * -18px));
+  transform: translate3d(0, calc((1 - var(--scene-progress-eased, 0)) * -26px), 0) scale(calc(0.95 + var(--scene-depth, 0) * 0.08));
 }
 
 .story-scene-visual-wrap::before {
@@ -315,18 +315,18 @@
 }
 
 .story-layer-base {
-  opacity: calc(0.32 + var(--scene-progress, 0) * 0.52);
-  transform: translate3d(calc((1 - var(--scene-progress, 0)) * -20px), calc((1 - var(--scene-progress, 0)) * 18px), 0) scale(calc(0.9 + var(--scene-progress, 0) * 0.1));
+  opacity: calc(0.24 + var(--scene-progress-eased, 0) * 0.6);
+  transform: translate3d(calc((1 - var(--scene-progress-eased, 0)) * -34px), calc((1 - var(--scene-progress-eased, 0)) * 24px), 0) scale(calc(0.86 + var(--scene-progress-eased, 0) * 0.14));
 }
 
 .story-layer-mid {
-  opacity: calc(0.38 + var(--scene-progress, 0) * 0.6);
-  transform: translate3d(0, calc((1 - var(--scene-progress, 0)) * -12px), 0) scale(calc(0.92 + var(--scene-progress, 0) * 0.08));
+  opacity: calc(0.3 + var(--scene-progress-eased, 0) * 0.66);
+  transform: translate3d(0, calc((1 - var(--scene-progress-eased, 0)) * -22px), 0) scale(calc(0.88 + var(--scene-progress-eased, 0) * 0.12));
 }
 
 .story-layer-top {
-  opacity: calc(0.44 + var(--scene-progress, 0) * 0.56);
-  transform: translate3d(calc((1 - var(--scene-progress, 0)) * 18px), calc((1 - var(--scene-progress, 0)) * -20px), 0) scale(calc(0.86 + var(--scene-progress, 0) * 0.14));
+  opacity: calc(0.32 + var(--scene-progress-eased, 0) * 0.68);
+  transform: translate3d(calc((1 - var(--scene-progress-eased, 0)) * 28px), calc((1 - var(--scene-progress-eased, 0)) * -30px), 0) scale(calc(0.8 + var(--scene-progress-eased, 0) * 0.2));
 }
 
 .story-panel-outline,
@@ -381,9 +381,9 @@
   stroke: rgba(197, 91, 103, 0.58);
   stroke-width: 5.5;
   fill: none;
-  opacity: calc(var(--scene-progress, 0) * 0.9);
+  opacity: calc(var(--scene-progress-eased, 0) * 0.96);
   stroke-dasharray: 1 220;
-  stroke-dashoffset: calc((1 - var(--scene-progress, 0)) * 220);
+  stroke-dashoffset: calc((1 - var(--scene-progress-eased, 0)) * 220);
 }
 
 .story-grid-link {
@@ -396,7 +396,7 @@
 }
 
 .story-node {
-  transform: scale(calc(0.84 + var(--scene-progress, 0) * 0.26));
+  transform: scale(calc(0.72 + var(--scene-progress-eased, 0) * 0.36));
 }
 
 .story-node-soft {
@@ -415,8 +415,8 @@
   fill: none;
   stroke: rgba(197, 91, 103, 0.24);
   stroke-width: 2;
-  opacity: calc(var(--scene-progress, 0) * 0.9);
-  transform: scale(calc(0.66 + var(--scene-progress, 0) * 0.44));
+  opacity: calc(var(--scene-progress-eased, 0) * 0.95);
+  transform: scale(calc(0.48 + var(--scene-progress-eased, 0) * 0.64));
 }
 
 .story-ring-outer {
@@ -455,13 +455,13 @@
 
 .story-sweep-bar {
   fill: rgba(197, 91, 103, 0.36);
-  opacity: calc(0.28 + var(--scene-progress, 0) * 0.72);
-  transform: translateX(calc((1 - var(--scene-progress, 0)) * -96px)) scaleX(calc(0.82 + var(--scene-progress, 0) * 0.18));
+  opacity: calc(0.18 + var(--scene-progress-eased, 0) * 0.82);
+  transform: translateX(calc((1 - var(--scene-progress-eased, 0)) * -126px)) scaleX(calc(0.76 + var(--scene-progress-eased, 0) * 0.24));
 }
 
 .story-highlight-pill {
-  opacity: calc(0.24 + var(--scene-progress, 0) * 0.76);
-  transform: translateX(calc((1 - var(--scene-progress, 0)) * -28px));
+  opacity: calc(0.18 + var(--scene-progress-eased, 0) * 0.82);
+  transform: translateX(calc((1 - var(--scene-progress-eased, 0)) * -34px));
 }
 
 .story-faq-section,

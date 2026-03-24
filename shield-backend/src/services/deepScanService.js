@@ -13,6 +13,7 @@ const {
 } = require('../utils/deepScanHeuristics');
 const { runAnalyzer } = require('./apkStaticAnalysis');
 const { isAiConfigured, triageDeepScanFindings } = require('./aiExplainService');
+const { findTrustedVerifiedAppMatch } = require('./verifiedAppsService');
 
 const VT_API_BASE = (process.env.VT_API_BASE || 'https://www.virustotal.com/api/v3').replace(/\/$/, '');
 const VT_TIMEOUT_MS = parseInt(process.env.VT_TIMEOUT_MS || '8000', 10);
@@ -1643,6 +1644,63 @@ async function runDeepScanJob(jobId) {
 
     try {
         await ensureJobNotStopped(jobId, controller.signal);
+        const trustedMatch = await findTrustedVerifiedAppMatch({
+            sha256: normalized.sha256 || normalized.uploadedApkSha256 || null,
+            platform: normalized.platform || 'android',
+            appName: normalized.appName || normalized.packageName || request.app_name || ''
+        }).catch(() => ({ kind: 'none', app: null }));
+
+        if (trustedMatch.kind === 'exact' && trustedMatch.app) {
+            const completedAt = nowMs();
+            const summary = {
+                scanned_at: completedAt,
+                verdict: 'clean',
+                risk_score: 0,
+                recommendations: ['Совпадает с проверенной безопасной версией приложения.'],
+                metadata: {
+                    next_action: 'poll',
+                    trusted_app: trustedMatch.app
+                },
+                sources: [],
+                virus_total: { status: 'skipped' },
+                analyzer: {
+                    ok: false,
+                    error: null
+                },
+                triage: null
+            };
+
+            await pool.query(
+                `UPDATE deep_scan_jobs
+                 SET status = 'COMPLETED',
+                     verdict = ?,
+                     risk_score = ?,
+                     vt_status = ?,
+                     vt_malicious = ?,
+                     vt_suspicious = ?,
+                     vt_harmless = ?,
+                     summary_json = ?,
+                     findings_json = ?,
+                     completed_at = ?,
+                     updated_at = ?
+                 WHERE id = ?`,
+                [
+                    'clean',
+                    0,
+                    'skipped',
+                    null,
+                    null,
+                    null,
+                    JSON.stringify(summary),
+                    JSON.stringify([]),
+                    completedAt,
+                    completedAt,
+                    jobId
+                ]
+            );
+            return;
+        }
+
         let vt = { status: normalized.sha256 ? 'pending' : 'skipped' };
         try {
             vt = await lookupVirusTotalByHash(normalized.sha256 || normalized.uploadedApkSha256, controller.signal);
@@ -1651,6 +1709,32 @@ async function runDeepScanJob(jobId) {
         }
 
         let heuristics = analyzeHeuristics(normalized, vt);
+        if (trustedMatch.kind === 'mismatch' && trustedMatch.app) {
+            heuristics = {
+                ...heuristics,
+                verdict: 'suspicious',
+                riskScore: Math.max(Number(heuristics.riskScore || 0), 78),
+                findings: [
+                    ...(Array.isArray(heuristics.findings) ? heuristics.findings : []),
+                    {
+                        type: 'trusted_hash_mismatch',
+                        severity: 'high',
+                        title: 'Хеш не совпадает с проверенной версией',
+                        detail: `Для ${trustedMatch.app.app_name} на сервере есть безопасная версия, но этот файл имеет другой хеш. Это может быть старая версия или подмена.`,
+                        source: 'NeuralV Verified Apps',
+                        score: 44,
+                        evidence: {
+                            verified_app_id: trustedMatch.app.id,
+                            expected_sha256: trustedMatch.app.sha256 || null
+                        }
+                    }
+                ],
+                recommendations: Array.from(new Set([
+                    ...(Array.isArray(heuristics.recommendations) ? heuristics.recommendations : []),
+                    'Скачайте официальную версию приложения или проверьте источник файла.'
+                ]))
+            };
+        }
         const heavyStage = shouldRunHeavyApkStage({ normalized, vt, heuristics });
         await ensureJobNotStopped(jobId, controller.signal);
 

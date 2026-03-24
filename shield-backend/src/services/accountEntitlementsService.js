@@ -116,7 +116,9 @@ function normalizeAccountUser(user) {
         is_premium: normalizeBoolean(user.is_premium),
         premium_expires_at: normalizeNullableNumber(user.premium_expires_at),
         is_dev_mode: normalizeBoolean(user.is_dev_mode),
-        developer_mode_activated_at: normalizeNullableNumber(user.developer_mode_activated_at)
+        developer_mode_activated_at: normalizeNullableNumber(user.developer_mode_activated_at),
+        is_verified_developer: normalizeBoolean(user.is_verified_developer),
+        verified_developer_at: normalizeNullableNumber(user.verified_developer_at)
     };
     normalized.is_developer_mode = isDeveloperModeEnabled(normalized);
     normalized.developer_mode_source = resolveDeveloperModeSource(normalized);
@@ -136,7 +138,9 @@ function sanitizeAccountUser(user) {
         premium_expires_at: normalized.premium_expires_at,
         is_developer_mode: normalized.is_developer_mode,
         developer_mode_source: normalized.developer_mode_source,
-        developer_mode_activated_at: normalized.developer_mode_activated_at
+        developer_mode_activated_at: normalized.developer_mode_activated_at,
+        is_verified_developer: normalized.is_verified_developer,
+        verified_developer_at: normalized.verified_developer_at
     };
 }
 
@@ -157,6 +161,8 @@ async function getUsersColumnState(db = pool) {
             hasIsDevMode: names.has('is_dev_mode'),
             hasIsDeveloperMode: names.has('is_developer_mode'),
             hasDeveloperModeActivatedAt: names.has('developer_mode_activated_at'),
+            hasIsVerifiedDeveloper: names.has('is_verified_developer'),
+            hasVerifiedDeveloperAt: names.has('verified_developer_at'),
             hasCreatedAt: names.has('created_at'),
             hasUpdatedAt: names.has('updated_at')
         };
@@ -183,7 +189,9 @@ function buildUserSelect(columns, options = {}) {
         columns.hasPremiumExpiresAt ? `${prefix}premium_expires_at AS premium_expires_at` : 'NULL AS premium_expires_at',
         columns.hasIsDevMode ? `${prefix}is_dev_mode AS is_dev_mode` : '0 AS is_dev_mode',
         columns.hasIsDeveloperMode ? `${prefix}is_developer_mode AS is_developer_mode` : 'NULL AS is_developer_mode',
-        columns.hasDeveloperModeActivatedAt ? `${prefix}developer_mode_activated_at AS developer_mode_activated_at` : 'NULL AS developer_mode_activated_at'
+        columns.hasDeveloperModeActivatedAt ? `${prefix}developer_mode_activated_at AS developer_mode_activated_at` : 'NULL AS developer_mode_activated_at',
+        columns.hasIsVerifiedDeveloper ? `${prefix}is_verified_developer AS is_verified_developer` : '0 AS is_verified_developer',
+        columns.hasVerifiedDeveloperAt ? `${prefix}verified_developer_at AS verified_developer_at` : 'NULL AS verified_developer_at'
     ];
     if (includePasswordHash) {
         fields.push(`${prefix}password_hash AS password_hash`);

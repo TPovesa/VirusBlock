@@ -5,7 +5,8 @@ const navItems = [
   { to: '/', label: 'Главная' },
   { to: '/android', label: 'Android' },
   { to: '/windows', label: 'Windows' },
-  { to: '/linux', label: 'Linux' }
+  { to: '/linux', label: 'Linux' },
+  { to: '/verified-apps', label: 'Проверенные' }
 ];
 
 export function AppShell() {

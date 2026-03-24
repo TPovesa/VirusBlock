@@ -4,6 +4,7 @@ const SITE_AUTH_EVENT = 'neuralv-site-auth-changed';
 const ACCESS_REFRESH_SKEW_MS = 60_000;
 
 const AUTH_BASE_URL = String(import.meta.env.VITE_SITE_AUTH_BASE_URL || '/basedata/api/auth').replace(/\/+$/, '');
+const VERIFIED_APPS_BASE_URL = String(import.meta.env.VITE_SITE_VERIFIED_APPS_BASE_URL || '/basedata/api').replace(/\/+$/, '');
 
 export type SiteAuthUser = {
   id: string;
@@ -12,6 +13,8 @@ export type SiteAuthUser = {
   is_premium?: boolean;
   premium_expires_at?: string | number | null;
   is_developer_mode?: boolean;
+  is_verified_developer?: boolean;
+  verified_developer_at?: string | number | null;
   created_at?: string | number | null;
 };
 
@@ -96,6 +99,64 @@ export type SitePasswordResetPreview = {
   expiresAt?: string | number | null;
 };
 
+export type SiteDeveloperApplication = {
+  id?: string;
+  status?: string;
+  message?: string;
+  createdAt?: string | number | null;
+  updatedAt?: string | number | null;
+  mailedAt?: string | number | null;
+  reviewedAt?: string | number | null;
+  reviewNote?: string | null;
+};
+
+export type SiteDeveloperPortalState = {
+  verifiedDeveloper: boolean;
+  verifiedDeveloperAt?: string | number | null;
+  user?: SiteAuthUser | null;
+  latestApplication?: SiteDeveloperApplication | null;
+  developerMode?: {
+    enabled: boolean;
+    source?: string | null;
+  };
+  stats?: {
+    total: number;
+    safe: number;
+    running: number;
+    queued: number;
+    failed: number;
+  };
+};
+
+export type SiteVerifiedApp = {
+  id?: string;
+  platform: 'android' | 'windows' | 'linux' | string;
+  appName: string;
+  authorName?: string;
+  repositoryUrl?: string;
+  releaseArtifactUrl?: string;
+  officialSiteUrl?: string;
+  avatarUrl?: string;
+  sha256?: string;
+  status?: string;
+  publicSummary?: string;
+  errorMessage?: string;
+  artifactFileName?: string;
+  artifactSizeBytes?: number;
+  riskScore?: number;
+  verifiedAt?: string | number | null;
+  createdAt?: string | number | null;
+  updatedAt?: string | number | null;
+};
+
+export type SiteVerifiedAppReviewRequest = {
+  appName: string;
+  platform: 'android' | 'windows' | 'linux';
+  repositoryUrl: string;
+  releaseArtifactUrl: string;
+  officialSiteUrl?: string;
+};
+
 type AuthResponsePayload = {
   token: string;
   refresh_token: string;
@@ -107,6 +168,7 @@ type AuthResponsePayload = {
 
 type RequestOptions = RequestInit & {
   allowRefresh?: boolean;
+  baseUrl?: string;
 };
 
 function hasWindow() {
@@ -184,7 +246,23 @@ function translateKnownMessage(value: string): string {
     'Invalid developer key': 'Ключ разработчика неверный.',
     'Developer mode enabled': 'Режим разработчика включён.',
     'Developer mode disabled': 'Режим разработчика выключен.',
-    'Account deleted': 'Аккаунт удалён.'
+    'Account deleted': 'Аккаунт удалён.',
+    'Developer application email is not configured': 'Заявки разработчиков временно недоступны.',
+    'Developer verification required': 'Нужен подтверждённый статус разработчика.',
+    'developer_applications table is missing': 'Раздел заявок разработчиков временно недоступен.',
+    'verified_apps table is missing': 'Каталог проверенных приложений временно недоступен.',
+    'Developer application already pending': 'Заявка уже отправлена и ждёт подтверждения.',
+    'Developer application cooldown active': 'Новая заявка пока недоступна. Подождите немного.',
+    'Developer status already granted': 'Статус разработчика уже подтверждён.',
+    'Too many active verification jobs': 'Сначала дождитесь завершения уже запущенных проверок.',
+    'Verification submit cooldown active': 'Слишком частые заявки на проверку. Подождите немного.',
+    'Verification already exists for this artifact': 'Для этого релиза проверка уже есть.',
+    'Application name is required': 'Укажите название приложения.',
+    'Unsupported platform': 'Платформа указана неверно.',
+    'Public GitHub repository URL required': 'Нужна ссылка на публичный GitHub-репозиторий.',
+    'GitHub release artifact URL required': 'Нужна ссылка на точный release artifact.',
+    'Artifact must belong to the same repository': 'Релизный файл должен принадлежать этому же репозиторию.',
+    'Invalid official site URL': 'Укажите корректный адрес сайта.'
   };
   return map[normalized] || normalized;
 }
@@ -392,13 +470,22 @@ async function parseResponse<T>(response: Response): Promise<SiteAuthResult<T>> 
 }
 
 async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<SiteAuthResult<T>> {
+  const {
+    allowRefresh = true,
+    baseUrl = AUTH_BASE_URL,
+    headers,
+    body,
+    ...fetchOptions
+  } = options;
+
   try {
-    const response = await fetch(`${AUTH_BASE_URL}${path}`, {
-      ...options,
+    const response = await fetch(`${baseUrl}${path}`, {
+      ...fetchOptions,
+      body,
       headers: {
         Accept: 'application/json',
-        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-        ...(options.headers || {})
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(headers || {})
       }
     });
 
@@ -406,7 +493,7 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
 
     if (
       parsed.status === 401 &&
-      options.allowRefresh !== false &&
+      allowRefresh !== false &&
       !path.endsWith('/refresh') &&
       !path.endsWith('/login') &&
       !path.endsWith('/login/start') &&
@@ -414,10 +501,11 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
     ) {
       const refreshed = await refreshStoredSiteSession();
       if (refreshed.ok && refreshed.data) {
-        const retryHeaders = new Headers(options.headers || {});
+        const retryHeaders = new Headers(headers || {});
         retryHeaders.set('Authorization', `Bearer ${refreshed.data.token}`);
-        const retryResponse = await fetch(`${AUTH_BASE_URL}${path}`, {
-          ...options,
+        const retryResponse = await fetch(`${baseUrl}${path}`, {
+          ...fetchOptions,
+          body,
           headers: retryHeaders
         });
         return parseResponse<T>(retryResponse);
@@ -978,6 +1066,214 @@ export async function confirmProfileAction(
       user: (result.data?.user as SiteAuthUser | null | undefined) ?? undefined
     }
   };
+}
+
+function mapDeveloperApplication(value: Record<string, unknown> | null | undefined): SiteDeveloperApplication | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  return {
+    id: typeof value.id === 'string' ? value.id : undefined,
+    status: typeof value.status === 'string' ? value.status : undefined,
+    message: typeof value.message === 'string' ? value.message : undefined,
+    createdAt: value.created_at as string | number | null | undefined,
+    updatedAt: value.updated_at as string | number | null | undefined,
+    mailedAt: value.mailed_at as string | number | null | undefined,
+    reviewedAt: value.reviewed_at as string | number | null | undefined,
+    reviewNote: typeof value.review_note === 'string' ? value.review_note : null
+  };
+}
+
+function mapDeveloperPortalState(value: Record<string, unknown> | null | undefined): SiteDeveloperPortalState {
+  const developer = value?.developer as Record<string, unknown> | undefined;
+  const stats = value?.stats as Record<string, unknown> | undefined;
+  const user = value?.user as Record<string, unknown> | undefined;
+  return {
+    verifiedDeveloper: Boolean(developer?.is_verified_developer),
+    verifiedDeveloperAt: developer?.verified_developer_at as string | number | null | undefined,
+    user: user ? user as unknown as SiteAuthUser : null,
+    latestApplication: mapDeveloperApplication(developer?.last_application as Record<string, unknown> | null | undefined),
+    developerMode: {
+      enabled: Boolean((value?.developer_mode as Record<string, unknown> | undefined)?.enabled),
+      source: typeof (value?.developer_mode as Record<string, unknown> | undefined)?.source === 'string'
+        ? String((value?.developer_mode as Record<string, unknown>).source)
+        : null
+    },
+    stats: {
+      total: Number(stats?.total || 0),
+      safe: Number(stats?.safe || 0),
+      running: Number(stats?.running || 0),
+      queued: Number(stats?.queued || 0),
+      failed: Number(stats?.failed || 0)
+    }
+  };
+}
+
+function mapVerifiedApp(value: Record<string, unknown> | null | undefined): SiteVerifiedApp | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  return {
+    id: typeof value.id === 'string' ? value.id : undefined,
+    platform: typeof value.platform === 'string' ? value.platform.toLowerCase() : 'windows',
+    appName: typeof value.app_name === 'string'
+      ? value.app_name
+      : (typeof value.name === 'string' ? value.name : 'Без названия'),
+    authorName: typeof value.author_name === 'string' ? value.author_name : undefined,
+    repositoryUrl: typeof value.repository_url === 'string' ? value.repository_url : undefined,
+    releaseArtifactUrl: typeof value.release_artifact_url === 'string' ? value.release_artifact_url : undefined,
+    officialSiteUrl: typeof value.official_site_url === 'string' ? value.official_site_url : undefined,
+    avatarUrl: typeof value.avatar_url === 'string' ? value.avatar_url : undefined,
+    sha256: typeof value.sha256 === 'string' ? value.sha256 : undefined,
+    status: typeof value.status === 'string' ? value.status : undefined,
+    publicSummary: typeof value.public_summary === 'string' ? value.public_summary : undefined,
+    errorMessage: typeof value.error_message === 'string' ? value.error_message : undefined,
+    artifactFileName: typeof value.artifact_file_name === 'string' ? value.artifact_file_name : undefined,
+    artifactSizeBytes: typeof value.artifact_size_bytes === 'number'
+      ? value.artifact_size_bytes
+      : Number(value.artifact_size_bytes || 0) || undefined,
+    riskScore: typeof value.risk_score === 'number' ? value.risk_score : Number(value.risk_score || 0) || undefined,
+    verifiedAt: value.verified_at as string | number | null | undefined,
+    createdAt: value.created_at as string | number | null | undefined,
+    updatedAt: value.updated_at as string | number | null | undefined
+  };
+}
+
+export async function fetchDeveloperPortalState(): Promise<SiteAuthResult<SiteDeveloperPortalState>> {
+  const sessionResult = await getAuthorizedSession();
+  if (!sessionResult.ok || !sessionResult.data) {
+    return sessionResult as SiteAuthResult<SiteDeveloperPortalState>;
+  }
+
+  const result = await requestJson<Record<string, unknown>>('/profile/developer/status', {
+    method: 'GET',
+    baseUrl: VERIFIED_APPS_BASE_URL,
+    headers: { Authorization: `Bearer ${sessionResult.data.token}` }
+  });
+
+  if (!result.ok) {
+    return result as SiteAuthResult<SiteDeveloperPortalState>;
+  }
+
+  return {
+    ok: true,
+    data: mapDeveloperPortalState((result.data?.status as Record<string, unknown> | undefined) || result.data)
+  };
+}
+
+export async function submitDeveloperApplication(
+  message: string
+): Promise<SiteAuthResult<{ message?: string; queued?: boolean; alreadyPending?: boolean }>> {
+  const sessionResult = await getAuthorizedSession();
+  if (!sessionResult.ok || !sessionResult.data) {
+    return sessionResult as SiteAuthResult<{ message?: string; queued?: boolean; alreadyPending?: boolean }>;
+  }
+
+  const result = await requestJson<Record<string, unknown>>('/profile/developer/apply', {
+    method: 'POST',
+    baseUrl: VERIFIED_APPS_BASE_URL,
+    body: JSON.stringify({ message }),
+    headers: { Authorization: `Bearer ${sessionResult.data.token}` }
+  });
+
+  if (!result.ok) {
+    return result as SiteAuthResult<{ message?: string; queued?: boolean; alreadyPending?: boolean }>;
+  }
+
+  return {
+    ok: true,
+    data: {
+      message: readMessage(result.data),
+      queued: true,
+      alreadyPending: false
+    }
+  };
+}
+
+export async function submitVerifiedAppReview(
+  payload: SiteVerifiedAppReviewRequest
+): Promise<SiteAuthResult<{ message?: string }>> {
+  const sessionResult = await getAuthorizedSession();
+  if (!sessionResult.ok || !sessionResult.data) {
+    return sessionResult as SiteAuthResult<{ message?: string }>;
+  }
+
+  const result = await requestJson<Record<string, unknown>>('/profile/developer/apps/verify', {
+    method: 'POST',
+    baseUrl: VERIFIED_APPS_BASE_URL,
+    body: JSON.stringify({
+      app_name: payload.appName,
+      platform: payload.platform,
+      repository_url: payload.repositoryUrl,
+      release_artifact_url: payload.releaseArtifactUrl,
+      official_site_url: payload.officialSiteUrl
+    }),
+    headers: { Authorization: `Bearer ${sessionResult.data.token}` }
+  });
+
+  if (!result.ok) {
+    return result as SiteAuthResult<{ message?: string }>;
+  }
+
+  return {
+    ok: true,
+    data: {
+      message: readMessage(result.data)
+    }
+  };
+}
+
+export async function fetchOwnVerifiedApps(): Promise<SiteAuthResult<SiteVerifiedApp[]>> {
+  const sessionResult = await getAuthorizedSession();
+  if (!sessionResult.ok || !sessionResult.data) {
+    return sessionResult as SiteAuthResult<SiteVerifiedApp[]>;
+  }
+
+  const result = await requestJson<{ apps?: Record<string, unknown>[] }>('/profile/developer/apps', {
+    method: 'GET',
+    baseUrl: VERIFIED_APPS_BASE_URL,
+    headers: { Authorization: `Bearer ${sessionResult.data.token}` }
+  });
+
+  if (!result.ok) {
+    return result as SiteAuthResult<SiteVerifiedApp[]>;
+  }
+
+  const items = Array.isArray(result.data?.apps)
+    ? result.data.apps.map((entry) => mapVerifiedApp(entry)).filter((entry): entry is SiteVerifiedApp => Boolean(entry))
+    : [];
+
+  return { ok: true, data: items };
+}
+
+export async function fetchPublicVerifiedApps(
+  options: { platform?: string; limit?: number } = {}
+): Promise<SiteAuthResult<SiteVerifiedApp[]>> {
+  const query = new URLSearchParams();
+  if (options.platform) {
+    query.set('platform', options.platform);
+  }
+  if (options.limit) {
+    query.set('limit', String(options.limit));
+  }
+  const path = `/verified-apps${query.toString() ? `?${query.toString()}` : ''}`;
+  const result = await requestJson<{ apps?: Record<string, unknown>[] }>(path, {
+    method: 'GET',
+    baseUrl: VERIFIED_APPS_BASE_URL,
+    allowRefresh: false
+  });
+
+  if (!result.ok) {
+    return result as SiteAuthResult<SiteVerifiedApp[]>;
+  }
+
+  const items = Array.isArray(result.data?.apps)
+    ? result.data.apps.map((entry) => mapVerifiedApp(entry)).filter((entry): entry is SiteVerifiedApp => Boolean(entry))
+    : [];
+
+  return { ok: true, data: items };
 }
 
 export function formatSessionExpiry(value: string | number | null | undefined): string {

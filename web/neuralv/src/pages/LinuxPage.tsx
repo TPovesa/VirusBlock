@@ -6,15 +6,9 @@ import '../styles/story.css';
 
 export function LinuxPage() {
   const linuxState = useReleaseManifest('linux');
-  const shellState = useReleaseManifest('shell');
   const linuxArtifact = useMemo(() => getArtifact(linuxState.manifest, 'linux'), [linuxState.manifest]);
-  const shellArtifact = useMemo(() => getArtifact(shellState.manifest, 'shell'), [shellState.manifest]);
   const version = getArtifactVersion(linuxState.manifest, 'linux') || 'pending';
-  const shellVersion = getArtifactVersion(shellState.manifest, 'shell') || 'pending';
-  const requirements = [
-    ...getArtifactSystemRequirements(linuxArtifact, linuxState.manifest),
-    ...getArtifactSystemRequirements(shellArtifact, shellState.manifest)
-  ].filter((item, index, list) => list.indexOf(item) === index);
+  const requirements = getArtifactSystemRequirements(linuxArtifact, linuxState.manifest);
   const requirement = requirements[0] || 'x86_64 Linux';
 
   return (
@@ -35,8 +29,8 @@ export function LinuxPage() {
                 <strong>{version}</strong>
                 <p>{requirement}</p>
               </div>
-              <div className="platform-meta-chip">GUI {version}</div>
-              <div className="platform-meta-chip">CLI {shellVersion}</div>
+              <div className="platform-meta-chip">Основной путь</div>
+              <div className="platform-meta-chip">Один сценарий</div>
               <div className="platform-meta-chip">Только NV</div>
             </div>
           </article>

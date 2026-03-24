@@ -57,7 +57,17 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
     };
   }, []);
 
-  const style = useMemo(() => ({ '--scene-progress': progress } as CSSProperties), [progress]);
+  const style = useMemo(() => {
+    const eased = progress * progress * (3 - 2 * progress);
+    const depth = 1 - Math.abs(eased - 0.5) * 2;
+    const pulse = Math.sin(eased * Math.PI);
+    return {
+      '--scene-progress': progress,
+      '--scene-progress-eased': eased,
+      '--scene-depth': depth,
+      '--scene-pulse': pulse
+    } as CSSProperties;
+  }, [progress]);
 
   return { ref, progress, style };
 }

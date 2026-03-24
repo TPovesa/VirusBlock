@@ -16,8 +16,10 @@ const networkProtectionRoutes = require('./routes/networkProtection');
 const scansRoutes = require('./routes/scans');
 const purchasesRoutes = require('./routes/purchases');
 const logsRoutes = require('./routes/logs');
+const verifiedAppsRoutes = require('./routes/verifiedApps');
 const { resumePendingDeepScans } = require('./services/deepScanService');
 const { resumePendingDesktopScans } = require('./services/desktopScanService');
+const { resumePendingVerifiedAppsJobs } = require('./services/verifiedAppsService');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -91,6 +93,7 @@ app.use('/api/purchases', purchasesRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/network-protection', networkProtectionRoutes);
 app.use('/api/releases', releasesRoutes);
+app.use('/api', verifiedAppsRoutes);
 
 function buildHealthPayload() {
     return {
@@ -130,6 +133,9 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`   Desktop:http://localhost:${PORT}/api/scans/desktop/start`);
     resumePendingDeepScans();
     resumePendingDesktopScans();
+    resumePendingVerifiedAppsJobs().catch((error) => {
+        console.error('Failed to resume verified app jobs:', error);
+    });
 });
 
 module.exports = app;

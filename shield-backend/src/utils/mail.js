@@ -31,10 +31,11 @@ function getTransporter() {
     return cachedTransporter;
 }
 
-async function sendMail({ to, subject, text, html }) {
+async function sendMail({ to, subject, text, html, replyTo }) {
     const transporter = getTransporter();
     await transporter.sendMail({
         from: process.env.MAIL_FROM || process.env.SMTP_USER,
+        replyTo: replyTo || undefined,
         to,
         subject,
         text,

@@ -17,6 +17,7 @@ const {
     hasHardSignals
 } = require('../utils/desktopScanHeuristics');
 const { isAiConfigured, triageDesktopScanFindings } = require('./aiExplainService');
+const { findTrustedVerifiedAppMatch } = require('./verifiedAppsService');
 
 const STORAGE_ROOT = process.env.DESKTOP_SCAN_UPLOAD_DIR || path.join(process.cwd(), 'storage', 'desktop-scans');
 const VT_API_BASE = (process.env.VT_API_BASE || 'https://www.virustotal.com/api/v3').replace(/\/$/, '');
@@ -682,7 +683,99 @@ async function processJob(jobId) {
                 `coverage roots=${coverage.declaredRootCount}, recommended=${coverage.recommendedRootCount}, candidates=${coverage.candidateCount}, packages=${coverage.packageCount}`
             );
         }
+        const trustedMatch = await findTrustedVerifiedAppMatch({
+            sha256: normalized.sha256 || row.sha256 || artifact?.sha256 || null,
+            platform: normalized.platform || row.platform || 'windows',
+            appName: normalized.artifactMetadata?.targetName || row.target_name || artifact?.fileName || ''
+        }).catch(() => ({ kind: 'none', app: null }));
+
+        if (trustedMatch.kind === 'exact' && trustedMatch.app) {
+            timeline.push('trusted verified release match');
+            const summary = {
+                message: `Файл совпадает с проверенной безопасной версией приложения ${trustedMatch.app.app_name}.`,
+                verdict: 'clean',
+                riskScore: 0,
+                timeline,
+                vt: null,
+                ai_filter: null,
+                hidden_findings: [],
+                trusted_app: trustedMatch.app,
+                coverage: {
+                    declared_roots: coverage.declaredRoots,
+                    recommended_roots: coverage.recommendedRoots,
+                    package_managers: coverage.packageManagers,
+                    candidate_count: coverage.candidateCount,
+                    package_count: coverage.packageCount
+                },
+                artifact: artifact ? {
+                    file_name: artifact.fileName,
+                    sha256: artifact.sha256,
+                    size_bytes: artifact.sizeBytes
+                } : null
+            };
+            const fullReport = {
+                summary,
+                coverage: summary.coverage,
+                surfaced_findings: [],
+                hidden_findings: [],
+                all_findings: [],
+                request: normalized
+            };
+            const updates = [
+                `status = 'COMPLETED'`,
+                'verdict = ?',
+                'risk_score = ?'
+            ];
+            const updateValues = ['clean', 0];
+            if (schema.jobs.hasSurfacedFindings) {
+                updates.push('surfaced_findings = ?');
+                updateValues.push(0);
+            }
+            if (schema.jobs.hasHiddenFindings) {
+                updates.push('hidden_findings = ?');
+                updateValues.push(0);
+            }
+            if (schema.jobs.hasUserSummary) {
+                updates.push('user_summary = ?');
+                updateValues.push(String(summary.message || '').slice(0, 255) || null);
+            }
+            updates.push('summary_json = ?', 'findings_json = ?');
+            updateValues.push(JSON.stringify(summary), JSON.stringify([]));
+            if (schema.jobs.hasRawFindingsJson) {
+                updates.push('raw_findings_json = ?');
+                updateValues.push(JSON.stringify([]));
+            }
+            if (schema.jobs.fullReportColumn) {
+                updates.push(`${schema.jobs.fullReportColumn} = ?`);
+                updateValues.push(JSON.stringify(fullReport));
+            }
+            updates.push('error_message = NULL', 'completed_at = ?', 'updated_at = ?');
+            updateValues.push(nowMs(), nowMs(), jobId);
+            await pool.query(
+                `UPDATE desktop_scan_jobs
+                 SET ${updates.join(', ')}
+                 WHERE id = ?`,
+                updateValues
+            );
+            return;
+        }
+
         const metadataFindings = analyzeDesktopMetadata(normalized);
+        if (trustedMatch.kind === 'mismatch' && trustedMatch.app) {
+            timeline.push('trusted release hash mismatch');
+            metadataFindings.push(buildFinding({
+                type: 'trusted_hash_mismatch',
+                severity: 'high',
+                title: 'Хеш не совпадает с проверенной версией',
+                detail: `Для ${trustedMatch.app.app_name} на сервере есть безопасная версия, но этот файл имеет другой хеш. Это может быть старая версия или подмена.`,
+                source: 'NeuralV Verified Apps',
+                score: 44,
+                evidence: {
+                    verified_app_id: trustedMatch.app.id,
+                    expected_sha256: trustedMatch.app.sha256 || null
+                }
+            }));
+        }
         const staticFindings = await sniffArtifact(jobId, artifact, normalized);
         const localFindings = Array.isArray(normalized.localFindings) ? normalized.localFindings : [];
         const vt = normalized.sha256 ? await lookupVirusTotal(normalized.sha256).catch(() => null) : null;

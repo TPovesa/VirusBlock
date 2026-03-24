@@ -11,6 +11,7 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AccountActionPage } from './pages/AccountActionPage';
+import { VerifiedAppsPage } from './pages/VerifiedAppsPage';
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { ready, session } = useSiteAuth();
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="/android" element={<AndroidPage />} />
         <Route path="/windows" element={<WindowsPage />} />
         <Route path="/linux" element={<LinuxPage />} />
+        <Route path="/verified-apps" element={<VerifiedAppsPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
