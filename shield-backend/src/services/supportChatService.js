@@ -183,8 +183,11 @@ async function callTelegram(method, payload) {
     } catch (error) {
         const { stdout } = await execFileAsync('curl', [
             '-sS',
-            '--connect-timeout', '10',
-            '--max-time', '30',
+            '--retry', '2',
+            '--retry-all-errors',
+            '--retry-delay', '1',
+            '--connect-timeout', '20',
+            '--max-time', '60',
             '-X', 'POST',
             '-H', 'content-type: application/json',
             '--data', requestBody,
