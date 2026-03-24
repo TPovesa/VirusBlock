@@ -263,9 +263,13 @@ export type SiteSupportChatMessage = {
   senderRole: 'client' | 'support' | 'system';
   senderName?: string | null;
   text: string;
+  messageKind?: 'TEXT' | 'PHOTO' | 'VIDEO';
+  deliveryStatus?: 'QUEUED' | 'SENT' | 'FAILED';
+  deliveryError?: string | null;
   source?: string | null;
   createdAt?: string | number | null;
   updatedAt?: string | number | null;
+  attachments?: SiteSupportChatAttachment[];
 };
 
 export type SiteSupportChatState = {
@@ -274,6 +278,38 @@ export type SiteSupportChatState = {
   pollAfterMs?: number;
   chat?: SiteSupportChatEnvelope | null;
   messages: SiteSupportChatMessage[];
+};
+
+export type SiteSupportChatAttachmentKind = 'photo' | 'video';
+
+export type SiteSupportChatAttachment = {
+  id: string;
+  kind: SiteSupportChatAttachmentKind;
+  url: string;
+  thumbnailUrl?: string | null;
+  mimeType?: string | null;
+  fileName?: string | null;
+  fileSizeBytes?: number | null;
+  width?: number | null;
+  height?: number | null;
+  durationSeconds?: number | null;
+};
+
+export type SiteSupportChatDraftAttachment = {
+  kind: SiteSupportChatAttachmentKind;
+  fileName: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  dataUrl: string;
+  previewUrl?: string | null;
+  width?: number | null;
+  height?: number | null;
+  durationSeconds?: number | null;
+};
+
+export type SiteSupportChatSendPayload = {
+  text: string;
+  attachment?: SiteSupportChatDraftAttachment | null;
 };
 
 type AuthResponsePayload = {
@@ -604,13 +640,15 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
     ...fetchOptions
   } = options;
 
+  const isFormDataBody = typeof FormData !== 'undefined' && body instanceof FormData;
+
   try {
     const response = await fetch(`${baseUrl}${path}`, {
       ...fetchOptions,
       body,
       headers: {
         Accept: 'application/json',
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(!body || isFormDataBody ? {} : { 'Content-Type': 'application/json' }),
         ...(headers || {})
       }
     });
@@ -1419,6 +1457,64 @@ function mapSupportChatMessage(value: Record<string, unknown> | null | undefined
   if (!value || typeof value !== 'object') {
     return null;
   }
+  const attachments = Array.isArray(value.attachments)
+    ? value.attachments
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') {
+            return null;
+          }
+          const record = entry as Record<string, unknown>;
+          const kind = String(record.kind || '').trim().toLowerCase();
+          const fallbackKind = String(record.type || '').trim().toLowerCase();
+          const resolvedKind = kind === 'photo' || kind === 'video'
+            ? kind
+            : fallbackKind === 'photo' || fallbackKind === 'video'
+              ? fallbackKind
+              : '';
+          if (resolvedKind !== 'photo' && resolvedKind !== 'video') {
+            return null;
+          }
+          const url = typeof record.url === 'string'
+            ? record.url
+            : typeof record.media_url === 'string'
+              ? record.media_url
+              : typeof record.mediaUrl === 'string'
+                ? record.mediaUrl
+                : '';
+          if (!url) {
+            return null;
+          }
+          return {
+            id: typeof record.id === 'string' ? record.id : `${resolvedKind}-${Math.random().toString(36).slice(2)}`,
+            kind: resolvedKind,
+            url,
+            thumbnailUrl: typeof record.thumbnail_url === 'string'
+              ? record.thumbnail_url
+              : typeof record.thumbnailUrl === 'string'
+                ? record.thumbnailUrl
+                : null,
+            mimeType: typeof record.mime_type === 'string'
+              ? record.mime_type
+              : typeof record.mimeType === 'string'
+                ? record.mimeType
+                : null,
+            fileName: typeof record.file_name === 'string'
+              ? record.file_name
+              : typeof record.fileName === 'string'
+                ? record.fileName
+                : null,
+            fileSizeBytes: typeof record.file_size_bytes === 'number'
+              ? record.file_size_bytes
+              : Number(record.file_size_bytes || record.fileSizeBytes || 0) || null,
+            width: typeof record.width === 'number' ? record.width : Number(record.width || 0) || null,
+            height: typeof record.height === 'number' ? record.height : Number(record.height || 0) || null,
+            durationSeconds: typeof record.duration_seconds === 'number'
+              ? record.duration_seconds
+              : Number(record.duration_seconds || record.durationSeconds || 0) || null
+          } satisfies SiteSupportChatAttachment;
+        })
+        .filter((entry): entry is SiteSupportChatAttachment => Boolean(entry))
+    : [];
   return {
     id: typeof value.id === 'string' ? value.id : `msg-${Math.random().toString(36).slice(2)}`,
     senderRole:
@@ -1429,9 +1525,67 @@ function mapSupportChatMessage(value: Record<string, unknown> | null | undefined
           : 'client',
     senderName: typeof value.sender_name === 'string' ? value.sender_name : null,
     text: typeof value.message_text === 'string' ? value.message_text : '',
+    messageKind: typeof value.message_kind === 'string'
+      ? (String(value.message_kind).toUpperCase() as 'TEXT' | 'PHOTO' | 'VIDEO')
+      : undefined,
+    deliveryStatus: typeof value.delivery_status === 'string'
+      ? (String(value.delivery_status).toUpperCase() as 'QUEUED' | 'SENT' | 'FAILED')
+      : undefined,
+    deliveryError: typeof value.delivery_error === 'string' ? value.delivery_error : null,
     source: typeof value.source === 'string' ? value.source : null,
     createdAt: value.created_at as string | number | null | undefined,
-    updatedAt: value.updated_at as string | number | null | undefined
+    updatedAt: value.updated_at as string | number | null | undefined,
+    attachments
+  };
+}
+
+function withSupportChatAccessToken(url: string, token: string) {
+  if (!url) {
+    return url;
+  }
+  try {
+    const resolved = new URL(url, typeof window !== 'undefined' ? window.location.origin : 'https://sosiskibot.ru');
+    resolved.searchParams.set('access_token', token);
+    if (resolved.origin === (typeof window !== 'undefined' ? window.location.origin : resolved.origin)) {
+      return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+    }
+    return resolved.toString();
+  } catch {
+    return url;
+  }
+}
+
+function mapSupportChatStatePayload(result: Record<string, unknown> | undefined, accessToken: string): SiteSupportChatState {
+  return {
+    availability: Boolean(result?.availability),
+    message: typeof result?.message === 'string' ? result.message : undefined,
+    pollAfterMs: typeof result?.poll_after_ms === 'number' ? result.poll_after_ms : Number(result?.poll_after_ms || 0) || undefined,
+    chat: result?.chat && typeof result.chat === 'object'
+      ? {
+          id: typeof (result.chat as Record<string, unknown>).id === 'string' ? String((result.chat as Record<string, unknown>).id) : '',
+          ticketNumber: Number((result.chat as Record<string, unknown>).ticket_number || 0) || 0,
+          status: typeof (result.chat as Record<string, unknown>).status === 'string'
+            ? String((result.chat as Record<string, unknown>).status)
+            : 'OPEN',
+          lastMessageFrom: ((result.chat as Record<string, unknown>).last_message_from as 'client' | 'support' | 'system' | null | undefined) ?? null,
+          lastMessageAt: (result.chat as Record<string, unknown>).last_message_at as string | number | null | undefined,
+          createdAt: (result.chat as Record<string, unknown>).created_at as string | number | null | undefined,
+          updatedAt: (result.chat as Record<string, unknown>).updated_at as string | number | null | undefined
+        }
+      : null,
+    messages: Array.isArray(result?.messages)
+      ? result.messages
+          .map((entry) => mapSupportChatMessage(entry as Record<string, unknown>))
+          .filter((entry): entry is SiteSupportChatMessage => Boolean(entry))
+          .map((message) => ({
+            ...message,
+            attachments: (message.attachments || []).map((attachment) => ({
+              ...attachment,
+              url: withSupportChatAccessToken(attachment.url, accessToken),
+              thumbnailUrl: attachment.thumbnailUrl ? withSupportChatAccessToken(attachment.thumbnailUrl, accessToken) : attachment.thumbnailUrl
+            }))
+          }))
+      : []
   };
 }
 
@@ -1622,7 +1776,7 @@ export async function fetchProfileOverview(
 }
 
 export async function fetchSupportChatState(
-  options: { after?: number; limit?: number } = {}
+  options: { after?: number; limit?: number; sync?: 'poll' | 'none' } = {}
 ): Promise<SiteAuthResult<SiteSupportChatState>> {
   const sessionResult = await getAuthorizedSession();
   if (!sessionResult.ok || !sessionResult.data) {
@@ -1635,6 +1789,9 @@ export async function fetchSupportChatState(
   }
   if (options.limit) {
     query.set('limit', String(options.limit));
+  }
+  if (options.sync && options.sync !== 'none') {
+    query.set('sync', options.sync);
   }
 
   const result = await requestJson<Record<string, unknown>>(
@@ -1652,27 +1809,7 @@ export async function fetchSupportChatState(
 
   return {
     ok: true,
-    data: {
-      availability: Boolean(result.data?.availability),
-      message: typeof result.data?.message === 'string' ? result.data.message : undefined,
-      pollAfterMs: typeof result.data?.poll_after_ms === 'number' ? result.data.poll_after_ms : Number(result.data?.poll_after_ms || 0) || undefined,
-      chat: result.data?.chat && typeof result.data.chat === 'object'
-        ? {
-            id: typeof (result.data.chat as Record<string, unknown>).id === 'string' ? String((result.data.chat as Record<string, unknown>).id) : '',
-            ticketNumber: Number((result.data.chat as Record<string, unknown>).ticket_number || 0) || 0,
-            status: typeof (result.data.chat as Record<string, unknown>).status === 'string'
-              ? String((result.data.chat as Record<string, unknown>).status)
-              : 'OPEN',
-            lastMessageFrom: ((result.data.chat as Record<string, unknown>).last_message_from as 'client' | 'support' | 'system' | null | undefined) ?? null,
-            lastMessageAt: (result.data.chat as Record<string, unknown>).last_message_at as string | number | null | undefined,
-            createdAt: (result.data.chat as Record<string, unknown>).created_at as string | number | null | undefined,
-            updatedAt: (result.data.chat as Record<string, unknown>).updated_at as string | number | null | undefined
-          }
-        : null,
-      messages: Array.isArray(result.data?.messages)
-        ? result.data.messages.map((entry) => mapSupportChatMessage(entry as Record<string, unknown>)).filter((entry): entry is SiteSupportChatMessage => Boolean(entry))
-        : []
-    }
+    data: mapSupportChatStatePayload(result.data, sessionResult.data.token)
   };
 }
 
@@ -1694,32 +1831,12 @@ export async function openSupportChat(): Promise<SiteAuthResult<SiteSupportChatS
 
   return {
     ok: true,
-    data: {
-      availability: Boolean(result.data?.availability),
-      message: typeof result.data?.message === 'string' ? result.data.message : undefined,
-      pollAfterMs: typeof result.data?.poll_after_ms === 'number' ? result.data.poll_after_ms : Number(result.data?.poll_after_ms || 0) || undefined,
-      chat: result.data?.chat && typeof result.data.chat === 'object'
-        ? {
-            id: typeof (result.data.chat as Record<string, unknown>).id === 'string' ? String((result.data.chat as Record<string, unknown>).id) : '',
-            ticketNumber: Number((result.data.chat as Record<string, unknown>).ticket_number || 0) || 0,
-            status: typeof (result.data.chat as Record<string, unknown>).status === 'string'
-              ? String((result.data.chat as Record<string, unknown>).status)
-              : 'OPEN',
-            lastMessageFrom: ((result.data.chat as Record<string, unknown>).last_message_from as 'client' | 'support' | 'system' | null | undefined) ?? null,
-            lastMessageAt: (result.data.chat as Record<string, unknown>).last_message_at as string | number | null | undefined,
-            createdAt: (result.data.chat as Record<string, unknown>).created_at as string | number | null | undefined,
-            updatedAt: (result.data.chat as Record<string, unknown>).updated_at as string | number | null | undefined
-          }
-        : null,
-      messages: Array.isArray(result.data?.messages)
-        ? result.data.messages.map((entry) => mapSupportChatMessage(entry as Record<string, unknown>)).filter((entry): entry is SiteSupportChatMessage => Boolean(entry))
-        : []
-    }
+    data: mapSupportChatStatePayload(result.data, sessionResult.data.token)
   };
 }
 
 export async function sendSupportChatMessage(
-  text: string,
+  payload: SiteSupportChatSendPayload,
   chatId?: string | null
 ): Promise<SiteAuthResult<SiteSupportChatState>> {
   const sessionResult = await getAuthorizedSession();
@@ -1731,7 +1848,19 @@ export async function sendSupportChatMessage(
     method: 'POST',
     baseUrl: VERIFIED_APPS_BASE_URL,
     body: JSON.stringify({
-      text,
+      text: payload.text,
+      attachment: payload.attachment
+        ? {
+            type: payload.attachment.kind,
+            file_name: payload.attachment.fileName,
+            mime_type: payload.attachment.mimeType,
+            file_size_bytes: payload.attachment.fileSizeBytes,
+            width: payload.attachment.width ?? undefined,
+            height: payload.attachment.height ?? undefined,
+            duration_seconds: payload.attachment.durationSeconds ?? undefined,
+            content_base64: payload.attachment.dataUrl.replace(/^data:[^,]*,/, '')
+          }
+        : undefined,
       chat_id: chatId || undefined
     }),
     headers: { Authorization: `Bearer ${sessionResult.data.token}` }
@@ -1743,27 +1872,7 @@ export async function sendSupportChatMessage(
 
   return {
     ok: true,
-    data: {
-      availability: Boolean(result.data?.availability),
-      message: typeof result.data?.message === 'string' ? result.data.message : undefined,
-      pollAfterMs: typeof result.data?.poll_after_ms === 'number' ? result.data.poll_after_ms : Number(result.data?.poll_after_ms || 0) || undefined,
-      chat: result.data?.chat && typeof result.data.chat === 'object'
-        ? {
-            id: typeof (result.data.chat as Record<string, unknown>).id === 'string' ? String((result.data.chat as Record<string, unknown>).id) : '',
-            ticketNumber: Number((result.data.chat as Record<string, unknown>).ticket_number || 0) || 0,
-            status: typeof (result.data.chat as Record<string, unknown>).status === 'string'
-              ? String((result.data.chat as Record<string, unknown>).status)
-              : 'OPEN',
-            lastMessageFrom: ((result.data.chat as Record<string, unknown>).last_message_from as 'client' | 'support' | 'system' | null | undefined) ?? null,
-            lastMessageAt: (result.data.chat as Record<string, unknown>).last_message_at as string | number | null | undefined,
-            createdAt: (result.data.chat as Record<string, unknown>).created_at as string | number | null | undefined,
-            updatedAt: (result.data.chat as Record<string, unknown>).updated_at as string | number | null | undefined
-          }
-        : null,
-      messages: Array.isArray(result.data?.messages)
-        ? result.data.messages.map((entry) => mapSupportChatMessage(entry as Record<string, unknown>)).filter((entry): entry is SiteSupportChatMessage => Boolean(entry))
-        : []
-    }
+    data: mapSupportChatStatePayload(result.data, sessionResult.data.token)
   };
 }
 

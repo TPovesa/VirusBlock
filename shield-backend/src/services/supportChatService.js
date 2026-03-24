@@ -1,4 +1,6 @@
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { v4: uuidv4 } = require('uuid');
@@ -8,14 +10,21 @@ const { fetchUserById } = require('./accountEntitlementsService');
 const SUPPORT_TELEGRAM_API_BASE = String(process.env.SUPPORT_TELEGRAM_API_BASE || 'https://api.telegram.org').replace(/\/+$/, '');
 const SUPPORT_TELEGRAM_BOT_USERNAME = String(process.env.SUPPORT_TELEGRAM_BOT_USERNAME || 'fatalerrorsupportbot').trim();
 const SUPPORT_CHAT_MESSAGE_MAX_LENGTH = Math.max(400, Number(process.env.SUPPORT_CHAT_MESSAGE_MAX_LENGTH || 4000) || 4000);
-const SUPPORT_CHAT_POLL_INTERVAL_MS = Math.max(1500, Number(process.env.SUPPORT_CHAT_POLL_INTERVAL_MS || 4000) || 4000);
+const SUPPORT_CHAT_POLL_INTERVAL_MS = Math.max(1500, Number(process.env.SUPPORT_CHAT_POLL_INTERVAL_MS || 3000) || 3000);
 const SUPPORT_TELEGRAM_CURL_MAX_TIME_SEC = Math.max(8, Math.min(25, Number(process.env.SUPPORT_TELEGRAM_CURL_MAX_TIME_SEC || 18) || 18));
+const SUPPORT_CHAT_STORAGE_DIR = path.resolve(__dirname, '../../storage/support-chat');
+const SUPPORT_CHAT_ATTACHMENT_LIMIT = Math.max(1, Math.min(4, Number(process.env.SUPPORT_CHAT_ATTACHMENT_LIMIT || 1) || 1));
+const SUPPORT_CHAT_ATTACHMENT_MAX_BYTES = Math.max(512 * 1024, Number(process.env.SUPPORT_CHAT_ATTACHMENT_MAX_BYTES || 8 * 1024 * 1024) || (8 * 1024 * 1024));
+const SUPPORT_CHAT_ALLOWED_ATTACHMENT_TYPES = new Set(['photo', 'video']);
+const SUPPORT_TELEGRAM_FETCH_TIMEOUT_MS = Math.max(4000, Number(process.env.SUPPORT_TELEGRAM_FETCH_TIMEOUT_MS || 7000) || 7000);
 
 let schemaReady = false;
 let schemaReadyPromise = null;
 let syncPromise = null;
 let pollerStarted = false;
 let pollerTimer = null;
+let resumeQueuedDeliveriesStarted = false;
+const deliveryJobs = new Map();
 const execFileAsync = promisify(execFile);
 
 function createHttpError(status, message, code) {
@@ -27,6 +36,94 @@ function createHttpError(status, message, code) {
 
 function nowMs() {
     return Date.now();
+}
+
+function ensureStorageDir() {
+    fs.mkdirSync(SUPPORT_CHAT_STORAGE_DIR, { recursive: true });
+}
+
+function sanitizeFileName(fileName, fallbackBaseName = 'attachment') {
+    const original = String(fileName || '').trim();
+    const ext = path.extname(original).replace(/[^A-Za-z0-9.]/g, '').slice(0, 12);
+    const base = (path.basename(original, ext) || fallbackBaseName)
+        .replace(/[^A-Za-z0-9._-]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 80) || fallbackBaseName;
+    return `${base}${ext}`;
+}
+
+function coerceAttachmentType(value, mimeType) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'photo' || normalized === 'image' || String(mimeType || '').startsWith('image/')) {
+        return 'photo';
+    }
+    if (normalized === 'video' || String(mimeType || '').startsWith('video/')) {
+        return 'video';
+    }
+    return null;
+}
+
+function publicAttachmentUrl(messageId, assetId) {
+    return `/basedata/api/profile/support-chat/media/${encodeURIComponent(messageId)}/${encodeURIComponent(assetId)}`;
+}
+
+function parseAttachmentsJson(value) {
+    if (!value) {
+        return [];
+    }
+    try {
+        const parsed = JSON.parse(String(value));
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+function getAttachmentExtension(type, mimeType, fileName) {
+    const existingExt = path.extname(String(fileName || '')).replace(/[^A-Za-z0-9.]/g, '').slice(0, 12);
+    if (existingExt) {
+        return existingExt;
+    }
+    const normalizedMime = String(mimeType || '').trim().toLowerCase();
+    if (normalizedMime === 'image/jpeg') return '.jpg';
+    if (normalizedMime === 'image/png') return '.png';
+    if (normalizedMime === 'image/webp') return '.webp';
+    if (normalizedMime === 'image/gif') return '.gif';
+    if (normalizedMime === 'video/mp4') return '.mp4';
+    if (normalizedMime === 'video/webm') return '.webm';
+    return type === 'video' ? '.mp4' : '.jpg';
+}
+
+function resolveStoredPath(relativePath) {
+    const targetPath = path.resolve(SUPPORT_CHAT_STORAGE_DIR, String(relativePath || ''));
+    if (!targetPath.startsWith(`${SUPPORT_CHAT_STORAGE_DIR}${path.sep}`) && targetPath !== SUPPORT_CHAT_STORAGE_DIR) {
+        throw createHttpError(400, 'Некорректный путь вложения.', 'SUPPORT_ATTACHMENT_PATH_INVALID');
+    }
+    return targetPath;
+}
+
+function shapeAttachmentForApi(messageId, raw) {
+    if (!raw || typeof raw !== 'object') {
+        return null;
+    }
+    const attachmentId = String(raw.id || '').trim();
+    const type = coerceAttachmentType(raw.type, raw.mimeType || raw.mime_type);
+    const relativePath = String(raw.relativePath || raw.relative_path || '').trim();
+    if (!attachmentId || !type || !relativePath) {
+        return null;
+    }
+    return {
+        id: attachmentId,
+        type,
+        file_name: typeof raw.fileName === 'string' ? raw.fileName : (typeof raw.file_name === 'string' ? raw.file_name : null),
+        mime_type: typeof raw.mimeType === 'string' ? raw.mimeType : (typeof raw.mime_type === 'string' ? raw.mime_type : null),
+        size_bytes: Number(raw.sizeBytes || raw.size_bytes || 0) || 0,
+        width: Number(raw.width || 0) || null,
+        height: Number(raw.height || 0) || null,
+        duration_seconds: Number(raw.durationSeconds || raw.duration_seconds || 0) || null,
+        media_url: publicAttachmentUrl(messageId, attachmentId)
+    };
 }
 
 function getSupportConfig() {
@@ -68,7 +165,7 @@ function shouldUseSupportPolling() {
     if (forced === '0' || forced === 'false') {
         return false;
     }
-    return !String(process.env.SUPPORT_TELEGRAM_WEBHOOK_SECRET || '').trim();
+    return true;
 }
 
 async function ensureSupportChatSchema(db = pool) {
@@ -119,6 +216,13 @@ async function ensureSupportChatSchema(db = pool) {
                 INDEX idx_support_chat_messages_chat_created (chat_id, created_at),
                 UNIQUE KEY uniq_support_chat_telegram_message (telegram_chat_id, telegram_message_id)
             )
+        `);
+        await db.query(`
+            ALTER TABLE support_chat_messages
+            ADD COLUMN IF NOT EXISTS message_kind ENUM('TEXT','PHOTO','VIDEO') NOT NULL DEFAULT 'TEXT' AFTER source,
+            ADD COLUMN IF NOT EXISTS attachments_json LONGTEXT DEFAULT NULL AFTER message_kind,
+            ADD COLUMN IF NOT EXISTS delivery_status ENUM('QUEUED','SENT','FAILED') NOT NULL DEFAULT 'SENT' AFTER attachments_json,
+            ADD COLUMN IF NOT EXISTS delivery_error VARCHAR(255) DEFAULT NULL AFTER delivery_status
         `);
         await db.query(`
             CREATE TABLE IF NOT EXISTS support_chat_meta (
@@ -184,7 +288,7 @@ async function callTelegram(method, payload) {
                 'content-type': 'application/json'
             },
             body: requestBody,
-            signal: AbortSignal.timeout(20000)
+            signal: AbortSignal.timeout(SUPPORT_TELEGRAM_FETCH_TIMEOUT_MS)
         });
 
         const json = await response.json().catch(() => null);
@@ -223,11 +327,89 @@ async function callTelegram(method, payload) {
     }
 }
 
+async function callTelegramMultipart(method, fields, fileField) {
+    const config = getSupportConfig();
+    if (!config.available) {
+        throw createHttpError(503, config.message, 'SUPPORT_TELEGRAM_UNAVAILABLE');
+    }
+
+    const url = `${SUPPORT_TELEGRAM_API_BASE}/bot${config.token}/${method}`;
+    const args = [
+        '--ipv4',
+        '-sS',
+        '--retry', '1',
+        '--retry-all-errors',
+        '--retry-delay', '1',
+        '--connect-timeout', '10',
+        '--max-time', String(SUPPORT_TELEGRAM_CURL_MAX_TIME_SEC),
+        '-X', 'POST'
+    ];
+
+    Object.entries(fields || {}).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') {
+            return;
+        }
+        args.push('-F', `${key}=${String(value)}`);
+    });
+
+    if (!fileField?.name || !fileField?.path) {
+        throw createHttpError(400, 'Файл для отправки не подготовлен.', 'SUPPORT_ATTACHMENT_MISSING');
+    }
+
+    args.push('-F', `${fileField.name}=@${fileField.path};type=${fileField.mimeType || 'application/octet-stream'}`, url);
+
+    const { stdout } = await execFileAsync('curl', args, {
+        maxBuffer: 8 * 1024 * 1024
+    }).catch((error) => {
+        throw createHttpError(502, error?.message || 'Telegram upload failed', 'SUPPORT_TELEGRAM_API_ERROR');
+    });
+
+    const json = JSON.parse(String(stdout || 'null'));
+    if (!json || json.ok !== true) {
+        throw createHttpError(502, String(json?.description || 'Telegram upload failed'), 'SUPPORT_TELEGRAM_API_ERROR');
+    }
+    return json.result;
+}
+
+async function downloadTelegramFile(filePath, targetPath) {
+    const config = getSupportConfig();
+    const url = `${SUPPORT_TELEGRAM_API_BASE}/file/bot${config.token}/${String(filePath || '').replace(/^\/+/, '')}`;
+    ensureStorageDir();
+    const directory = path.dirname(targetPath);
+    fs.mkdirSync(directory, { recursive: true });
+
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            signal: AbortSignal.timeout(SUPPORT_TELEGRAM_FETCH_TIMEOUT_MS)
+        });
+        if (!response.ok) {
+            throw new Error(`Telegram file ${response.status}`);
+        }
+        const buffer = Buffer.from(await response.arrayBuffer());
+        fs.writeFileSync(targetPath, buffer);
+        return;
+    } catch (error) {
+        await execFileAsync('curl', [
+            '--ipv4',
+            '-sS',
+            '--retry', '1',
+            '--retry-all-errors',
+            '--retry-delay', '1',
+            '--connect-timeout', '10',
+            '--max-time', String(SUPPORT_TELEGRAM_CURL_MAX_TIME_SEC),
+            '-o', targetPath,
+            url
+        ], {
+            maxBuffer: 8 * 1024 * 1024
+        }).catch((curlError) => {
+            throw createHttpError(502, curlError?.message || error?.message || 'Не удалось скачать вложение из Telegram.', 'SUPPORT_ATTACHMENT_DOWNLOAD_FAILED');
+        });
+    }
+}
+
 function normalizeMessageText(text) {
     const normalized = String(text || '').replace(/\r\n/g, '\n').replace(/\u0000/g, '').trim();
-    if (!normalized) {
-        throw createHttpError(400, 'Сообщение пустое.', 'SUPPORT_MESSAGE_EMPTY');
-    }
     return normalized.slice(0, SUPPORT_CHAT_MESSAGE_MAX_LENGTH);
 }
 
@@ -240,19 +422,132 @@ function extractInboundText(message) {
     return String(value || '').replace(/\r\n/g, '\n').replace(/\u0000/g, '').trim().slice(0, SUPPORT_CHAT_MESSAGE_MAX_LENGTH);
 }
 
+function buildAttachmentRecord({ assetId, messageId, type, fileName, mimeType, sizeBytes, relativePath, width, height, durationSeconds }) {
+    return {
+        id: assetId,
+        type,
+        fileName,
+        mimeType: mimeType || null,
+        sizeBytes: Number(sizeBytes || 0) || null,
+        width: Number(width || 0) || null,
+        height: Number(height || 0) || null,
+        durationSeconds: Number(durationSeconds || 0) || null,
+        relativePath,
+        url: publicAttachmentUrl(messageId, assetId)
+    };
+}
+
+function normalizeOutgoingAttachment(raw) {
+    if (!raw || typeof raw !== 'object') {
+        return null;
+    }
+    const type = coerceAttachmentType(raw.type, raw.mimeType || raw.mime_type);
+    if (!type || !SUPPORT_CHAT_ALLOWED_ATTACHMENT_TYPES.has(type)) {
+        throw createHttpError(400, 'Поддерживаются только фото и видео.', 'SUPPORT_ATTACHMENT_UNSUPPORTED');
+    }
+
+    const base64 = String(raw.contentBase64 || raw.content_base64 || '').trim();
+    if (!base64) {
+        throw createHttpError(400, 'Файл не подготовлен.', 'SUPPORT_ATTACHMENT_MISSING');
+    }
+
+    const mimeType = String(raw.mimeType || raw.mime_type || '').trim();
+    const buffer = Buffer.from(base64, 'base64');
+    if (!buffer.length) {
+        throw createHttpError(400, 'Файл не удалось прочитать.', 'SUPPORT_ATTACHMENT_INVALID');
+    }
+    if (buffer.length > SUPPORT_CHAT_ATTACHMENT_MAX_BYTES) {
+        throw createHttpError(413, 'Файл слишком большой для поддержки.', 'SUPPORT_ATTACHMENT_TOO_LARGE');
+    }
+
+    return {
+        type,
+        buffer,
+        mimeType,
+        fileName: sanitizeFileName(raw.fileName || raw.file_name || `${type}-${Date.now()}`),
+        width: Number(raw.width || 0) || null,
+        height: Number(raw.height || 0) || null,
+        durationSeconds: Number(raw.durationSeconds || raw.duration_seconds || 0) || null
+    };
+}
+
+function normalizeOutgoingPayload(payload) {
+    const text = normalizeMessageText(payload?.text);
+    const attachments = [];
+    if (payload?.attachment) {
+        attachments.push(normalizeOutgoingAttachment(payload.attachment));
+    }
+    if (Array.isArray(payload?.attachments)) {
+        payload.attachments.forEach((entry) => {
+            if (entry) {
+                attachments.push(normalizeOutgoingAttachment(entry));
+            }
+        });
+    }
+
+    if (attachments.length > SUPPORT_CHAT_ATTACHMENT_LIMIT) {
+        throw createHttpError(400, 'Слишком много вложений для одного сообщения.', 'SUPPORT_ATTACHMENT_LIMIT');
+    }
+    if (!text && attachments.length === 0) {
+        throw createHttpError(400, 'Сообщение пустое.', 'SUPPORT_MESSAGE_EMPTY');
+    }
+
+    return {
+        text,
+        attachments
+    };
+}
+
 function formatTopicName(ticketNumber, lastMessageFrom) {
     const prefix = lastMessageFrom === 'support' ? '🟩' : '🟦';
     return `${prefix} Заявка #${ticketNumber}`.slice(0, 120);
 }
 
 function buildSupportEnvelope(messageText, user, chat) {
-    const lines = [
-        `Заявка #${chat.ticket_number}`,
-        `${user.name} <${user.email}>`,
-        '',
-        messageText
-    ];
+    const lines = [`Заявка #${chat.ticket_number}`, `${user.name} <${user.email}>`];
+    if (String(messageText || '').trim()) {
+        lines.push('', String(messageText).trim());
+    }
     return lines.join('\n').trim();
+}
+
+
+async function extractTelegramAttachment(message) {
+    const photo = Array.isArray(message?.photo) ? message.photo[message.photo.length - 1] : null;
+    if (photo?.file_id) {
+        const file = await callTelegram('getFile', { file_id: photo.file_id });
+        if (!file?.file_path) {
+            return null;
+        }
+        return {
+            type: 'photo',
+            telegramFilePath: file.file_path,
+            fileName: path.basename(String(file.file_path || 'photo.jpg')) || 'photo.jpg',
+            mimeType: 'image/jpeg',
+            width: Number(photo.width || 0) || null,
+            height: Number(photo.height || 0) || null,
+            durationSeconds: null
+        };
+    }
+
+    const video = message?.video;
+    if (video?.file_id) {
+        const file = await callTelegram('getFile', { file_id: video.file_id });
+        if (!file?.file_path) {
+            return null;
+        }
+        return {
+            type: 'video',
+            telegramFilePath: file.file_path,
+            fileName: path.basename(String(file.file_path || video.file_name || 'video.mp4')) || 'video.mp4',
+            mimeType: String(video.mime_type || 'video/mp4'),
+            width: Number(video.width || 0) || null,
+            height: Number(video.height || 0) || null,
+            durationSeconds: Number(video.duration || 0) || null
+        };
+    }
+
+    return null;
 }
 
 async function findOpenChatForUser(userId, db = pool) {
@@ -298,6 +593,7 @@ async function loadChatMessages(chatId, options = {}, db = pool) {
     const limit = Math.min(120, Math.max(1, Number(options.limit || 80) || 80));
     const [rows] = await db.query(
         `SELECT id, sender_role, sender_name, message_text, source,
+                message_kind, attachments_json, delivery_status, delivery_error,
                 telegram_message_id, created_at, updated_at
          FROM support_chat_messages
          WHERE chat_id = ?
@@ -312,10 +608,101 @@ async function loadChatMessages(chatId, options = {}, db = pool) {
         sender_name: row.sender_name,
         message_text: row.message_text,
         source: row.source,
+        message_kind: row.message_kind,
+        attachments: parseAttachmentsJson(row.attachments_json)
+            .map((entry) => shapeAttachmentForApi(row.id, entry))
+            .filter(Boolean),
+        delivery_status: row.delivery_status,
+        delivery_error: row.delivery_error,
         telegram_message_id: row.telegram_message_id,
         created_at: row.created_at,
         updated_at: row.updated_at
     }));
+}
+
+async function persistOutgoingAttachments(messageId, chatId, attachments) {
+    if (!Array.isArray(attachments) || attachments.length === 0) {
+        return [];
+    }
+    ensureStorageDir();
+    const assetDirectory = path.join(SUPPORT_CHAT_STORAGE_DIR, chatId, messageId);
+    fs.mkdirSync(assetDirectory, { recursive: true });
+
+    return attachments.map((attachment) => {
+        const assetId = uuidv4();
+        const fileName = sanitizeFileName(attachment.fileName, attachment.type);
+        const relativePath = path.join(chatId, messageId, `${assetId}-${fileName}`).replace(/\\/g, '/');
+        const absolutePath = path.join(SUPPORT_CHAT_STORAGE_DIR, relativePath);
+        fs.writeFileSync(absolutePath, attachment.buffer);
+        return buildAttachmentRecord({
+            assetId,
+            messageId,
+            type: attachment.type,
+            fileName,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.buffer.length,
+            relativePath,
+            width: attachment.width,
+            height: attachment.height,
+            durationSeconds: attachment.durationSeconds
+        });
+    });
+}
+
+async function persistTelegramAttachment(messageId, chatId, attachment) {
+    ensureStorageDir();
+    const assetId = uuidv4();
+    const directory = path.join(SUPPORT_CHAT_STORAGE_DIR, chatId, messageId);
+    fs.mkdirSync(directory, { recursive: true });
+    const fileName = sanitizeFileName(attachment.fileName, attachment.type);
+    const relativePath = path.join(chatId, messageId, `${assetId}-${fileName}`).replace(/\\/g, '/');
+    const absolutePath = path.join(SUPPORT_CHAT_STORAGE_DIR, relativePath);
+    await downloadTelegramFile(attachment.telegramFilePath, absolutePath);
+    const stats = fs.statSync(absolutePath);
+    return buildAttachmentRecord({
+        assetId,
+        messageId,
+        type: attachment.type,
+        fileName,
+        mimeType: attachment.mimeType,
+        sizeBytes: stats.size,
+        relativePath,
+        width: attachment.width,
+        height: attachment.height,
+        durationSeconds: attachment.durationSeconds
+    });
+}
+
+async function resolveAttachmentPath(userId, messageId, assetId, db = pool) {
+    await ensureSupportChatSchema(db);
+    const [rows] = await db.query(
+        `SELECT scm.chat_id, scm.attachments_json
+         FROM support_chat_messages scm
+         JOIN support_chats sc ON sc.id = scm.chat_id
+         WHERE scm.id = ? AND sc.user_id = ?
+         LIMIT 1`,
+        [messageId, userId]
+    );
+    const row = rows[0];
+    if (!row) {
+        throw createHttpError(404, 'Вложение не найдено.', 'SUPPORT_ATTACHMENT_NOT_FOUND');
+    }
+
+    const asset = parseAttachmentsJson(row.attachments_json).find((entry) => String(entry?.id || '') === String(assetId));
+    if (!asset?.relativePath) {
+        throw createHttpError(404, 'Вложение не найдено.', 'SUPPORT_ATTACHMENT_NOT_FOUND');
+    }
+
+    const absolutePath = resolveStoredPath(String(asset.relativePath || ''));
+    if (!fs.existsSync(absolutePath)) {
+        throw createHttpError(404, 'Файл вложения не найден.', 'SUPPORT_ATTACHMENT_MISSING');
+    }
+
+    return {
+        path: absolutePath,
+        mimeType: typeof asset.mimeType === 'string' ? asset.mimeType : 'application/octet-stream',
+        fileName: typeof asset.fileName === 'string' ? asset.fileName : path.basename(absolutePath)
+    };
 }
 
 function shapeChatRow(row) {
@@ -515,7 +902,8 @@ async function ingestTelegramUpdate(update, db = pool) {
     }
 
     const text = extractInboundText(message);
-    if (!text) {
+    const inboundAttachment = await extractTelegramAttachment(message).catch(() => null);
+    if (!text && !inboundAttachment) {
         return { accepted: false, reason: 'empty' };
     }
 
@@ -537,26 +925,38 @@ async function ingestTelegramUpdate(update, db = pool) {
         .join(' ')
         .trim() || message.from?.username || 'Поддержка';
     const createdAt = Number(message.date || 0) > 0 ? Number(message.date) * 1000 : nowMs();
+    let attachments = [];
+    let messageKind = 'TEXT';
+    if (inboundAttachment) {
+        attachments = [await persistTelegramAttachment(existingRows[0]?.id || uuidv4(), chat.id, inboundAttachment)];
+        messageKind = inboundAttachment.type === 'video' ? 'VIDEO' : 'PHOTO';
+    }
 
     if (existingRows.length > 0) {
         await db.query(
             `UPDATE support_chat_messages
-             SET message_text = ?, sender_name = ?, updated_at = ?
+             SET message_text = ?, sender_name = ?, message_kind = ?, attachments_json = ?, delivery_status = 'SENT', delivery_error = NULL, updated_at = ?
              WHERE id = ?`,
-            [text, String(senderName).slice(0, 120), nowMs(), existingRows[0].id]
+            [text, String(senderName).slice(0, 120), messageKind, JSON.stringify(attachments), nowMs(), existingRows[0].id]
         );
     } else {
+        const messageId = uuidv4();
+        if (inboundAttachment) {
+            attachments = [await persistTelegramAttachment(messageId, chat.id, inboundAttachment)];
+        }
         await db.query(
             `INSERT INTO support_chat_messages
-             (id, chat_id, user_id, sender_role, sender_name, message_text, source,
-              telegram_chat_id, telegram_thread_id, telegram_message_id, created_at, updated_at)
-             VALUES (?, ?, ?, 'support', ?, ?, 'telegram', ?, ?, ?, ?, ?)`,
+             (id, chat_id, user_id, sender_role, sender_name, message_text, source, message_kind, attachments_json,
+              delivery_status, telegram_chat_id, telegram_thread_id, telegram_message_id, created_at, updated_at)
+             VALUES (?, ?, ?, 'support', ?, ?, 'telegram', ?, ?, 'SENT', ?, ?, ?, ?, ?)`,
             [
-                uuidv4(),
+                messageId,
                 chat.id,
                 chat.user_id,
                 String(senderName).slice(0, 120),
                 text,
+                messageKind,
+                JSON.stringify(attachments),
                 String(config.chatId),
                 threadId,
                 telegramMessageId,
@@ -666,7 +1066,7 @@ async function getSupportChatState(userId, options = {}, db = pool) {
     }
 
     await ensureSupportChatSchema(db);
-    if (options.sync === 'poll' && shouldUseSupportPolling()) {
+    if ((options.sync === 'poll' || shouldUseSupportPolling()) && shouldUseSupportPolling()) {
         syncSupportUpdates(db).catch(() => null);
     }
 
@@ -696,6 +1096,146 @@ async function getSupportChatState(userId, options = {}, db = pool) {
         chat: shapeChatRow(chat),
         messages
     };
+}
+
+async function loadQueuedMessage(messageId, db = pool) {
+    const [rows] = await db.query(
+        `SELECT scm.*, sc.ticket_number, sc.telegram_thread_id, sc.user_id AS chat_user_id
+         FROM support_chat_messages scm
+         JOIN support_chats sc ON sc.id = scm.chat_id
+         WHERE scm.id = ?
+         LIMIT 1`,
+        [messageId]
+    );
+    return rows[0] || null;
+}
+
+async function deliverSupportMessage(messageId, db = pool) {
+    const queued = await loadQueuedMessage(messageId, db);
+    if (!queued || queued.delivery_status !== 'QUEUED') {
+        return;
+    }
+
+    const user = await fetchUserById(queued.user_id, { db, includeCreatedAt: true });
+    if (!user) {
+        await db.query(
+            `UPDATE support_chat_messages SET delivery_status = 'FAILED', delivery_error = ? WHERE id = ?`,
+            ['Пользователь не найден.', messageId]
+        );
+        return;
+    }
+
+    const attachments = parseAttachmentsJson(queued.attachments_json);
+    const text = String(queued.message_text || '');
+    const chat = await findChatById(queued.user_id, queued.chat_id, db);
+    let telegramResult = null;
+    let firstTelegramMessageId = Number(queued.telegram_message_id || 0) || null;
+
+    try {
+        if (!chat || !chat.telegram_thread_id) {
+            throw createHttpError(500, 'Тема поддержки не найдена.', 'SUPPORT_CHAT_UNAVAILABLE');
+        }
+        const fields = {
+            chat_id: getSupportConfig().chatId,
+            message_thread_id: Number(chat.telegram_thread_id),
+            disable_web_page_preview: true
+        };
+        if (attachments[0]?.relativePath) {
+            for (let index = 0; index < attachments.length; index += 1) {
+                const attachment = attachments[index];
+                const absolutePath = resolveStoredPath(String(attachment.relativePath || attachment.relative_path || ''));
+                const isFirst = index === 0;
+                const caption = isFirst
+                    ? buildSupportEnvelope(text || (attachment.type === 'video' ? 'Видео' : 'Фото'), user, chat).slice(0, 1024)
+                    : '';
+                if (attachment.type === 'video') {
+                    telegramResult = await callTelegramMultipart('sendVideo', {
+                        ...fields,
+                        caption
+                    }, {
+                        name: 'video',
+                        path: absolutePath,
+                        mimeType: attachment.mimeType || 'video/mp4'
+                    });
+                } else {
+                    telegramResult = await callTelegramMultipart('sendPhoto', {
+                        ...fields,
+                        caption
+                    }, {
+                        name: 'photo',
+                        path: absolutePath,
+                        mimeType: attachment.mimeType || 'image/jpeg'
+                    });
+                }
+                if (!firstTelegramMessageId) {
+                    firstTelegramMessageId = Number(telegramResult?.message_id || 0) || null;
+                }
+            }
+        } else {
+            telegramResult = await callTelegram('sendMessage', {
+                ...fields,
+                text: buildSupportEnvelope(text, user, chat)
+            });
+            firstTelegramMessageId = Number(telegramResult?.message_id || 0) || firstTelegramMessageId;
+        }
+
+        await db.query(
+            `UPDATE support_chat_messages
+             SET delivery_status = 'SENT', delivery_error = NULL, telegram_chat_id = ?, telegram_thread_id = ?, telegram_message_id = ?, updated_at = ?
+             WHERE id = ?`,
+            [
+                String(getSupportConfig().chatId),
+                Number(chat.telegram_thread_id),
+                firstTelegramMessageId,
+                nowMs(),
+                messageId
+            ]
+        );
+    } catch (error) {
+        await db.query(
+            `UPDATE support_chat_messages
+             SET delivery_status = 'FAILED', delivery_error = ?, updated_at = ?
+             WHERE id = ?`,
+            [String(error?.message || 'Не удалось отправить сообщение в Telegram.').slice(0, 255), nowMs(), messageId]
+        );
+    }
+}
+
+function queueSupportMessageDelivery(messageId, db = pool) {
+    if (deliveryJobs.has(messageId)) {
+        return deliveryJobs.get(messageId);
+    }
+    const job = Promise.resolve()
+        .then(() => deliverSupportMessage(messageId, db))
+        .finally(() => {
+            deliveryJobs.delete(messageId);
+        });
+    deliveryJobs.set(messageId, job);
+    return job;
+}
+
+function startQueuedSupportMessageDelivery(db = pool) {
+    if (resumeQueuedDeliveriesStarted) {
+        return;
+    }
+    resumeQueuedDeliveriesStarted = true;
+    setTimeout(async () => {
+        try {
+            await ensureSupportChatSchema(db);
+            const [rows] = await db.query(
+                `SELECT id
+                 FROM support_chat_messages
+                 WHERE delivery_status = 'QUEUED'
+                 ORDER BY created_at ASC
+                 LIMIT 40`
+            );
+            rows.forEach((row) => {
+                queueSupportMessageDelivery(row.id, db).catch(() => null);
+            });
+        } catch (error) {
+            console.error('Failed to resume queued support messages:', error);
+        }
+    }, 500);
 }
 
 async function sendSupportChatMessage(userId, payload = {}, db = pool) {
@@ -742,30 +1282,29 @@ async function sendSupportChatMessage(userId, payload = {}, db = pool) {
         }
     }
 
-    const config = getSupportConfig();
-    const text = normalizeMessageText(payload.text);
-    const telegramResult = await callTelegram('sendMessage', {
-        chat_id: config.chatId,
-        message_thread_id: Number(chat.telegram_thread_id),
-        text: buildSupportEnvelope(text, user, chat),
-        disable_web_page_preview: true
-    });
-
+    const normalized = normalizeOutgoingPayload(payload);
     const timestamp = nowMs();
+    const messageId = uuidv4();
+    const persistedAttachments = await persistOutgoingAttachments(messageId, chat.id, normalized.attachments);
+    const messageKind = persistedAttachments[0]?.type === 'video'
+        ? 'VIDEO'
+        : persistedAttachments[0]?.type === 'photo'
+            ? 'PHOTO'
+            : 'TEXT';
+
     await db.query(
         `INSERT INTO support_chat_messages
-         (id, chat_id, user_id, sender_role, sender_name, message_text, source,
-          telegram_chat_id, telegram_thread_id, telegram_message_id, created_at, updated_at)
-         VALUES (?, ?, ?, 'client', ?, ?, 'web', ?, ?, ?, ?, ?)`,
+         (id, chat_id, user_id, sender_role, sender_name, message_text, source, message_kind, attachments_json,
+          delivery_status, created_at, updated_at)
+         VALUES (?, ?, ?, 'client', ?, ?, 'web', ?, ?, 'QUEUED', ?, ?)`,
         [
-            uuidv4(),
+            messageId,
             chat.id,
             userId,
             String(user.name || 'Клиент').slice(0, 120),
-            text,
-            String(config.chatId),
-            Number(chat.telegram_thread_id),
-            Number(telegramResult?.message_id || 0) || null,
+            normalized.text,
+            messageKind,
+            JSON.stringify(persistedAttachments),
             timestamp,
             timestamp
         ]
@@ -784,10 +1323,13 @@ async function sendSupportChatMessage(userId, payload = {}, db = pool) {
         last_message_at: timestamp
     }, db);
 
+    queueSupportMessageDelivery(messageId, db).catch(() => null);
+
     return getSupportChatState(userId, { sync: false }, db);
 }
 
 function startSupportChatPolling() {
+    startQueuedSupportMessageDelivery();
     if (pollerStarted) {
         return;
     }
@@ -805,6 +1347,12 @@ function startSupportChatPolling() {
         });
     };
 
+    callTelegram('deleteWebhook', {
+        drop_pending_updates: false
+    }).catch((error) => {
+        console.error('Failed to switch support bot to polling mode:', error);
+    });
+
     pollerTimer = setInterval(run, SUPPORT_CHAT_POLL_INTERVAL_MS);
     if (typeof pollerTimer?.unref === 'function') {
         pollerTimer.unref();
@@ -820,7 +1368,9 @@ module.exports = {
     sendSupportChatMessage,
     syncSupportUpdates,
     startSupportChatPolling,
+    startQueuedSupportMessageDelivery,
     receiveSupportWebhook,
     verifyWebhookSecret,
-    ensureSupportChatSchema
+    ensureSupportChatSchema,
+    resolveAttachmentPath
 };

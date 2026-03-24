@@ -85,7 +85,7 @@ const aiLimiter = rateLimit({
 });
 
 app.use(limiter);
-app.use(express.json({ limit: '12mb' }));
+app.use(express.json({ limit: '24mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 app.use('/api/auth', authLimiter, authRoutes);

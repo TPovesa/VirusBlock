@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSiteAuth } from './SiteAuthProvider';
-import { SupportChatWidget, type SupportChatMessage as WidgetSupportChatMessage } from './SupportChatWidget';
+import {
+  SupportChatWidget,
+  type SupportChatAttachment as WidgetSupportChatAttachment,
+  type SupportChatDraftAttachment as WidgetSupportChatDraftAttachment,
+  type SupportChatMessage as WidgetSupportChatMessage,
+  type SupportChatSendPayload as WidgetSupportChatSendPayload
+} from './SupportChatWidget';
 import {
   fetchSupportChatState,
   humanizeError,
   openSupportChat,
   sendSupportChatMessage,
+  type SiteSupportChatAttachment,
+  type SiteSupportChatDraftAttachment,
   type SiteSupportChatState
 } from '../lib/siteAuth';
 
@@ -22,12 +30,51 @@ const clientLinks = [
   { to: '/linux', label: 'Linux' }
 ];
 
+type OptimisticSupportMessage = WidgetSupportChatMessage & {
+  clientPayload?: WidgetSupportChatSendPayload;
+};
+
 function parseTimestamp(value: string | number | Date | null | undefined) {
   if (!value) {
     return 0;
   }
   const parsed = value instanceof Date ? value.getTime() : new Date(value).getTime();
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function mapSupportAttachment(attachment: SiteSupportChatAttachment): WidgetSupportChatAttachment {
+  return {
+    id: attachment.id,
+    kind: attachment.kind,
+    url: attachment.url,
+    thumbnailUrl: attachment.thumbnailUrl || undefined,
+    mimeType: attachment.mimeType || undefined,
+    fileName: attachment.fileName || undefined,
+    fileSizeBytes: attachment.fileSizeBytes || undefined,
+    width: attachment.width || undefined,
+    height: attachment.height || undefined,
+    durationSeconds: attachment.durationSeconds || undefined
+  };
+}
+
+function mapDraftAttachment(attachment: WidgetSupportChatDraftAttachment | undefined | null): WidgetSupportChatAttachment[] {
+  if (!attachment) {
+    return [];
+  }
+  return [
+    {
+      id: `draft-${Math.random().toString(36).slice(2)}`,
+      kind: attachment.kind,
+      url: attachment.previewUrl || attachment.dataUrl,
+      thumbnailUrl: attachment.previewUrl || undefined,
+      mimeType: attachment.mimeType,
+      fileName: attachment.fileName,
+      fileSizeBytes: attachment.fileSizeBytes,
+      width: attachment.width || undefined,
+      height: attachment.height || undefined,
+      durationSeconds: attachment.durationSeconds || undefined
+    }
+  ];
 }
 
 function mapSupportMessages(state: SiteSupportChatState | null): WidgetSupportChatMessage[] {
@@ -46,13 +93,35 @@ function mapSupportMessages(state: SiteSupportChatState | null): WidgetSupportCh
     text: message.text,
     author: message.senderName || undefined,
     createdAt: message.createdAt,
+    pending: message.deliveryStatus === 'QUEUED',
+    failed: message.deliveryStatus === 'FAILED',
+    attachments: (message.attachments || []).map((attachment) => mapSupportAttachment(attachment)),
     meta:
-      message.senderRole === 'support'
-        ? 'Поддержка'
-        : message.senderRole === 'system'
-          ? 'Система'
-          : undefined
+      message.deliveryStatus === 'FAILED'
+        ? (message.deliveryError || 'Не удалось отправить сообщение.')
+        : message.senderRole === 'support'
+          ? 'Поддержка'
+          : message.senderRole === 'system'
+            ? 'Система'
+            : undefined
   }));
+}
+
+function mapOutgoingAttachment(attachment: WidgetSupportChatDraftAttachment | null | undefined): SiteSupportChatDraftAttachment | undefined {
+  if (!attachment) {
+    return undefined;
+  }
+  return {
+    kind: attachment.kind,
+    fileName: attachment.fileName,
+    mimeType: attachment.mimeType,
+    fileSizeBytes: attachment.fileSizeBytes,
+    dataUrl: attachment.dataUrl,
+    previewUrl: attachment.previewUrl,
+    width: attachment.width,
+    height: attachment.height,
+    durationSeconds: attachment.durationSeconds
+  };
 }
 
 export function AppShell() {
@@ -63,8 +132,8 @@ export function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportState, setSupportState] = useState<SiteSupportChatState | null>(null);
-  const [supportLoading, setSupportLoading] = useState(false);
   const [supportSending, setSupportSending] = useState(false);
+  const [supportOptimisticMessages, setSupportOptimisticMessages] = useState<OptimisticSupportMessage[]>([]);
   const [supportSeenAt, setSupportSeenAt] = useState(0);
   const [supportRefreshNonce, setSupportRefreshNonce] = useState(0);
 
@@ -116,50 +185,54 @@ export function AppShell() {
   }, [supportState]);
 
   const launcherUnreadCount = latestSupportReplyAt > supportSeenAt ? 1 : 0;
+  const widgetMessages = useMemo<WidgetSupportChatMessage[]>(() => {
+    return [...mapSupportMessages(supportState), ...supportOptimisticMessages];
+  }, [supportOptimisticMessages, supportState]);
 
-  const loadSupportState = useCallback(async () => {
+  const loadSupportState = useCallback(async (options?: { openIfMissing?: boolean }) => {
     if (!session) {
       setSupportState(null);
+      setSupportOptimisticMessages([]);
       return;
     }
 
-    setSupportLoading(true);
-    const result = await fetchSupportChatState({ limit: 80 });
+    const result = await fetchSupportChatState({ limit: 80, sync: 'poll' });
     if (result.ok && result.data) {
-      if (result.data.availability && !result.data.chat) {
+      let nextState = result.data;
+      if (options?.openIfMissing && result.data.availability && !result.data.chat) {
         const opened = await openSupportChat();
         if (opened.ok && opened.data) {
-          setSupportState(opened.data);
-        } else {
-          setSupportState(result.data);
+          nextState = opened.data;
         }
-      } else {
-        setSupportState(result.data);
       }
-    } else {
+      setSupportState(nextState);
+      setSupportOptimisticMessages((current) => current.filter((message) => message.failed));
+      return;
+    }
+
+    if (!supportState) {
       setSupportState({
         availability: false,
         message: result.error || 'Поддержка временно недоступна.',
         messages: []
       });
     }
-    setSupportLoading(false);
-  }, [session]);
+  }, [session, supportState]);
 
   useEffect(() => {
     if (!supportOpen || !session) {
       return;
     }
-    void loadSupportState();
+    void loadSupportState({ openIfMissing: true });
   }, [loadSupportState, session, supportOpen, supportRefreshNonce]);
 
   useEffect(() => {
     if (!supportOpen || !session) {
       return;
     }
-    const pollAfterMs = Math.max(1500, Number(supportState?.pollAfterMs || 0) || 4000);
+    const pollAfterMs = Math.max(1500, Number(supportState?.pollAfterMs || 0) || 3000);
     const timer = window.setTimeout(() => {
-      void loadSupportState();
+      void loadSupportState({ openIfMissing: false });
     }, pollAfterMs);
     return () => window.clearTimeout(timer);
   }, [loadSupportState, session, supportOpen, supportState?.pollAfterMs, supportState?.messages]);
@@ -176,36 +249,70 @@ export function AppShell() {
     setMenuOpen(false);
     setSupportOpen(false);
     setSupportState(null);
+    setSupportOptimisticMessages([]);
   }
 
-  async function handleSupportSend(text: string) {
+  async function handleSupportSend(payload: WidgetSupportChatSendPayload) {
     if (!session) {
       navigate('/login');
       return;
     }
 
+    const optimisticId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const optimisticMessage: OptimisticSupportMessage = {
+      id: optimisticId,
+      role: 'user',
+      text: payload.text,
+      author: user?.name || 'Ты',
+      createdAt: new Date().toISOString(),
+      pending: true,
+      attachments: mapDraftAttachment(payload.attachment),
+      clientPayload: payload
+    };
+
+    setSupportOptimisticMessages((current) => [...current, optimisticMessage]);
     setSupportSending(true);
-    const result = await sendSupportChatMessage(text, supportState?.chat?.id);
+    const result = await sendSupportChatMessage(
+      {
+        text: payload.text,
+        attachment: mapOutgoingAttachment(payload.attachment)
+      },
+      supportState?.chat?.id
+    );
+
     if (result.ok && result.data) {
+      setSupportOptimisticMessages((current) => current.filter((message) => message.id !== optimisticId && message.failed));
       setSupportState(result.data);
       setSupportSeenAt((current) => Math.max(current, latestSupportReplyAt));
     } else {
-      setSupportState((current) => ({
-        availability: false,
-        message: result.error || 'Не удалось отправить сообщение.',
-        chat: current?.chat || null,
-        messages: current?.messages || []
-      }));
+      setSupportOptimisticMessages((current) =>
+        current.map((message) =>
+          message.id === optimisticId
+            ? {
+                ...message,
+                pending: false,
+                failed: true,
+                meta: result.error || 'Не удалось отправить сообщение.'
+              }
+            : message
+        )
+      );
     }
     setSupportSending(false);
   }
 
+  const handleSupportRetry = useCallback(async (message: WidgetSupportChatMessage) => {
+    const payload = (message as OptimisticSupportMessage).clientPayload;
+    if (!payload) {
+      return;
+    }
+    setSupportOptimisticMessages((current) => current.filter((entry) => entry.id !== message.id));
+    await handleSupportSend(payload);
+  }, []);
+
   const widgetUnavailable = useMemo(() => {
     if (!ready) {
-      return {
-        title: 'Поддержка загружается',
-        description: 'Подождите немного.'
-      };
+      return null;
     }
 
     if (!session) {
@@ -350,15 +457,13 @@ export function AppShell() {
         title="Чат поддержки"
         launcherLabel="Нужна помощь?"
         launcherUnreadCount={launcherUnreadCount}
-        launcherPending={supportLoading || supportSending}
-        messages={mapSupportMessages(supportState)}
-        loading={supportLoading}
-        refreshing={supportLoading && Boolean(supportState)}
+        messages={widgetMessages}
         sending={supportSending}
         unavailable={widgetUnavailable}
         emptyTitle="Напишите в поддержку"
         emptyDescription=""
         onSend={handleSupportSend}
+        onRetryMessage={handleSupportRetry}
       />
 
       <footer className="site-footer">
