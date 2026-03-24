@@ -24,6 +24,14 @@ function sendError(res, error, fallbackMessage) {
     return res.status(status).json(body);
 }
 
+function getRequestContext(req) {
+    const forwardedFor = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    return {
+        ip_address: forwardedFor || req.ip || req.socket?.remoteAddress || null,
+        user_agent: req.get('user-agent') || null
+    };
+}
+
 function authenticateSupportMediaRequest(req, res, next) {
     const header = req.headers['authorization'];
     const token = header && header.startsWith('Bearer ')
@@ -51,7 +59,8 @@ router.get('/profile/support-chat', auth, async (req, res) => {
         const state = await getSupportChatState(req.userId, {
             after: req.query.after,
             limit: req.query.limit,
-            sync: req.query.sync
+            sync: req.query.sync,
+            requestMeta: getRequestContext(req)
         });
         res.setHeader('Cache-Control', 'no-store');
         return res.json({ success: true, ...state });
@@ -63,9 +72,11 @@ router.get('/profile/support-chat', auth, async (req, res) => {
 
 router.post('/profile/support-chat/open', auth, async (req, res) => {
     try {
-        const state = await createSupportChat(req.userId);
+        const state = await createSupportChat(req.userId, {
+            requestMeta: getRequestContext(req)
+        });
         res.setHeader('Cache-Control', 'no-store');
-        return res.status(state.availability ? 201 : 200).json({ success: true, ...state });
+        return res.status(state.availability && !state.blocked && state.chat ? 201 : 200).json({ success: true, ...state });
     } catch (error) {
         console.error('Profile support chat open error:', error);
         return sendError(res, error, 'Не удалось открыть чат поддержки.');
@@ -74,7 +85,10 @@ router.post('/profile/support-chat/open', auth, async (req, res) => {
 
 router.post('/profile/support-chat/messages', auth, async (req, res) => {
     try {
-        const state = await sendSupportChatMessage(req.userId, req.body || {});
+        const state = await sendSupportChatMessage(req.userId, {
+            ...(req.body || {}),
+            requestMeta: getRequestContext(req)
+        });
         res.setHeader('Cache-Control', 'no-store');
         return res.json({ success: true, ...state });
     } catch (error) {

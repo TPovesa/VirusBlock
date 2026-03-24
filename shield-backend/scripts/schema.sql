@@ -80,6 +80,9 @@ CREATE TABLE IF NOT EXISTS support_chats (
     telegram_chat_id VARCHAR(64) DEFAULT NULL,
     telegram_thread_id BIGINT DEFAULT NULL,
     telegram_topic_name VARCHAR(255) DEFAULT NULL,
+    telegram_control_message_id BIGINT DEFAULT NULL,
+    last_client_ip VARCHAR(64) DEFAULT NULL,
+    last_client_user_agent VARCHAR(255) DEFAULT NULL,
     last_message_from ENUM('client','support','system') NOT NULL DEFAULT 'client',
     last_message_at BIGINT DEFAULT NULL,
     created_at BIGINT NOT NULL,
@@ -118,6 +121,23 @@ CREATE TABLE IF NOT EXISTS support_chat_meta (
     meta_key VARCHAR(120) PRIMARY KEY,
     meta_value LONGTEXT DEFAULT NULL,
     updated_at BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS support_chat_bans (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    ip_address VARCHAR(64) DEFAULT NULL,
+    support_chat_id VARCHAR(36) DEFAULT NULL,
+    blocked_by_telegram_user_id VARCHAR(64) DEFAULT NULL,
+    blocked_by_username VARCHAR(120) DEFAULT NULL,
+    reason VARCHAR(255) DEFAULT NULL,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    revoked_at BIGINT DEFAULT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (support_chat_id) REFERENCES support_chats(id) ON DELETE SET NULL,
+    INDEX idx_support_chat_bans_user_active (user_id, revoked_at, created_at),
+    INDEX idx_support_chat_bans_ip_active (ip_address, revoked_at, created_at)
 );
 
 CREATE TABLE IF NOT EXISTS release_notifier_meta (

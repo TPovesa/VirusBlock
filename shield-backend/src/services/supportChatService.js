@@ -17,6 +17,8 @@ const SUPPORT_CHAT_ATTACHMENT_LIMIT = Math.max(1, Math.min(4, Number(process.env
 const SUPPORT_CHAT_ATTACHMENT_MAX_BYTES = Math.max(512 * 1024, Number(process.env.SUPPORT_CHAT_ATTACHMENT_MAX_BYTES || 8 * 1024 * 1024) || (8 * 1024 * 1024));
 const SUPPORT_CHAT_ALLOWED_ATTACHMENT_TYPES = new Set(['photo', 'video']);
 const SUPPORT_TELEGRAM_FETCH_TIMEOUT_MS = Math.max(4000, Number(process.env.SUPPORT_TELEGRAM_FETCH_TIMEOUT_MS || 7000) || 7000);
+const SUPPORT_CALLBACK_PREFIX = 'support';
+const SUPPORT_CALLBACK_ACTIONS = new Set(['close', 'menu', 'ban', 'ban-confirm', 'back']);
 
 let schemaReady = false;
 let schemaReadyPromise = null;
@@ -36,6 +38,17 @@ function createHttpError(status, message, code) {
 
 function nowMs() {
     return Date.now();
+}
+
+function normalizeIpAddress(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+        return null;
+    }
+    if (normalized.startsWith('::ffff:')) {
+        return normalized.slice(7) || null;
+    }
+    return normalized;
 }
 
 function ensureStorageDir() {
@@ -157,6 +170,40 @@ function getAvailabilityState() {
     };
 }
 
+function shapeSupportBan(row) {
+    if (!row) {
+        return null;
+    }
+    return {
+        id: String(row.id || ''),
+        user_id: String(row.user_id || ''),
+        ip_address: normalizeIpAddress(row.ip_address),
+        blocked_by_telegram_user_id: row.blocked_by_telegram_user_id ? String(row.blocked_by_telegram_user_id) : null,
+        blocked_by_username: typeof row.blocked_by_username === 'string' ? row.blocked_by_username : null,
+        reason: typeof row.reason === 'string' ? row.reason : null,
+        created_at: Number(row.created_at || 0) || null,
+        updated_at: Number(row.updated_at || 0) || null,
+        revoked_at: Number(row.revoked_at || 0) || null
+    };
+}
+
+function buildSupportCallbackData(action, chatId) {
+    return `${SUPPORT_CALLBACK_PREFIX}|${String(action || '').trim()}|${String(chatId || '').trim()}`.slice(0, 64);
+}
+
+function parseSupportCallbackData(value) {
+    const parts = String(value || '').split('|');
+    if (parts.length !== 3 || parts[0] !== SUPPORT_CALLBACK_PREFIX) {
+        return null;
+    }
+    const action = String(parts[1] || '').trim();
+    const chatId = String(parts[2] || '').trim();
+    if (!SUPPORT_CALLBACK_ACTIONS.has(action) || !chatId) {
+        return null;
+    }
+    return { action, chatId };
+}
+
 function shouldUseSupportPolling() {
     const forced = String(process.env.SUPPORT_TELEGRAM_FORCE_POLLING || '').trim().toLowerCase();
     if (forced === '1' || forced === 'true') {
@@ -225,10 +272,34 @@ async function ensureSupportChatSchema(db = pool) {
             ADD COLUMN IF NOT EXISTS delivery_error VARCHAR(255) DEFAULT NULL AFTER delivery_status
         `);
         await db.query(`
+            ALTER TABLE support_chats
+            ADD COLUMN IF NOT EXISTS last_client_ip VARCHAR(64) DEFAULT NULL AFTER telegram_topic_name,
+            ADD COLUMN IF NOT EXISTS last_client_user_agent VARCHAR(255) DEFAULT NULL AFTER last_client_ip,
+            ADD COLUMN IF NOT EXISTS telegram_control_message_id BIGINT DEFAULT NULL AFTER telegram_topic_name
+        `);
+        await db.query(`
             CREATE TABLE IF NOT EXISTS support_chat_meta (
                 meta_key VARCHAR(120) PRIMARY KEY,
                 meta_value LONGTEXT DEFAULT NULL,
                 updated_at BIGINT NOT NULL
+            )
+        `);
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS support_chat_bans (
+                id VARCHAR(36) PRIMARY KEY,
+                user_id VARCHAR(36) NOT NULL,
+                ip_address VARCHAR(64) DEFAULT NULL,
+                support_chat_id VARCHAR(36) DEFAULT NULL,
+                blocked_by_telegram_user_id VARCHAR(64) DEFAULT NULL,
+                blocked_by_username VARCHAR(120) DEFAULT NULL,
+                reason VARCHAR(255) DEFAULT NULL,
+                created_at BIGINT NOT NULL,
+                updated_at BIGINT NOT NULL,
+                revoked_at BIGINT DEFAULT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (support_chat_id) REFERENCES support_chats(id) ON DELETE SET NULL,
+                INDEX idx_support_chat_bans_user_active (user_id, revoked_at, created_at),
+                INDEX idx_support_chat_bans_ip_active (ip_address, revoked_at, created_at)
             )
         `);
         schemaReady = true;
@@ -739,12 +810,125 @@ function shapeChatRow(row) {
         status: row.status,
         telegram_thread_id: row.telegram_thread_id,
         telegram_topic_name: row.telegram_topic_name,
+        telegram_control_message_id: Number(row.telegram_control_message_id || 0) || null,
+        last_client_ip: normalizeIpAddress(row.last_client_ip),
         last_message_from: row.last_message_from,
         last_message_at: row.last_message_at,
         created_at: row.created_at,
         updated_at: row.updated_at,
         closed_at: row.closed_at
     };
+}
+
+async function trackSupportClientContext(chatId, context = {}, db = pool) {
+    const ipAddress = normalizeIpAddress(context.ip_address || context.ipAddress);
+    const userAgent = normalizeOptionalText(context.user_agent || context.userAgent || '', 255);
+    if (!ipAddress && !userAgent) {
+        return;
+    }
+    await db.query(
+        `UPDATE support_chats
+         SET last_client_ip = COALESCE(?, last_client_ip),
+             last_client_user_agent = COALESCE(?, last_client_user_agent),
+             updated_at = ?
+         WHERE id = ?`,
+        [ipAddress, userAgent, nowMs(), chatId]
+    );
+}
+
+async function getActiveSupportBan(userId, context = {}, db = pool) {
+    await ensureSupportChatSchema(db);
+    const ipAddress = normalizeIpAddress(context.ip_address || context.ipAddress);
+    const predicates = ['user_id = ?'];
+    const params = [String(userId)];
+    if (ipAddress) {
+        predicates.push('ip_address = ?');
+        params.push(ipAddress);
+    }
+    const [rows] = await db.query(
+        `SELECT *
+         FROM support_chat_bans
+         WHERE revoked_at IS NULL
+           AND (${predicates.join(' OR ')})
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        params
+    );
+    return shapeSupportBan(rows[0] || null);
+}
+
+function buildBlockedSupportState(availability, ban) {
+    return {
+        ...availability,
+        blocked: true,
+        message: 'Доступ к чату поддержки ограничен.',
+        ban,
+        chat: null,
+        messages: []
+    };
+}
+
+async function ensureSupportNotBlocked(userId, context = {}, db = pool) {
+    const ban = await getActiveSupportBan(userId, context, db);
+    if (ban) {
+        throw createHttpError(403, 'Доступ к чату поддержки ограничен.', 'SUPPORT_CHAT_BLOCKED');
+    }
+    return null;
+}
+
+function buildSupportControlText(chatRow, user, ban = null) {
+    const lines = [
+        `Заявка #${chatRow.ticket_number}`,
+        `${user?.name || 'Клиент'} <${user?.email || 'no-email'}>`
+    ];
+    if (ban) {
+        lines.push('Статус: заблокирована в поддержке');
+    } else if (String(chatRow.status || '').toUpperCase() === 'CLOSED') {
+        lines.push('Статус: закрыта');
+    } else {
+        lines.push('Статус: открыта');
+    }
+    return lines.join('\n');
+}
+
+function buildSupportControlKeyboard(chatRow, mode = 'root', ban = null) {
+    if (ban || String(chatRow?.status || '').toUpperCase() === 'CLOSED') {
+        return undefined;
+    }
+
+    if (mode === 'menu') {
+        return {
+            inline_keyboard: [
+                [{ text: 'Забанить', callback_data: buildSupportCallbackData('ban', chatRow.id) }],
+                [{ text: 'Назад', callback_data: buildSupportCallbackData('back', chatRow.id) }]
+            ]
+        };
+    }
+
+    if (mode === 'confirm-ban') {
+        return {
+            inline_keyboard: [
+                [{ text: 'Подтвердить бан', callback_data: buildSupportCallbackData('ban-confirm', chatRow.id) }],
+                [{ text: 'Отмена', callback_data: buildSupportCallbackData('back', chatRow.id) }]
+            ]
+        };
+    }
+
+    return {
+        inline_keyboard: [[
+            { text: 'Закрыть заявку', callback_data: buildSupportCallbackData('close', chatRow.id) },
+            { text: '3 точки', callback_data: buildSupportCallbackData('menu', chatRow.id) }
+        ]]
+    };
+}
+
+async function findSupportChatById(chatId, db = pool) {
+    await ensureSupportChatSchema(db);
+    const [rows] = await db.query(
+        'SELECT * FROM support_chats WHERE id = ? LIMIT 1',
+        [String(chatId)]
+    );
+    return rows[0] || null;
 }
 
 async function updateTopicIndicator(chatRow, db = pool) {
@@ -777,6 +961,164 @@ function queueTopicIndicatorUpdate(chatRow, db = pool) {
     }
 }
 
+async function answerSupportCallbackQuery(callbackQueryId, text, options = {}) {
+    if (!callbackQueryId) {
+        return;
+    }
+    await callTelegram('answerCallbackQuery', {
+        callback_query_id: callbackQueryId,
+        text: typeof text === 'string' ? text.slice(0, 180) : undefined,
+        show_alert: options.showAlert === true
+    }).catch(() => {});
+}
+
+async function isSupportGroupAdmin(telegramUserId) {
+    const config = getSupportConfig();
+    if (!config.available || !telegramUserId) {
+        return false;
+    }
+    const result = await callTelegram('getChatMember', {
+        chat_id: config.chatId,
+        user_id: Number(telegramUserId)
+    }).catch(() => null);
+    const status = String(result?.status || '').toLowerCase();
+    return status === 'administrator' || status === 'creator';
+}
+
+async function ensureSupportControlMessage(chatRow, user, db = pool, options = {}) {
+    const config = getSupportConfig();
+    if (!config.available || !chatRow?.telegram_thread_id) {
+        return null;
+    }
+    const chat = chatRow.telegram_chat_id || config.chatId;
+    const ban = options.ban || await getActiveSupportBan(chatRow.user_id, { ip_address: chatRow.last_client_ip }, db);
+    const text = buildSupportControlText(chatRow, user, ban);
+    const replyMarkup = buildSupportControlKeyboard(chatRow, options.mode || 'root', ban);
+    const controlMessageId = Number(chatRow.telegram_control_message_id || 0) || null;
+
+    if (controlMessageId) {
+        const payload = {
+            chat_id: chat,
+            message_id: controlMessageId,
+            text
+        };
+        if (replyMarkup) {
+            payload.reply_markup = replyMarkup;
+        } else {
+            payload.reply_markup = { inline_keyboard: [] };
+        }
+        const edited = await callTelegram('editMessageText', payload).catch(() => null);
+        if (edited) {
+            return controlMessageId;
+        }
+    }
+
+    const sent = await callTelegram('sendMessage', {
+        chat_id: chat,
+        message_thread_id: Number(chatRow.telegram_thread_id),
+        text,
+        reply_markup: replyMarkup
+    });
+    const messageId = Number(sent?.message_id || 0) || null;
+    if (messageId) {
+        await db.query(
+            'UPDATE support_chats SET telegram_control_message_id = ?, updated_at = ? WHERE id = ?',
+            [messageId, nowMs(), chatRow.id]
+        );
+    }
+    return messageId;
+}
+
+async function appendSystemSupportMessage(chatRow, text, db = pool) {
+    const stamp = nowMs();
+    await db.query(
+        `INSERT INTO support_chat_messages
+         (id, chat_id, user_id, sender_role, sender_name, message_text, source, message_kind, attachments_json,
+          delivery_status, created_at, updated_at)
+         VALUES (?, ?, ?, 'system', 'NeuralV', ?, 'system', 'TEXT', '[]', 'SENT', ?, ?)`,
+        [uuidv4(), chatRow.id, chatRow.user_id, String(text || '').slice(0, SUPPORT_CHAT_MESSAGE_MAX_LENGTH), stamp, stamp]
+    );
+}
+
+async function closeSupportChatByModerator(chatRow, actor, db = pool) {
+    const timestamp = nowMs();
+    await db.query(
+        `UPDATE support_chats
+         SET status = 'CLOSED',
+             closed_at = COALESCE(closed_at, ?),
+             last_message_from = 'system',
+             last_message_at = ?,
+             updated_at = ?
+         WHERE id = ?`,
+        [timestamp, timestamp, timestamp, chatRow.id]
+    );
+    await appendSystemSupportMessage(chatRow, `Заявка закрыта ${actor || 'поддержкой'}.`, db);
+    queueTopicIndicatorUpdate({
+        ...chatRow,
+        status: 'CLOSED',
+        last_message_from: 'system',
+        last_message_at: timestamp
+    }, db);
+    await callTelegram('closeForumTopic', {
+        chat_id: chatRow.telegram_chat_id || getSupportConfig().chatId,
+        message_thread_id: Number(chatRow.telegram_thread_id || 0)
+    }).catch(() => {});
+    const refreshed = await findSupportChatById(chatRow.id, db);
+    const user = await fetchUserById(chatRow.user_id, { db, includeCreatedAt: true }).catch(() => null);
+    if (refreshed) {
+        await ensureSupportControlMessage(refreshed, user, db, { mode: 'root' }).catch(() => null);
+    }
+    return refreshed || chatRow;
+}
+
+async function banSupportUser(chatRow, actor, db = pool) {
+    const timestamp = nowMs();
+    await db.query(
+        `INSERT INTO support_chat_bans
+         (id, user_id, ip_address, support_chat_id, blocked_by_telegram_user_id, blocked_by_username, reason, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+            uuidv4(),
+            chatRow.user_id,
+            normalizeIpAddress(chatRow.last_client_ip),
+            chatRow.id,
+            actor?.user_id ? String(actor.user_id) : null,
+            actor?.username ? String(actor.username).slice(0, 120) : null,
+            'support-ban',
+            timestamp,
+            timestamp
+        ]
+    );
+    await db.query(
+        `UPDATE support_chats
+         SET status = 'CLOSED',
+             closed_at = COALESCE(closed_at, ?),
+             last_message_from = 'system',
+             last_message_at = ?,
+             updated_at = ?
+         WHERE user_id = ? AND status = 'OPEN'`,
+        [timestamp, timestamp, timestamp, chatRow.user_id]
+    );
+    await appendSystemSupportMessage(chatRow, 'Доступ к чату поддержки ограничен.', db);
+    queueTopicIndicatorUpdate({
+        ...chatRow,
+        status: 'CLOSED',
+        last_message_from: 'system',
+        last_message_at: timestamp
+    }, db);
+    await callTelegram('closeForumTopic', {
+        chat_id: chatRow.telegram_chat_id || getSupportConfig().chatId,
+        message_thread_id: Number(chatRow.telegram_thread_id || 0)
+    }).catch(() => {});
+    const refreshed = await findSupportChatById(chatRow.id, db);
+    const user = await fetchUserById(chatRow.user_id, { db, includeCreatedAt: true }).catch(() => null);
+    const ban = await getActiveSupportBan(chatRow.user_id, { ip_address: chatRow.last_client_ip }, db);
+    if (refreshed) {
+        await ensureSupportControlMessage(refreshed, user, db, { mode: 'root', ban }).catch(() => null);
+    }
+    return { chat: refreshed || chatRow, ban };
+}
+
 async function ensureForumTopicForChat(chatRow, user, db = pool) {
     const config = getSupportConfig();
     if (!config.available || !chatRow) {
@@ -803,24 +1145,20 @@ async function ensureForumTopicForChat(chatRow, user, db = pool) {
         [config.chatId, threadId, topicName, nowMs(), chatRow.id]
     );
 
-    if (user) {
-        await callTelegram('sendMessage', {
-            chat_id: config.chatId,
-            message_thread_id: threadId,
-            text: `Новая заявка с сайта\nЗаявка #${chatRow.ticket_number}\n${user.name} <${user.email}>`
-        }).catch(() => {});
-    }
-
     const [rows] = await db.query('SELECT * FROM support_chats WHERE id = ? LIMIT 1', [chatRow.id]);
-    return rows[0] || {
+    const hydrated = rows[0] || {
         ...chatRow,
         telegram_chat_id: config.chatId,
         telegram_thread_id: threadId,
         telegram_topic_name: topicName
     };
+    if (user) {
+        await ensureSupportControlMessage(hydrated, user, db).catch(() => null);
+    }
+    return hydrated;
 }
 
-async function createSupportChat(userId, db = pool) {
+async function createSupportChat(userId, options = {}, db = pool) {
     await ensureSupportChatSchema(db);
     const availability = getAvailabilityState();
     if (!availability.availability) {
@@ -829,6 +1167,11 @@ async function createSupportChat(userId, db = pool) {
             chat: null,
             messages: []
         };
+    }
+    const requestMeta = options.requestMeta || options.request_meta || {};
+    const existingBan = await getActiveSupportBan(userId, requestMeta, db);
+    if (existingBan) {
+        return buildBlockedSupportState(availability, existingBan);
     }
 
     const user = await fetchUserById(userId, { db, includeCreatedAt: true });
@@ -849,6 +1192,7 @@ async function createSupportChat(userId, db = pool) {
         const existing = await findOpenChatForUser(userId, db);
         if (existing) {
             let existingChat = existing;
+            await trackSupportClientContext(existingChat.id, requestMeta, db).catch(() => null);
             if (!existingChat.telegram_thread_id) {
                 try {
                     existingChat = await ensureForumTopicForChat(existingChat, user, db);
@@ -861,6 +1205,9 @@ async function createSupportChat(userId, db = pool) {
                         messages: await loadChatMessages(existingChat.id, {}, db)
                     };
                 }
+            }
+            if (existingChat.telegram_thread_id) {
+                await ensureSupportControlMessage(existingChat, user, db).catch(() => null);
             }
             return {
                 ...availability,
@@ -883,6 +1230,7 @@ async function createSupportChat(userId, db = pool) {
         if (!created) {
             throw createHttpError(500, 'Не удалось открыть чат поддержки.', 'SUPPORT_CHAT_CREATE_FAILED');
         }
+        await trackSupportClientContext(chatId, requestMeta, db).catch(() => null);
     } finally {
         await db.query('SELECT RELEASE_LOCK(?) AS released', [lockName]).catch(() => {});
     }
@@ -1024,6 +1372,84 @@ async function ingestTelegramUpdate(update, db = pool) {
     return { accepted: true, chat_id: chat.id, thread_id: threadId };
 }
 
+async function handleSupportCallbackQuery(callbackQuery, db = pool) {
+    const config = getSupportConfig();
+    const parsed = parseSupportCallbackData(callbackQuery?.data);
+    const callbackQueryId = String(callbackQuery?.id || '').trim();
+    if (!parsed) {
+        await answerSupportCallbackQuery(callbackQueryId, 'Неизвестное действие.');
+        return { accepted: false, reason: 'unsupported-callback' };
+    }
+
+    const messageChatId = String(callbackQuery?.message?.chat?.id || '').trim();
+    if (!messageChatId || messageChatId !== String(config.chatId)) {
+        await answerSupportCallbackQuery(callbackQueryId, 'Неверный чат.');
+        return { accepted: false, reason: 'wrong-chat' };
+    }
+
+    const chatRow = await findSupportChatById(parsed.chatId, db);
+    if (!chatRow || String(chatRow.telegram_chat_id || config.chatId) !== String(config.chatId)) {
+        await answerSupportCallbackQuery(callbackQueryId, 'Заявка не найдена.');
+        return { accepted: false, reason: 'unknown-chat' };
+    }
+
+    const actorName = [callbackQuery?.from?.first_name, callbackQuery?.from?.last_name]
+        .filter(Boolean)
+        .join(' ')
+        .trim() || callbackQuery?.from?.username || 'поддержкой';
+    const actor = {
+        user_id: callbackQuery?.from?.id ? String(callbackQuery.from.id) : null,
+        username: callbackQuery?.from?.username || null,
+        name: actorName
+    };
+    const user = await fetchUserById(chatRow.user_id, { db, includeCreatedAt: true }).catch(() => null);
+
+    if (parsed.action === 'menu') {
+        await ensureSupportControlMessage(chatRow, user, db, { mode: 'menu' }).catch(() => null);
+        await answerSupportCallbackQuery(callbackQueryId, 'Панель модерации открыта.');
+        return { accepted: true, reason: 'menu-opened', chat_id: chatRow.id };
+    }
+
+    if (parsed.action === 'back') {
+        await ensureSupportControlMessage(chatRow, user, db, { mode: 'root' }).catch(() => null);
+        await answerSupportCallbackQuery(callbackQueryId, 'Готово.');
+        return { accepted: true, reason: 'menu-closed', chat_id: chatRow.id };
+    }
+
+    if (parsed.action === 'close') {
+        await closeSupportChatByModerator(chatRow, actor.name, db);
+        await answerSupportCallbackQuery(callbackQueryId, 'Заявка закрыта.');
+        return { accepted: true, reason: 'chat-closed', chat_id: chatRow.id };
+    }
+
+    const isAdmin = await isSupportGroupAdmin(actor.user_id);
+    if (!isAdmin) {
+        await answerSupportCallbackQuery(callbackQueryId, 'Только администратор группы может это сделать.', { showAlert: true });
+        return { accepted: false, reason: 'forbidden' };
+    }
+
+    if (parsed.action === 'ban') {
+        await ensureSupportControlMessage(chatRow, user, db, { mode: 'confirm-ban' });
+        await answerSupportCallbackQuery(callbackQueryId, 'Подтвердите бан пользователя.');
+        return { accepted: true, reason: 'ban-confirmation', chat_id: chatRow.id };
+    }
+
+    if (parsed.action === 'ban-confirm') {
+        const currentBan = await getActiveSupportBan(chatRow.user_id, { ip_address: chatRow.last_client_ip }, db);
+        if (currentBan) {
+            await ensureSupportControlMessage(chatRow, user, db, { mode: 'root', ban: currentBan }).catch(() => null);
+            await answerSupportCallbackQuery(callbackQueryId, 'Пользователь уже заблокирован.', { showAlert: true });
+            return { accepted: false, reason: 'already-banned', chat_id: chatRow.id };
+        }
+        const result = await banSupportUser(chatRow, actor, db);
+        await answerSupportCallbackQuery(callbackQueryId, 'Пользователь заблокирован в поддержке.', { showAlert: true });
+        return { accepted: true, reason: 'banned', chat_id: result.chat.id };
+    }
+
+    await answerSupportCallbackQuery(callbackQueryId, 'Неизвестное действие.');
+    return { accepted: false, reason: 'unsupported-callback' };
+}
+
 async function syncSupportUpdates(db = pool) {
     if (syncPromise) {
         return syncPromise;
@@ -1049,7 +1475,7 @@ async function syncSupportUpdates(db = pool) {
             offset,
             limit: 100,
             timeout: 0,
-            allowed_updates: ['message', 'edited_message', 'channel_post', 'edited_channel_post']
+            allowed_updates: ['message', 'edited_message', 'channel_post', 'edited_channel_post', 'callback_query']
         }, {
             useFetchFallback: false,
             curlMaxTimeSec: 8
@@ -1091,6 +1517,15 @@ async function receiveSupportWebhook(update, db = pool) {
     }
 
     await ensureSupportChatSchema(db);
+    if (update?.callback_query) {
+        const result = await handleSupportCallbackQuery(update.callback_query, db);
+        return {
+            ...availability,
+            accepted: Boolean(result.accepted),
+            ignored: !result.accepted,
+            reason: result.reason || null
+        };
+    }
     const result = await ingestTelegramUpdate(update, db);
     return {
         ...availability,
@@ -1111,6 +1546,11 @@ async function getSupportChatState(userId, options = {}, db = pool) {
     }
 
     await ensureSupportChatSchema(db);
+    const requestMeta = options.requestMeta || options.request_meta || {};
+    const existingBan = await getActiveSupportBan(userId, requestMeta, db);
+    if (existingBan) {
+        return buildBlockedSupportState(availability, existingBan);
+    }
     if (options.sync === 'force') {
         await syncSupportUpdates(db).catch(() => null);
     }
@@ -1128,6 +1568,9 @@ async function getSupportChatState(userId, options = {}, db = pool) {
     if (!chat.telegram_thread_id) {
         const user = await fetchUserById(userId, { db, includeCreatedAt: true }).catch(() => null);
         chat = await ensureForumTopicForChat(chat, user, db).catch(() => chat);
+    } else if (!chat.telegram_control_message_id) {
+        const user = await fetchUserById(userId, { db, includeCreatedAt: true }).catch(() => null);
+        await ensureSupportControlMessage(chat, user, db).catch(() => null);
     }
 
     const messages = await loadChatMessages(chat.id, {
@@ -1294,6 +1737,8 @@ async function sendSupportChatMessage(userId, payload = {}, db = pool) {
     }
 
     await ensureSupportChatSchema(db);
+    const requestMeta = payload?.requestMeta || payload?.request_meta || {};
+    await ensureSupportNotBlocked(userId, requestMeta, db);
     const user = await fetchUserById(userId, { db, includeCreatedAt: true });
     if (!user) {
         throw createHttpError(404, 'User not found', 'USER_NOT_FOUND');
@@ -1302,9 +1747,12 @@ async function sendSupportChatMessage(userId, payload = {}, db = pool) {
     let chat = null;
     if (payload.chat_id) {
         chat = await findChatById(userId, String(payload.chat_id), db);
+        if (chat && String(chat.status || '').toUpperCase() !== 'OPEN') {
+            chat = null;
+        }
     }
     if (!chat) {
-        const opened = await createSupportChat(userId, db);
+        const opened = await createSupportChat(userId, { requestMeta }, db);
         if (!opened.availability || !opened.chat) {
             return opened;
         }
@@ -1325,11 +1773,14 @@ async function sendSupportChatMessage(userId, payload = {}, db = pool) {
                 messages: await loadChatMessages(chat.id, {}, db)
             };
         }
+    } else if (!chat.telegram_control_message_id) {
+        await ensureSupportControlMessage(chat, user, db).catch(() => null);
     }
 
     const normalized = normalizeOutgoingPayload(payload);
     const timestamp = nowMs();
     const messageId = uuidv4();
+    await trackSupportClientContext(chat.id, requestMeta, db).catch(() => null);
     const persistedAttachments = await persistOutgoingAttachments(messageId, chat.id, normalized.attachments);
     const messageKind = persistedAttachments[0]?.type === 'video'
         ? 'VIDEO'
@@ -1370,7 +1821,7 @@ async function sendSupportChatMessage(userId, payload = {}, db = pool) {
 
     queueSupportMessageDelivery(messageId, db).catch(() => null);
 
-    return getSupportChatState(userId, { sync: false }, db);
+    return getSupportChatState(userId, { sync: false, requestMeta }, db);
 }
 
 function startSupportChatPolling() {
