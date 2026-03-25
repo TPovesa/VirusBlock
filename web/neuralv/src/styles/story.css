@@ -202,6 +202,12 @@ html::-webkit-scrollbar-thumb {
   gap: 14px;
 }
 
+.story-scene-visual-wrap {
+  min-width: 0;
+  display: grid;
+  align-items: stretch;
+}
+
 .story-scene-kicker,
 .story-scene-media-tag {
   display: inline-flex;
@@ -280,6 +286,7 @@ html::-webkit-scrollbar-thumb {
   display: grid;
 }
 
+.story-scene-media-shell,
 .story-scene-media-frame,
 .telegram-hero-media,
 .telegram-artifact-media {
