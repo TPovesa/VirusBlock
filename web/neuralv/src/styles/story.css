@@ -45,10 +45,10 @@ html::-webkit-scrollbar-thumb {
 
 .story-hero-center,
 .platform-hero-center {
-  width: min(980px, 100%);
+  width: min(1080px, 100%);
   display: grid;
   justify-items: center;
-  gap: 18px;
+  gap: 16px;
 }
 
 .story-hero-card,
@@ -99,20 +99,20 @@ html::-webkit-scrollbar-thumb {
 .platform-hero-card {
   width: 100%;
   display: grid;
-  gap: 22px;
+  gap: 18px;
   justify-items: center;
   text-align: center;
-  padding: 34px 32px 30px;
+  padding: 28px 24px 24px;
 }
 
 .story-hero-card h1,
 .platform-hero-copy h1 {
   margin: 0;
-  font-size: clamp(2.18rem, 6vw, 4.7rem);
-  line-height: 0.98;
+  font-size: clamp(1.92rem, 4.8vw, 4rem);
+  line-height: 1;
   letter-spacing: -0.055em;
   font-weight: 720;
-  max-width: 13.5ch;
+  max-width: 100%;
   text-wrap: balance;
 }
 
@@ -154,22 +154,21 @@ html::-webkit-scrollbar-thumb {
 
 .story-track {
   display: grid;
-  gap: 12px;
+  gap: 18px;
 }
 
 .story-scene {
-  min-height: 96vh;
-  padding: 12px 0 28px;
+  min-height: auto;
+  padding: 0;
 }
 
 .story-scene-compact {
-  min-height: 82vh;
+  min-height: auto;
 }
 
 .story-scene-sticky {
-  position: sticky;
-  top: 102px;
-  min-height: calc(100vh - 124px);
+  position: static;
+  min-height: auto;
   display: grid;
   align-items: center;
 }
@@ -177,9 +176,9 @@ html::-webkit-scrollbar-thumb {
 .story-scene-card {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(340px, 0.92fr);
-  gap: 24px;
+  gap: 18px;
   align-items: stretch;
-  padding: 24px;
+  padding: 20px;
 }
 
 .story-scene-card > *,
@@ -341,18 +340,11 @@ html::-webkit-scrollbar-thumb {
 }
 
 .story-scene-media-grid {
-  background:
-    linear-gradient(transparent 0, transparent calc(100% - 1px), rgba(255, 255, 255, 0.05) calc(100% - 1px)),
-    linear-gradient(90deg, transparent 0, transparent calc(100% - 1px), rgba(255, 255, 255, 0.04) calc(100% - 1px));
-  background-size: 100% 48px, 48px 100%;
-  opacity: calc(0.12 + var(--scene-focus, 0.32) * 0.18);
+  display: none;
 }
 
 .story-scene-media-line {
-  inset: auto;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-  opacity: calc(0.24 + var(--scene-focus, 0.32) * 0.28);
+  display: none;
 }
 
 .story-scene-media-line-a {
@@ -368,14 +360,7 @@ html::-webkit-scrollbar-thumb {
 }
 
 .story-scene-media-overlay {
-  position: absolute;
-  inset: 0;
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 16px;
-  pointer-events: none;
+  display: none;
 }
 
 .story-scene-media-caption {
@@ -454,11 +439,29 @@ html::-webkit-scrollbar-thumb {
 }
 
 .story-faq-question {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   list-style: none;
   cursor: pointer;
   font-size: 1rem;
   font-weight: 680;
   line-height: 1.4;
+  color: #f2f4f7;
+}
+
+.story-faq-question::after {
+  content: '+';
+  flex: 0 0 auto;
+  color: rgba(242, 244, 247, 0.74);
+  font-size: 1.32rem;
+  line-height: 1;
+  transition: transform 180ms ease, color 180ms ease;
+}
+
+.story-faq-item[open] .story-faq-question::after {
+  transform: rotate(45deg);
   color: #f2f4f7;
 }
 
@@ -476,12 +479,14 @@ html::-webkit-scrollbar-thumb {
 
 .story-download-card {
   align-content: start;
+  justify-items: start;
+  text-align: left;
 }
 
 .story-download-card p,
 .platform-install-card p,
 .platform-command-card p {
-  min-height: 3.2em;
+  min-height: 2.8em;
 }
 
 .platform-hero-card-centered,
@@ -529,6 +534,25 @@ html::-webkit-scrollbar-thumb {
 
 .platform-command-card-wide {
   grid-column: 1 / -1;
+}
+
+.platform-info-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.platform-info-card {
+  min-height: 100%;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.platform-info-card h2 {
+  margin: 0;
+  font-size: 1.12rem;
+  letter-spacing: -0.03em;
 }
 
 .command-card {
@@ -588,6 +612,7 @@ html::-webkit-scrollbar-thumb {
   .story-scene-card,
   .story-faq-grid,
   .telegram-hero-shell,
+  .platform-info-grid,
   .platform-install-grid,
   .story-download-grid,
   .story-faq-list {
@@ -621,7 +646,7 @@ html::-webkit-scrollbar-thumb {
   .story-hero-card h1,
   .platform-hero-copy h1 {
     max-width: none;
-    font-size: clamp(1.8rem, 10vw, 3.2rem);
+    font-size: clamp(1.7rem, 9vw, 3rem);
   }
 
   .story-scene-card,

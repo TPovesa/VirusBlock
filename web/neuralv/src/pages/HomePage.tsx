@@ -72,16 +72,22 @@ export function HomePage() {
   const android = usePlatformSummary('android');
   const windows = usePlatformSummary('windows');
   const linux = usePlatformSummary('linux');
+  const scrollToTop = () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  };
 
   return (
     <div className="page-stack story-page-shell">
       <section className="story-hero">
         <div className="story-hero-center">
           <article className="story-hero-card">
-            <h1>Базовые технологии ушли в прошлое. Встречайте новый стандарт безопасности.</h1>
+            <h1 className="story-hero-title">Базовые технологии ушли в прошлое. Встречайте новый стандарт безопасности.</h1>
             <div className="story-hero-actions">
               <a className="nv-button" href="#downloads">Скачать</a>
-              <Link className="shell-chip" to="/register">Аккаунт</Link>
+              <Link className="shell-chip" to="/register" onClick={scrollToTop}>Аккаунт</Link>
             </div>
           </article>
 
@@ -111,7 +117,10 @@ export function HomePage() {
           <div className="story-faq-list">
             {faqItems.map((item) => (
               <details key={item.question} className="story-faq-item">
-                <summary className="story-faq-question">{item.question}</summary>
+                <summary className="story-faq-question">
+                  <span>{item.question}</span>
+                  <span className="story-faq-plus" aria-hidden="true">+</span>
+                </summary>
                 <div className="story-faq-answer">
                   <p>{item.answer}</p>
                 </div>
@@ -128,35 +137,35 @@ export function HomePage() {
             <h3>Android</h3>
             <p>{android.requirement || 'Android 8.0+ (API 26)'}</p>
             <div className="story-download-actions">
-              <Link className="nv-button" to="/android">Открыть страницу</Link>
+              <Link className="nv-button" to="/android" onClick={scrollToTop}>Скачать</Link>
             </div>
           </article>
           <article className="story-download-card">
             <h3>Windows</h3>
             <p>{windows.requirement || 'Windows 10/11 x64'}</p>
             <div className="story-download-actions">
-              <Link className="nv-button" to="/windows">Открыть страницу</Link>
+              <Link className="nv-button" to="/windows" onClick={scrollToTop}>Скачать</Link>
             </div>
           </article>
           <article className="story-download-card">
             <h3>Linux</h3>
             <p>{linux.requirement || 'x86_64 Linux'}</p>
             <div className="story-download-actions">
-              <Link className="nv-button" to="/linux">Открыть страницу</Link>
+              <Link className="nv-button" to="/linux" onClick={scrollToTop}>Скачать</Link>
             </div>
           </article>
           <article className="story-download-card">
-            <h3>Extera plugin</h3>
-            <p>Плагин для ExteraGram.</p>
+            <h3>Extera/Ayu</h3>
+            <p>Telegram-сборка для ExteraGram и AyuGram.</p>
             <div className="story-download-actions">
-              <a className="nv-button" href="/neuralv/telegram/NeuralV-3.plugin" download>Скачать</a>
+              <Link className="nv-button" to="/telegram" onClick={scrollToTop}>Скачать</Link>
             </div>
           </article>
           <article className="story-download-card">
-            <h3>Heroku module</h3>
+            <h3>Heroku</h3>
             <p>Модуль для Heroku.</p>
             <div className="story-download-actions">
-              <a className="nv-button" href="/neuralv/telegram/NeuralV.py" download>Скачать</a>
+              <Link className="nv-button" to="/telegram" onClick={scrollToTop}>Скачать</Link>
             </div>
           </article>
         </div>

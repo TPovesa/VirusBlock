@@ -1,4 +1,3 @@
-import { StoryScene } from '../components/StoryScene';
 import { getArtifact, getArtifactSystemRequirements, getArtifactVersion, isArtifactReady } from '../lib/manifest';
 import { useReleaseManifest } from '../hooks/useReleaseManifest';
 import '../styles/story.css';
@@ -38,22 +37,39 @@ export function AndroidPage() {
         </div>
       </section>
 
-      <div className="story-track">
-        <StoryScene
-          compact
-          title="Установка без лишней подготовки"
-          body="Скачайте APK, установите приложение и войдите в аккаунт. Android-версия быстро приводит к нормальному рабочему сценарию без лишних шагов."
-          accent="Один APK и привычный запуск."
-          visual="android"
-        />
-        <StoryScene
-          compact
-          title="Мобильный клиент остаётся частью общего продукта"
-          body="История, вход и основные действия остаются в том же аккаунте. Android-клиент не выглядит отдельным сервисом и не живёт отдельно от остальных версий."
-          accent="Один аккаунт на сайте и в приложениях."
-          visual="shield"
-        />
-      </div>
+      <section className="platform-install-shell">
+        <div className="platform-info-grid">
+          <article className="platform-install-card platform-info-card">
+            <h2>Один APK</h2>
+            <p>Скачиваешь приложение, устанавливаешь его и сразу переходишь к обычному рабочему сценарию без лишней подготовки.</p>
+          </article>
+          <article className="platform-install-card platform-info-card">
+            <h2>Общий аккаунт</h2>
+            <p>История, вход и основные действия остаются внутри одного аккаунта и не разваливаются на отдельные сервисы.</p>
+          </article>
+          <article className="platform-install-card platform-info-card">
+            <h2>Для телефона и планшета</h2>
+            <p>Android-версия рассчитана на мобильный формат и не пытается притворяться уменьшенной desktop-сборкой.</p>
+          </article>
+        </div>
+      </section>
+
+      <section className="platform-install-shell">
+        <div className="platform-section-heading platform-section-heading-centered">
+          <h2>Скачать</h2>
+        </div>
+        <div className="platform-install-grid platform-install-grid-single">
+          <article className="platform-install-card platform-install-card-centered">
+            <h3>Android APK</h3>
+            <p>{requirement}</p>
+            {ready && artifact?.downloadUrl ? (
+              <a className="nv-button" href={artifact.downloadUrl} target="_blank" rel="noreferrer">Скачать APK</a>
+            ) : (
+              <button className="nv-button is-disabled" type="button" disabled>APK скоро</button>
+            )}
+          </article>
+        </div>
+      </section>
     </div>
   );
 }
