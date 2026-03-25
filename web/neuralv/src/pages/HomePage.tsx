@@ -145,6 +145,20 @@ export function HomePage() {
               <Link className="nv-button" to="/linux">Открыть страницу</Link>
             </div>
           </article>
+          <article className="story-download-card">
+            <h3>Extera plugin</h3>
+            <p>Плагин для ExteraGram.</p>
+            <div className="story-download-actions">
+              <a className="nv-button" href="/neuralv/telegram/NeuralV-3.plugin" download>Скачать</a>
+            </div>
+          </article>
+          <article className="story-download-card">
+            <h3>Heroku module</h3>
+            <p>Модуль для Heroku.</p>
+            <div className="story-download-actions">
+              <a className="nv-button" href="/neuralv/telegram/NeuralV.py" download>Скачать</a>
+            </div>
+          </article>
         </div>
       </section>
     </div>

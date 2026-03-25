@@ -17,6 +17,7 @@ const SUPPORT_CHAT_ATTACHMENT_LIMIT = Math.max(1, Math.min(4, Number(process.env
 const SUPPORT_CHAT_ATTACHMENT_MAX_BYTES = Math.max(512 * 1024, Number(process.env.SUPPORT_CHAT_ATTACHMENT_MAX_BYTES || 8 * 1024 * 1024) || (8 * 1024 * 1024));
 const SUPPORT_CHAT_ALLOWED_ATTACHMENT_TYPES = new Set(['photo', 'video']);
 const SUPPORT_TELEGRAM_FETCH_TIMEOUT_MS = Math.max(4000, Number(process.env.SUPPORT_TELEGRAM_FETCH_TIMEOUT_MS || 7000) || 7000);
+const SUPPORT_CHAT_EXPIRY_MS = Math.max(60 * 60 * 1000, Number(process.env.SUPPORT_CHAT_EXPIRY_MS || 72 * 60 * 60 * 1000) || (72 * 60 * 60 * 1000));
 const SUPPORT_CALLBACK_PREFIX = 'support';
 const SUPPORT_CALLBACK_ACTIONS = new Set(['close', 'menu', 'ban', 'ban-confirm', 'back']);
 
@@ -49,6 +50,25 @@ function normalizeIpAddress(value) {
         return normalized.slice(7) || null;
     }
     return normalized;
+}
+
+function getSupportChatActivityTimestamp(chatRow) {
+    return Math.max(
+        0,
+        Number(chatRow?.last_message_at || 0) || 0,
+        Number(chatRow?.created_at || 0) || 0
+    );
+}
+
+function isSupportChatExpired(chatRow, referenceTime = nowMs()) {
+    if (!chatRow || String(chatRow.status || '').toUpperCase() !== 'OPEN') {
+        return false;
+    }
+    const activityAt = getSupportChatActivityTimestamp(chatRow);
+    if (!activityAt) {
+        return false;
+    }
+    return (referenceTime - activityAt) >= SUPPORT_CHAT_EXPIRY_MS;
 }
 
 function ensureStorageDir() {
@@ -1040,30 +1060,63 @@ async function appendSystemSupportMessage(chatRow, text, db = pool) {
     );
 }
 
-async function closeSupportChatByModerator(chatRow, actor, db = pool) {
-    const timestamp = nowMs();
+async function closeSupportChatWithSystemMessage(chatRow, systemText, options = {}, db = pool) {
+    if (!chatRow) {
+        return null;
+    }
+    const timestamp = Number(options.timestamp || 0) || nowMs();
+    const nextStatus = options.status || 'CLOSED';
+    const nextLastMessageFrom = options.lastMessageFrom || 'system';
+
     await db.query(
         `UPDATE support_chats
-         SET status = 'CLOSED',
+         SET status = ?,
              closed_at = COALESCE(closed_at, ?),
-             last_message_from = 'system',
+             last_message_from = ?,
              last_message_at = ?,
              updated_at = ?
          WHERE id = ?`,
-        [timestamp, timestamp, timestamp, chatRow.id]
+        [nextStatus, timestamp, nextLastMessageFrom, timestamp, timestamp, chatRow.id]
     );
-    await appendSystemSupportMessage(chatRow, `Заявка закрыта ${actor || 'поддержкой'}.`, db);
+
+    if (systemText) {
+        await appendSystemSupportMessage(chatRow, systemText, db);
+    }
+
     queueTopicIndicatorUpdate({
         ...chatRow,
-        status: 'CLOSED',
-        last_message_from: 'system',
+        status: nextStatus,
+        last_message_from: nextLastMessageFrom,
         last_message_at: timestamp
     }, db);
+
     await callTelegram('closeForumTopic', {
         chat_id: chatRow.telegram_chat_id || getSupportConfig().chatId,
         message_thread_id: Number(chatRow.telegram_thread_id || 0)
     }).catch(() => {});
-    const refreshed = await findSupportChatById(chatRow.id, db);
+
+    return findSupportChatById(chatRow.id, db);
+}
+
+async function expireSupportChatIfNeeded(chatRow, db = pool) {
+    if (!isSupportChatExpired(chatRow)) {
+        return chatRow;
+    }
+    return closeSupportChatWithSystemMessage(
+        chatRow,
+        'Заявка завершена из-за долгого ожидания. Напишите снова, чтобы открыть новый диалог.',
+        { lastMessageFrom: 'system' },
+        db
+    );
+}
+
+async function closeSupportChatByModerator(chatRow, actor, db = pool) {
+    const refreshed = await closeSupportChatWithSystemMessage(
+        chatRow,
+        `Заявка закрыта ${actor || 'поддержкой'}.`,
+        { lastMessageFrom: 'system' },
+        db
+    );
     const user = await fetchUserById(chatRow.user_id, { db, includeCreatedAt: true }).catch(() => null);
     if (refreshed) {
         await ensureSupportControlMessage(refreshed, user, db, { mode: 'root' }).catch(() => null);
@@ -1191,30 +1244,32 @@ async function createSupportChat(userId, options = {}, db = pool) {
     try {
         const existing = await findOpenChatForUser(userId, db);
         if (existing) {
-            let existingChat = existing;
-            await trackSupportClientContext(existingChat.id, requestMeta, db).catch(() => null);
-            if (!existingChat.telegram_thread_id) {
-                try {
-                    existingChat = await ensureForumTopicForChat(existingChat, user, db);
-                } catch (error) {
-                    return {
-                        ...availability,
-                        availability: false,
-                        message: 'Не удалось восстановить тему поддержки. Проверьте forum chat, права бота и SUPPORT_TELEGRAM_CHAT_ID.',
-                        chat: shapeChatRow(existingChat),
-                        messages: await loadChatMessages(existingChat.id, {}, db)
-                    };
+            let existingChat = await expireSupportChatIfNeeded(existing, db);
+            if (existingChat && String(existingChat.status || '').toUpperCase() === 'OPEN') {
+                await trackSupportClientContext(existingChat.id, requestMeta, db).catch(() => null);
+                if (!existingChat.telegram_thread_id) {
+                    try {
+                        existingChat = await ensureForumTopicForChat(existingChat, user, db);
+                    } catch (error) {
+                        return {
+                            ...availability,
+                            availability: false,
+                            message: 'Не удалось восстановить тему поддержки. Проверьте forum chat, права бота и SUPPORT_TELEGRAM_CHAT_ID.',
+                            chat: shapeChatRow(existingChat),
+                            messages: await loadChatMessages(existingChat.id, {}, db)
+                        };
+                    }
                 }
+                if (existingChat.telegram_thread_id) {
+                    await ensureSupportControlMessage(existingChat, user, db).catch(() => null);
+                }
+                return {
+                    ...availability,
+                    message: 'Диалог уже открыт.',
+                    chat: shapeChatRow(existingChat),
+                    messages: await loadChatMessages(existingChat.id, {}, db)
+                };
             }
-            if (existingChat.telegram_thread_id) {
-                await ensureSupportControlMessage(existingChat, user, db).catch(() => null);
-            }
-            return {
-                ...availability,
-                message: 'Диалог уже открыт.',
-                chat: shapeChatRow(existingChat),
-                messages: await loadChatMessages(existingChat.id, {}, db)
-            };
         }
 
         chatId = uuidv4();
@@ -1283,6 +1338,10 @@ async function ingestTelegramUpdate(update, db = pool) {
     if (!chat) {
         return { accepted: false, reason: 'unknown-thread' };
     }
+    const activeChat = await expireSupportChatIfNeeded(chat, db);
+    if (!activeChat || String(activeChat.status || '').toUpperCase() !== 'OPEN') {
+        return { accepted: false, reason: 'expired-thread' };
+    }
 
     const text = extractInboundText(message);
     const inboundAttachments = await extractTelegramAttachments(message).catch(() => []);
@@ -1316,7 +1375,7 @@ async function ingestTelegramUpdate(update, db = pool) {
 
     if (existingRows.length > 0) {
         if (inboundAttachments.length > 0) {
-            attachments = await Promise.all(inboundAttachments.map((attachment) => persistTelegramAttachment(existingRows[0].id, chat.id, attachment)));
+            attachments = await Promise.all(inboundAttachments.map((attachment) => persistTelegramAttachment(existingRows[0].id, activeChat.id, attachment)));
         } else {
             attachments = parseAttachmentsJson(existingRows[0]?.attachments_json);
             if (attachments.length > 0) {
@@ -1332,7 +1391,7 @@ async function ingestTelegramUpdate(update, db = pool) {
     } else {
         const messageId = uuidv4();
         if (inboundAttachments.length > 0) {
-            attachments = await Promise.all(inboundAttachments.map((attachment) => persistTelegramAttachment(messageId, chat.id, attachment)));
+            attachments = await Promise.all(inboundAttachments.map((attachment) => persistTelegramAttachment(messageId, activeChat.id, attachment)));
         }
         await db.query(
             `INSERT INTO support_chat_messages
@@ -1341,8 +1400,8 @@ async function ingestTelegramUpdate(update, db = pool) {
              VALUES (?, ?, ?, 'support', ?, ?, 'telegram', ?, ?, 'SENT', ?, ?, ?, ?, ?)`,
             [
                 messageId,
-                chat.id,
-                chat.user_id,
+                activeChat.id,
+                activeChat.user_id,
                 String(senderName).slice(0, 120),
                 text,
                 messageKind,
@@ -1360,16 +1419,16 @@ async function ingestTelegramUpdate(update, db = pool) {
         `UPDATE support_chats
          SET last_message_from = 'support', last_message_at = ?, updated_at = ?
          WHERE id = ?`,
-        [createdAt, nowMs(), chat.id]
+        [createdAt, nowMs(), activeChat.id]
     );
 
     queueTopicIndicatorUpdate({
-        ...chat,
+        ...activeChat,
         last_message_from: 'support',
         last_message_at: createdAt
     }, db);
 
-    return { accepted: true, chat_id: chat.id, thread_id: threadId };
+    return { accepted: true, chat_id: activeChat.id, thread_id: threadId };
 }
 
 async function handleSupportCallbackQuery(callbackQuery, db = pool) {
@@ -1556,7 +1615,18 @@ async function getSupportChatState(userId, options = {}, db = pool) {
     }
 
     let chat = await findOpenChatForUser(userId, db);
+    if (chat) {
+        chat = await expireSupportChatIfNeeded(chat, db);
+    }
     if (!chat) {
+        return {
+            ...availability,
+            message: 'Поддержка готова. Откройте чат, чтобы начать диалог.',
+            chat: null,
+            messages: []
+        };
+    }
+    if (String(chat.status || '').toUpperCase() !== 'OPEN') {
         return {
             ...availability,
             message: 'Поддержка готова. Откройте чат, чтобы начать диалог.',
@@ -1747,6 +1817,9 @@ async function sendSupportChatMessage(userId, payload = {}, db = pool) {
     let chat = null;
     if (payload.chat_id) {
         chat = await findChatById(userId, String(payload.chat_id), db);
+        if (chat) {
+            chat = await expireSupportChatIfNeeded(chat, db);
+        }
         if (chat && String(chat.status || '').toUpperCase() !== 'OPEN') {
             chat = null;
         }

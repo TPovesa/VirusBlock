@@ -1,5 +1,4 @@
 import '../styles/story.css';
-import { TelegramStickerCluster } from '../components/TelegramStickerCluster';
 
 const telegramArtifacts = [
   {
@@ -10,10 +9,7 @@ const telegramArtifacts = [
     version: '1.0',
     minimum: 'ExteraGram 11.12.1+',
     downloadUrl: '/neuralv/telegram/NeuralV-3.plugin',
-    stickers: [
-      { emoji: '💬', label: 'ExteraGram', tone: 'sky' as const },
-      { emoji: '⚡', label: 'Plugin', tone: 'rose' as const }
-    ]
+    mediaUrl: '/neuralv/media/story/telegram.jpg'
   },
   {
     title: 'Heroku module',
@@ -23,10 +19,7 @@ const telegramArtifacts = [
     version: '1.0',
     minimum: 'Heroku Python runtime',
     downloadUrl: '/neuralv/telegram/NeuralV.py',
-    stickers: [
-      { emoji: '☁️', label: 'Heroku', tone: 'mint' as const },
-      { emoji: '🛡️', label: 'Bridge', tone: 'amber' as const }
-    ]
+    mediaUrl: '/neuralv/media/story/account.jpg'
   }
 ];
 
@@ -42,7 +35,7 @@ export function TelegramPage() {
       <section className="platform-hero">
         <div className="platform-hero-center">
           <article className="platform-hero-card platform-hero-card-centered">
-            <div className="telegram-hero-shell">
+            <div className="telegram-hero-shell telegram-hero-shell-media">
               <div className="platform-hero-copy platform-hero-copy-centered telegram-hero-copy">
                 <h1>NeuralV для Telegram</h1>
                 <p>Два аккуратных формата для Telegram-направления: быстрый plugin для ExteraGram и отдельный модуль для серверного контура.</p>
@@ -51,14 +44,10 @@ export function TelegramPage() {
                   <a className="shell-chip" href={telegramArtifacts[1].downloadUrl} download>Скачать модуль</a>
                 </div>
               </div>
-              <TelegramStickerCluster
-                items={[
-                  { emoji: '💬', label: 'чат', tone: 'sky' },
-                  { emoji: '🤖', label: 'бот', tone: 'rose' },
-                  { emoji: '✨', label: 'сцена', tone: 'amber' },
-                  { emoji: '🛡️', label: 'щит', tone: 'mint' }
-                ]}
-              />
+              <div className="telegram-hero-media" aria-hidden="true">
+                <img src="/neuralv/media/story/telegram.jpg" alt="" loading="lazy" />
+                <span className="telegram-hero-media-shade" />
+              </div>
             </div>
 
             <div className="platform-hero-grid platform-hero-grid-centered">
@@ -92,7 +81,10 @@ export function TelegramPage() {
         <div className="platform-install-grid platform-install-grid-centered">
           {telegramArtifacts.map((artifact) => (
             <article key={artifact.fileName} className="platform-install-card platform-install-card-centered">
-              <TelegramStickerCluster items={artifact.stickers} variant="compact" className="telegram-artifact-stickers" />
+              <div className="telegram-artifact-media" aria-hidden="true">
+                <img src={artifact.mediaUrl} alt="" loading="lazy" />
+                <span className="telegram-artifact-media-shade" />
+              </div>
               <h2>{artifact.title}</h2>
               <p>{artifact.description}</p>
               <div className="platform-main-stat">
