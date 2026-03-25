@@ -23,24 +23,24 @@ type StoryMediaAsset = {
 const mediaConfigs: Record<StoryVisualKind, StoryMediaAsset> = {
   shield: {
     kind: 'image',
-    src: '/neuralv/media/story/privacy-poster.avif',
-    alt: 'Тёмная сцена с аккуратным мягким светом.'
+    src: '/neuralv/media/story/hero.jpg',
+    alt: 'Рабочее место разработчика в тёмной палитре.'
   },
   route: {
     kind: 'video',
     src: '/neuralv/media/story/route-loop.mp4',
     poster: '/neuralv/media/story/route-poster.avif',
-    alt: 'Тёмная анимированная сцена про маршрут проверки.'
+    alt: 'Тёмная анимированная сцена с маршрутом проверки.'
   },
   platforms: {
     kind: 'image',
-    src: '/neuralv/media/story/platforms-poster.avif',
-    alt: 'Разные устройства в одной тёмной сцене.'
+    src: '/neuralv/media/story/windows.jpg',
+    alt: 'Рабочее место с несколькими экранами и кодом.'
   },
   privacy: {
     kind: 'image',
-    src: '/neuralv/media/story/privacy-poster.avif',
-    alt: 'Спокойная сцена с упором на ясный результат.'
+    src: '/neuralv/media/story/linux.jpg',
+    alt: 'Тёмная сцена с терминалом и кодом.'
   },
   android: {
     kind: 'video',

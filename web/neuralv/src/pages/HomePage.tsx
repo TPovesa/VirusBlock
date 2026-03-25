@@ -110,23 +110,21 @@ export function HomePage() {
       </div>
 
       <section className="story-faq-section">
-        <div className="story-faq-grid">
-          <article className="story-faq-intro">
-            <h2>Частые вопросы</h2>
-          </article>
-          <div className="story-faq-list">
-            {faqItems.map((item) => (
-              <details key={item.question} className="story-faq-item">
-                <summary className="story-faq-question">
-                  <span>{item.question}</span>
-                  <span className="story-faq-plus" aria-hidden="true">+</span>
-                </summary>
-                <div className="story-faq-answer">
-                  <p>{item.answer}</p>
-                </div>
-              </details>
-            ))}
-          </div>
+        <div className="platform-section-heading platform-section-heading-centered story-faq-heading-centered">
+          <h2>Частые вопросы</h2>
+        </div>
+        <div className="story-faq-list story-faq-list-centered">
+          {faqItems.map((item) => (
+            <details key={item.question} className="story-faq-item">
+              <summary className="story-faq-question">
+                <span>{item.question}</span>
+                <span className="story-faq-plus" aria-hidden="true">+</span>
+              </summary>
+              <div className="story-faq-answer">
+                <p>{item.answer}</p>
+              </div>
+            </details>
+          ))}
         </div>
       </section>
 

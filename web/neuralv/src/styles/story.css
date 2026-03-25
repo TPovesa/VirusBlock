@@ -37,10 +37,10 @@ html::-webkit-scrollbar-thumb {
 
 .story-hero,
 .platform-hero {
-  min-height: calc(100vh - 180px);
+  min-height: calc(100vh - 126px);
   display: grid;
   place-items: center;
-  padding: 20px 0 12px;
+  padding: 10px 0 0;
 }
 
 .story-hero-center,
@@ -163,7 +163,7 @@ html::-webkit-scrollbar-thumb {
 
 .story-track {
   display: grid;
-  gap: 18px;
+  gap: 24px;
 }
 
 .story-scene {
@@ -317,8 +317,8 @@ html::-webkit-scrollbar-thumb {
   height: 100%;
   object-fit: cover;
   display: block;
-  filter: saturate(calc(0.88 + var(--scene-focus, 0.32) * 0.2)) brightness(calc(0.62 + var(--scene-focus, 0.32) * 0.16));
-  transform: scale(calc(1.01 + var(--scene-focus, 0.32) * 0.04));
+  filter: saturate(0.96) brightness(0.74);
+  transform: none;
 }
 
 .story-scene-media-shade,
@@ -488,9 +488,12 @@ html::-webkit-scrollbar-thumb {
 
 .story-download-grid {
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 18px;
 }
 
 .story-download-card {
+  display: grid;
+  gap: 14px;
   align-content: start;
   justify-items: center;
   text-align: center;
@@ -500,6 +503,11 @@ html::-webkit-scrollbar-thumb {
 .platform-install-card p,
 .platform-command-card p {
   min-height: auto;
+}
+
+.story-download-card .story-download-actions,
+.platform-install-card .platform-hero-actions {
+  margin-top: auto;
 }
 
 .platform-hero-card-centered,
@@ -698,6 +706,12 @@ html::-webkit-scrollbar-thumb {
   width: min(1040px, 100%);
 }
 
+.story-hero-center {
+  min-height: calc(100vh - 164px);
+  grid-template-rows: 1fr auto;
+  align-content: stretch;
+}
+
 .story-hero-card {
   width: min(1040px, 100%);
   padding: 32px 24px 28px;
@@ -708,14 +722,14 @@ html::-webkit-scrollbar-thumb {
   width: 100%;
   max-width: none;
   margin: 0;
-  font-size: clamp(2rem, 4.6vw, 3.8rem);
+  font-size: clamp(1.84rem, 4vw, 3.18rem);
   line-height: 1.02;
   letter-spacing: -0.05em;
   text-wrap: balance;
 }
 
 .story-track {
-  gap: 18px;
+  gap: 28px;
 }
 
 .story-scene,
@@ -733,8 +747,8 @@ html::-webkit-scrollbar-thumb {
 
 .story-scene-card {
   grid-template-columns: minmax(0, 1fr) minmax(300px, 0.92fr);
-  gap: 20px;
-  padding: 22px;
+  gap: 26px;
+  padding: 26px;
 }
 
 .story-scene-media-shell,
@@ -751,12 +765,18 @@ html::-webkit-scrollbar-thumb {
 .story-scene-media,
 .telegram-hero-media img,
 .telegram-artifact-media img {
-  filter: saturate(calc(0.92 + var(--scene-focus, 0.32) * 0.08)) brightness(calc(0.7 + var(--scene-focus, 0.32) * 0.1));
-  transform: scale(calc(1.01 + var(--scene-focus, 0.32) * 0.03));
+  filter: saturate(0.98) brightness(0.76);
+  transform: none;
 }
 
-.story-faq-grid {
-  align-items: start;
+.story-faq-heading-centered,
+.story-faq-list-centered {
+  width: min(880px, 100%);
+  margin-inline: auto;
+}
+
+.story-faq-list-centered {
+  grid-template-columns: 1fr;
 }
 
 .story-faq-question {
@@ -801,6 +821,7 @@ html::-webkit-scrollbar-thumb {
   width: min(1040px, 100%);
   margin: 0 auto;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 18px;
 }
 
 .story-download-card,
@@ -814,6 +835,11 @@ html::-webkit-scrollbar-thumb {
 .platform-install-card p,
 .platform-command-card p {
   min-height: 0;
+}
+
+.story-scroll-cue {
+  align-self: end;
+  padding-bottom: 10px;
 }
 
 .platform-hero-card-centered {
@@ -833,6 +859,7 @@ html::-webkit-scrollbar-thumb {
 .platform-install-grid-centered {
   width: min(980px, 100%);
   margin: 0 auto;
+  gap: 20px;
 }
 
 .platform-install-grid-split {
