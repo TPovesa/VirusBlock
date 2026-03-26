@@ -638,88 +638,43 @@ def looks_binary(data: bytes, filename: str) -> bool:
 
 
 def get_localized_strings():
-    try:
-        lang = LocaleController.getInstance().getCurrentLocale().getLanguage()
-    except Exception:
-        lang = "ru"
-
-    strings = {
-        "ru": {
-            "settings_header": "🛡 NeuralV",
-            "settings_subtitle": "Локальная проверка кода без ИИ и без внешних API.",
-            "local_section": "Локальные параметры",
-            "max_file_mb_text": "Макс. размер файла (MB)",
-            "max_file_mb_sub": "Файлы больше этого размера не проверяются локально (1–50)",
-            "no_reply": "⚠️ NeuralV: Ответь на файл или сообщение с кодом командой .vcheck",
-            "no_content": "⚠️ NeuralV: В сообщении нет текста или кода для проверки.",
-            "analyzing": "⌛ NeuralV: Проверяю код локально...",
-            "download_error": "❗ NeuralV: Не удалось загрузить файл.",
-            "read_error": "❗ NeuralV: Не удалось прочитать файл.",
-            "too_big": "❗ NeuralV: Файл слишком большой (>{mb} MB).",
-            "binary_file": "❗ NeuralV: Похоже, это не текстовый кодовый файл. Локальная проверка ждёт текст или код.",
-            "unexpected": "❗ NeuralV: Неожиданная ошибка — {error}",
-            "report_header": "🛡 Отчёт проверки: {filename}\n\n",
-            "report_footer": "\n\nИтоговая оценка: {icon} {word}",
-            "cache_empty": "📂 NeuralV: История проверок пуста.",
-            "cache_header": "📊 История проверки NeuralV:\n\n",
-            "cache_row": "{icon} {name} — {word} ({age})\n",
-            "age_min": "{n} мин. назад",
-            "age_hour": "{n} ч. назад",
-            "vinfo_usage": "⚠️ Укажи имя файла. Пример: .vinfo bot.py",
-            "vinfo_not_found": "❗ NeuralV: Файл «{name}» не найден в истории.",
-            "vinfo_expired": "⏳ NeuralV: Запись устарела. Перепроверь файл.",
-            "vinfo_header": "🛡 Отчёт из кэша: {name}\n\n",
-            "vinfo_footer": "\n\nИтоговая оценка: {icon} {word}",
-            "vclear_done": "🧹 NeuralV: История очищена.",
-            "vhelp_text": (
-                "🛡 NeuralV — команды:\n\n"
-                "• .vcheck — ответить на файл или текст с кодом для проверки\n"
-                "• .vlist  — история последних проверок\n"
-                "• .vinfo [имя] — полный отчёт из кэша\n"
-                "• .vclear — очистить историю\n"
-                "• .vhelp  — эта справка\n\n"
-                "Проверка идёт полностью локально: без ИИ, без API и без внешних сервисов."
-            ),
-        },
-        "en": {
-            "settings_header": "🛡 NeuralV",
-            "settings_subtitle": "Local code review without AI and without external APIs.",
-            "local_section": "Local settings",
-            "max_file_mb_text": "Max file size (MB)",
-            "max_file_mb_sub": "Files larger than this are skipped (1–50)",
-            "no_reply": "⚠️ NeuralV: Reply to a file or message with .vcheck",
-            "no_content": "⚠️ NeuralV: There is no code or text to inspect.",
-            "analyzing": "⌛ NeuralV: Running local inspection...",
-            "download_error": "❗ NeuralV: Failed to download the file.",
-            "read_error": "❗ NeuralV: Failed to read the file.",
-            "too_big": "❗ NeuralV: File is too large (>{mb} MB).",
-            "binary_file": "❗ NeuralV: This does not look like a text/code file. Local review only works with text.",
-            "unexpected": "❗ NeuralV: Unexpected error — {error}",
-            "report_header": "🛡 Review report: {filename}\n\n",
-            "report_footer": "\n\nFinal verdict: {icon} {word}",
-            "cache_empty": "📂 NeuralV: History is empty.",
-            "cache_header": "📊 NeuralV review history:\n\n",
-            "cache_row": "{icon} {name} — {word} ({age})\n",
-            "age_min": "{n} min ago",
-            "age_hour": "{n} hr ago",
-            "vinfo_usage": "⚠️ Specify a filename. Example: .vinfo bot.py",
-            "vinfo_not_found": "❗ NeuralV: File '{name}' is not in history.",
-            "vinfo_expired": "⏳ NeuralV: Cache entry expired. Re-run the scan.",
-            "vinfo_header": "🛡 Cached report: {name}\n\n",
-            "vinfo_footer": "\n\nFinal verdict: {icon} {word}",
-            "vclear_done": "🧹 NeuralV: History cleared.",
-            "vhelp_text": (
-                "🛡 NeuralV — commands:\n\n"
-                "• .vcheck — reply to a file or text and inspect it\n"
-                "• .vlist  — show recent history\n"
-                "• .vinfo [name] — full cached report\n"
-                "• .vclear — clear history\n"
-                "• .vhelp  — this help\n\n"
-                "Everything runs locally: no AI, no API, no external services."
-            ),
-        },
+    return {
+        "settings_header": "🛡 NeuralV",
+        "settings_subtitle": "Локальная проверка кода без ИИ и без внешних API.",
+        "local_section": "Локальные параметры",
+        "max_file_mb_text": "Макс. размер файла (MB)",
+        "max_file_mb_sub": "Файлы больше этого размера не проверяются локально (1–50)",
+        "no_reply": "⚠️ NeuralV: Ответь на файл или сообщение с кодом командой .vcheck",
+        "no_content": "⚠️ NeuralV: В сообщении нет текста или кода для проверки.",
+        "analyzing": "⌛ NeuralV: Проверяю код локально...",
+        "download_error": "❗ NeuralV: Не удалось загрузить файл. Отправь его ещё раз.",
+        "read_error": "❗ NeuralV: Не удалось прочитать файл. Попробуй отправить его ещё раз.",
+        "too_big": "❗ NeuralV: Файл слишком большой (>{mb} MB).",
+        "binary_file": "❗ NeuralV: Похоже, это не текстовый кодовый файл. Локальная проверка ждёт текст или код.",
+        "unexpected": "❗ NeuralV: Не удалось завершить проверку. Попробуй ещё раз.",
+        "report_header": "🛡 Отчёт проверки: {filename}\n\n",
+        "report_footer": "\n\nИтоговая оценка: {icon} {word}",
+        "cache_empty": "📂 NeuralV: История проверок пуста.",
+        "cache_header": "📊 История проверки NeuralV:\n\n",
+        "cache_row": "{icon} {name} — {word} ({age})\n",
+        "age_min": "{n} мин. назад",
+        "age_hour": "{n} ч. назад",
+        "vinfo_usage": "⚠️ Укажи имя файла. Пример: .vinfo bot.py",
+        "vinfo_not_found": "❗ NeuralV: Файл «{name}» не найден в истории.",
+        "vinfo_expired": "⏳ NeuralV: Запись устарела. Перепроверь файл.",
+        "vinfo_header": "🛡 Отчёт из кэша: {name}\n\n",
+        "vinfo_footer": "\n\nИтоговая оценка: {icon} {word}",
+        "vclear_done": "🧹 NeuralV: История очищена.",
+        "vhelp_text": (
+            "🛡 NeuralV — команды:\n\n"
+            "• .vcheck — ответить на файл или текст с кодом для проверки\n"
+            "• .vlist  — история последних проверок\n"
+            "• .vinfo [имя] — полный отчёт из кэша\n"
+            "• .vclear — очистить историю\n"
+            "• .vhelp  — эта справка\n\n"
+            "Проверка идёт полностью локально: без ИИ, без API и без внешних сервисов."
+        ),
     }
-    return strings.get(lang, strings["ru"])
 
 
 class NeuralVPlugin(BasePlugin):
@@ -760,6 +715,17 @@ class NeuralVPlugin(BasePlugin):
     def _show_error(self, key: str, **kwargs):
         msg = self._s(key, **kwargs)
         run_on_ui_thread(lambda: BulletinHelper.show_error(msg))
+
+    def _show_runtime_error(self, error: Exception):
+        text = str(error or "").lower()
+        if "не удалось загрузить файл" in text or "download" in text or "attach" in text:
+            self._show_error("download_error")
+        elif "decode" in text or "utf-" in text or "binary" in text:
+            self._show_error("binary_file")
+        elif "permission" in text or "read" in text or "open" in text:
+            self._show_error("read_error")
+        else:
+            self._show_error("unexpected")
 
     def _show_status(self, verdict_word: str, verdict_icon: str):
         def inner():
@@ -957,11 +923,10 @@ class NeuralVPlugin(BasePlugin):
             if str(e) == self._s("download_error"):
                 self._show_error("download_error")
             else:
-                self._show_error("unexpected", error=str(e))
+                self._show_runtime_error(e)
         except Exception as e:
             log(f"[NeuralV] _analyze_file_task: {traceback.format_exc()}")
-            msg = str(e) if str(e) else self._s("unexpected", error=type(e).__name__)
-            self._show_error("unexpected", error=msg)
+            self._show_runtime_error(e)
 
     def _analyze_text_task(self, params: Any, text: str, filename: str):
         try:
@@ -973,7 +938,7 @@ class NeuralVPlugin(BasePlugin):
             self._send_report(params, filename, analysis)
         except Exception as e:
             log(f"[NeuralV] _analyze_text_task: {traceback.format_exc()}")
-            self._show_error("unexpected", error=str(e))
+            self._show_runtime_error(e)
 
     def on_send_message_hook(self, account: int, params: Any) -> HookResult:
         if not hasattr(params, "message") or not isinstance(params.message, str):
