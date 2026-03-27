@@ -126,7 +126,7 @@ jobs:
                       "version": os.environ["SEMVER"],
                       "sha256": os.environ["SHA_SHELL"],
                       "download_url": f"{os.environ['RAW_BASE']}/shell/neuralv-shell-linux-{os.environ['SEMVER']}.tar.gz",
-                      "install_command": "curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh && nv install @lvls/neuralv",
+                      "install_command": "curl -fsSL https://neuralvv.org/install/nv.sh | sh && nv install @lvls/neuralv",
                       "file_name": f"neuralv-shell-linux-{os.environ['SEMVER']}.tar.gz",
                       "notes": ["Linux CLI bundle."],
                       "metadata": {

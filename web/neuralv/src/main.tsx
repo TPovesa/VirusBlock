@@ -6,11 +6,6 @@ import { SiteAuthProvider } from './components/SiteAuthProvider';
 import './styles/theme.css';
 
 if (typeof document !== 'undefined') {
-  const currentPath = window.location.pathname.replace(/\/+$/, '');
-  if (currentPath === '/neuralv/nv') {
-    window.location.replace('/nv');
-  }
-
   document.documentElement.dataset.theme = 'dark';
   document.documentElement.style.colorScheme = 'dark';
 }
