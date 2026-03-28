@@ -63,9 +63,10 @@ function mapServiceError(error) {
         case 'INVALID_OFFICIAL_SITE_URL':
             return { status: 400, error: 'Ссылка на сайт указана неверно.' };
         case 'REPOSITORY_RELEASES_NOT_FOUND':
+            return { status: 422, error: 'Для проверки нужен публичный GitHub Release с файлом сборки. Добавьте релиз в репозиторий и попробуйте ещё раз.' };
         case 'REPOSITORY_RELEASE_ASSET_NOT_FOUND':
         case 'VERIFICATION_RELEASE_NOT_FOUND':
-            return { status: 422, error: 'Не удалось подобрать релизный файл. Откройте расширенные настройки и выберите версию или платформу вручную.' };
+            return { status: 422, error: 'Не удалось выбрать файл сборки автоматически. Откройте расширенные настройки и укажите версию или имя файла релиза.' };
         case 'AI_REVIEW_NOT_CONFIGURED':
         case 'VERIFICATION_AI_NOT_CONFIGURED':
             return { status: 503, error: 'Серверная проверка временно недоступна.' };

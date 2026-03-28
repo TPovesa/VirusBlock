@@ -526,11 +526,19 @@ async function discoverVerificationSubmission({
         ownerRepo: `${repoMeta.owner}/${repoMeta.repo}`
     }).platform;
 
-    const selection = chooseReleaseAsset(releases, {
+    let selection = chooseReleaseAsset(releases, {
         platform: inferredPlatform,
         releaseTag,
         releaseAssetName
     });
+
+    if (!selection?.release || !selection?.asset?.browserDownloadUrl) {
+        selection = chooseReleaseAsset(releases, {
+            platform: null,
+            releaseTag,
+            releaseAssetName
+        });
+    }
 
     if (!selection?.release || !selection?.asset?.browserDownloadUrl) {
         const error = new Error('No matching release asset found');

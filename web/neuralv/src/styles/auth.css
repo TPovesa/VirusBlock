@@ -216,6 +216,36 @@
   margin-bottom: 14px;
 }
 
+.profile-verify-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.14fr) minmax(260px, 0.72fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.profile-verify-requirements {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+}
+
+.profile-verify-requirements strong {
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.profile-verify-requirements-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 10px;
+  color: var(--nv-text-soft);
+  line-height: 1.6;
+}
+
 .profile-shell {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
@@ -1204,6 +1234,10 @@
   .profile-system-stats {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .profile-verify-layout {
+    grid-template-columns: 1fr;
   }
 }
 

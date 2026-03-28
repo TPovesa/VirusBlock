@@ -445,100 +445,111 @@ function VerifiedDeveloperWorkspace({
 
   return (
     <div className="profile-panel-stack">
-      <section className="content-card profile-panel-card profile-form-card">
-        <form className="auth-form" onSubmit={onVerify}>
-          <label className="auth-field">
-            <span className="auth-field-label">Репозиторий</span>
-            <input
-              className="auth-input"
-              type="url"
-              value={reviewForm.repositoryUrl}
-              onChange={(event) => setReviewForm((current) => ({ ...current, repositoryUrl: event.target.value }))}
-              placeholder="https://github.com/owner/repo"
-            />
-          </label>
+      <section className="content-card profile-panel-card profile-form-card profile-verify-card">
+        <div className="profile-verify-layout">
+          <form className="auth-form" onSubmit={onVerify}>
+            <label className="auth-field">
+              <span className="auth-field-label">Репозиторий</span>
+              <input
+                className="auth-input"
+                type="url"
+                value={reviewForm.repositoryUrl}
+                onChange={(event) => setReviewForm((current) => ({ ...current, repositoryUrl: event.target.value }))}
+                placeholder="https://github.com/owner/repo"
+              />
+            </label>
 
-          <label className="auth-field">
-            <span className="auth-field-label">Название</span>
-            <input
-              className="auth-input"
-              type="text"
-              value={reviewForm.appName}
-              onChange={(event) => setReviewForm((current) => ({ ...current, appName: event.target.value }))}
-              placeholder="Можно оставить пустым"
-            />
-          </label>
+            <label className="auth-field">
+              <span className="auth-field-label">Название</span>
+              <input
+                className="auth-input"
+                type="text"
+                value={reviewForm.appName}
+                onChange={(event) => setReviewForm((current) => ({ ...current, appName: event.target.value }))}
+                placeholder="Можно оставить пустым"
+              />
+            </label>
 
-          <label className="auth-field">
-            <span className="auth-field-label">Сайт</span>
-            <input
-              className="auth-input"
-              type="url"
-              value={reviewForm.officialSiteUrl}
-              onChange={(event) => setReviewForm((current) => ({ ...current, officialSiteUrl: event.target.value }))}
-              placeholder="https://example.com"
-            />
-          </label>
+            <label className="auth-field">
+              <span className="auth-field-label">Сайт</span>
+              <input
+                className="auth-input"
+                type="url"
+                value={reviewForm.officialSiteUrl}
+                onChange={(event) => setReviewForm((current) => ({ ...current, officialSiteUrl: event.target.value }))}
+                placeholder="https://example.com"
+              />
+            </label>
 
-          <label className="auth-field">
-            <span className="auth-field-label">Описание</span>
-            <textarea
-              className="auth-input auth-textarea"
-              value={reviewForm.description}
-              onChange={(event) => setReviewForm((current) => ({ ...current, description: event.target.value }))}
-              placeholder="Необязательно"
-              rows={4}
-            />
-          </label>
+            <label className="auth-field">
+              <span className="auth-field-label">Описание</span>
+              <textarea
+                className="auth-input auth-textarea"
+                value={reviewForm.description}
+                onChange={(event) => setReviewForm((current) => ({ ...current, description: event.target.value }))}
+                placeholder="Необязательно"
+                rows={4}
+              />
+            </label>
 
-          <details className="profile-advanced-details">
-            <summary className="profile-advanced-summary">Расширенные настройки</summary>
-            <div className="profile-panel-stack">
-              <label className="auth-field">
-                <span className="auth-field-label">Платформа</span>
-                <select
-                  className="auth-input"
-                  value={reviewForm.platform}
-                  onChange={(event) => setReviewForm((current) => ({ ...current, platform: event.target.value as PlatformOption }))}
-                >
-                  <option value="">Определить автоматически</option>
-                  {VERIFIED_APP_PLATFORM_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </label>
+            <details className="profile-advanced-details">
+              <summary className="profile-advanced-summary">Расширенные настройки</summary>
+              <div className="profile-panel-stack">
+                <label className="auth-field">
+                  <span className="auth-field-label">Платформа</span>
+                  <select
+                    className="auth-input"
+                    value={reviewForm.platform}
+                    onChange={(event) => setReviewForm((current) => ({ ...current, platform: event.target.value as PlatformOption }))}
+                  >
+                    <option value="">Определить автоматически</option>
+                    {VERIFIED_APP_PLATFORM_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
 
-              <label className="auth-field">
-                <span className="auth-field-label">Версия или тег</span>
-                <input
-                  className="auth-input"
-                  type="text"
-                  value={reviewForm.releaseTag}
-                  onChange={(event) => setReviewForm((current) => ({ ...current, releaseTag: event.target.value }))}
-                  placeholder="Например, v1.5.0"
-                />
-              </label>
+                <label className="auth-field">
+                  <span className="auth-field-label">Версия или тег</span>
+                  <input
+                    className="auth-input"
+                    type="text"
+                    value={reviewForm.releaseTag}
+                    onChange={(event) => setReviewForm((current) => ({ ...current, releaseTag: event.target.value }))}
+                    placeholder="Например, v1.5.0"
+                  />
+                </label>
 
-              <label className="auth-field">
-                <span className="auth-field-label">Имя файла релиза</span>
-                <input
-                  className="auth-input"
-                  type="text"
-                  value={reviewForm.releaseAssetName}
-                  onChange={(event) => setReviewForm((current) => ({ ...current, releaseAssetName: event.target.value }))}
-                  placeholder="Например, app-release.apk"
-                />
-              </label>
+                <label className="auth-field">
+                  <span className="auth-field-label">Имя файла релиза</span>
+                  <input
+                    className="auth-input"
+                    type="text"
+                    value={reviewForm.releaseAssetName}
+                    onChange={(event) => setReviewForm((current) => ({ ...current, releaseAssetName: event.target.value }))}
+                    placeholder="Например, app-release.apk"
+                  />
+                </label>
+              </div>
+            </details>
+
+            <div className="profile-draft-note" aria-live="polite">
+              {reviewDraftStatus === 'saved' ? 'Черновик сохранён.' : 'Черновик сохраняется автоматически.'}
             </div>
-          </details>
-
-          <div className="profile-draft-note" aria-live="polite">
-            {reviewDraftStatus === 'saved' ? 'Черновик сохранён.' : 'Черновик сохраняется автоматически.'}
-          </div>
-          <button className="nv-button" type="submit" disabled={pending !== null}>
-            {pending === 'verify' ? 'Отправляем...' : 'Запустить проверку'}
-          </button>
-        </form>
+            <button className="nv-button" type="submit" disabled={pending !== null}>
+              {pending === 'verify' ? 'Отправляем...' : 'Запустить проверку'}
+            </button>
+          </form>
+        <aside className="profile-verify-requirements" aria-label="Требования к проверке">
+          <strong>Требования к проверке</strong>
+          <ul className="profile-verify-requirements-list">
+            <li>Нужен публичный GitHub-репозиторий с доступными исходниками.</li>
+            <li>Нужен хотя бы один GitHub Release с файлом сборки.</li>
+            <li>Закрытые репозитории и приватные релизы не подходят.</li>
+            <li>Платформу и релиз можно оставить на автоопределение.</li>
+          </ul>
+        </aside>
+        </div>
       </section>
 
       <section className="profile-dashboard-grid verified-apps-layout">
