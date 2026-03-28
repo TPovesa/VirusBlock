@@ -1395,3 +1395,59 @@
     position: static;
   }
 }
+
+/* 2026-03-28 verified apps multi-platform */
+.profile-platform-toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.profile-platform-toggle {
+  position: relative;
+  min-height: 48px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  color: var(--nv-text-soft);
+  cursor: pointer;
+  transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
+}
+
+.profile-platform-toggle input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.profile-platform-toggle span {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.profile-platform-toggle.is-active {
+  border-color: rgba(201, 96, 108, 0.28);
+  background: rgba(201, 96, 108, 0.12);
+  color: var(--nv-text);
+}
+
+.developer-app-row {
+  align-items: flex-start;
+}
+
+.developer-app-row strong,
+.developer-app-summary,
+.developer-app-footnote,
+.developer-app-links .shell-chip {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .profile-platform-toggle-grid {
+    grid-template-columns: 1fr;
+  }
+}

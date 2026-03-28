@@ -1,4 +1,6 @@
 import { useMemo } from 'react';
+import { CenteredHeroSection } from '../components/CenteredHeroSection';
+import { StoryScene } from '../components/StoryScene';
 import { getArtifact, getArtifactSystemRequirements, getArtifactVersion } from '../lib/manifest';
 import { useReleaseManifest } from '../hooks/useReleaseManifest';
 import '../styles/story.css';
@@ -13,49 +15,57 @@ export function WindowsPage() {
 
   return (
     <div className="page-stack platform-story-shell">
-      <section className="platform-hero">
-        <div className="platform-hero-center">
-          <article className="platform-hero-card platform-hero-card-centered">
-            <div className="platform-hero-copy platform-hero-copy-centered">
-              <h1>NeuralV для Windows</h1>
-              <p>Обычная установка, portable-пакет и NV остаются одним продуктом. Сценарий выбирается по тому, как удобнее ставить и обновлять клиент.</p>
-              <div className="platform-hero-actions">
-                {setupUrl ? <a className="nv-button" href={setupUrl} target="_blank" rel="noreferrer">Скачать setup</a> : null}
-                {portableUrl ? <a className="shell-chip" href={portableUrl} target="_blank" rel="noreferrer">Скачать portable</a> : null}
-              </div>
-            </div>
-            <div className="platform-hero-grid platform-hero-grid-centered">
-              <div className="platform-main-stat">
-                <strong>{version}</strong>
-                <p>Требования: {requirement}</p>
-              </div>
-            </div>
-          </article>
-        </div>
-      </section>
+      <CenteredHeroSection
+        title="NeuralV для Windows"
+        body="Setup, portable и NV остаются частью одного клиента. Выбор зависит только от того, как тебе удобнее ставить и обновлять приложение."
+        media={{
+          kind: 'video',
+          src: '/media/story/windows-loop.mp4',
+          poster: '/media/story/windows.jpg',
+          alt: 'NeuralV Windows'
+        }}
+        actions={[
+          setupUrl ? { label: 'Скачать setup', href: setupUrl, external: true } : { label: 'Setup скоро', disabled: true },
+          portableUrl ? { label: 'Portable', href: portableUrl, external: true, variant: 'secondary' } : { label: 'Portable скоро', disabled: true, variant: 'secondary' }
+        ]}
+        meta={[
+          { label: 'Версия', value: version },
+          { label: 'Требования', value: requirement }
+        ]}
+      />
 
-      <section className="platform-install-shell" id="windows-install">
-        <div className="platform-section-heading platform-section-heading-centered">
-          <h2>Скачать</h2>
-        </div>
+      <div className="story-track platform-story-track">
+        <StoryScene
+          kicker="Windows"
+          title="Обычная desktop-установка без лишней возни"
+          body="На Windows у тебя остаётся нормальный выбор: обычный setup, portable-сборка или NV для короткой установки и следующих обновлений."
+          accent="Один клиент. Три понятных сценария."
+          visual="windows"
+          mediaAlign="right"
+          chips={['Setup', 'Portable', 'NV']}
+        />
+      </div>
+
+      <section className="story-download-section" id="windows-install">
+        <h2>Скачать</h2>
         <div className="platform-install-grid platform-install-grid-centered">
           <article className="platform-install-card platform-install-card-centered">
             <h3>Setup</h3>
             <p>Обычная установка с ярлыками и готовым запуском.</p>
             <div className="platform-install-actions">
-              {setupUrl ? <a className="nv-button" href={setupUrl} target="_blank" rel="noreferrer">Скачать</a> : null}
+              {setupUrl ? <a className="nv-button" href={setupUrl} target="_blank" rel="noreferrer">Скачать</a> : <button className="nv-button is-disabled" type="button" disabled>Скоро</button>}
             </div>
           </article>
           <article className="platform-install-card platform-install-card-centered">
             <h3>Portable</h3>
             <p>Подходит, если директория и запуск должны оставаться под твоим контролем.</p>
             <div className="platform-install-actions">
-              {portableUrl ? <a className="nv-button" href={portableUrl} target="_blank" rel="noreferrer">Скачать</a> : null}
+              {portableUrl ? <a className="nv-button" href={portableUrl} target="_blank" rel="noreferrer">Скачать</a> : <button className="nv-button is-disabled" type="button" disabled>Скоро</button>}
             </div>
           </article>
           <article className="platform-command-card platform-command-card-centered">
             <h3>NV</h3>
-            <p>Короткий путь для установки и следующих обновлений.</p>
+            <p>Короткий путь для первой установки и следующих обновлений.</p>
             <div className="platform-install-actions">
               <div className="command-card"><pre>irm https://neuralvv.org/install/nv.ps1 | iex{`\n`}nv install @lvls/neuralv</pre></div>
             </div>

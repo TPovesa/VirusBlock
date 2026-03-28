@@ -99,21 +99,21 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
     const eased = progress * progress * (3 - 2 * progress);
     const enter = clamp((eased - 0.04) / 0.96);
     const rawFocus = 1 - Math.abs(eased - 0.5) * 2;
-    const motionScale = 0;
+    const motionScale = reduced ? 0 : mobile ? 0.66 : 1;
     const revealScale = reduced ? 0.82 : mobile ? 0.92 : 1;
-    const depthScale = 0;
+    const depthScale = reduced ? 0.24 : mobile ? 0.56 : 0.84;
     const beamScale = reduced ? 0.2 : mobile ? 0.5 : 0.7;
     const focus = reduced ? 0.42 + rawFocus * 0.18 : mobile ? 0.24 + rawFocus * 0.76 : rawFocus;
     const depth = 0.22 + focus * 0.78;
-    const drift = 0;
-    const rise = 0;
-    const orbit = 0;
-    const swing = 0;
-    const pulse = 1;
-    const tilt = 0;
+    const drift = reduced ? 0 : (0.5 - eased) * (mobile ? 12 : 20);
+    const rise = reduced ? 0 : (1 - enter) * (mobile ? 14 : 24);
+    const orbit = reduced ? 0 : rawFocus * (mobile ? 4 : 8);
+    const swing = reduced ? 0 : (0.5 - eased) * (mobile ? 2 : 4);
+    const pulse = reduced ? 1 : 0.98 + rawFocus * 0.04;
+    const tilt = reduced ? 0 : (0.5 - eased) * (mobile ? 1.2 : 2.4);
     const beam = clamp((eased - 0.14) / 0.86) * beamScale;
     const flare = reduced ? 0.24 + rawFocus * 0.16 : mobile ? 0.16 + rawFocus * 0.6 : 0.18 + rawFocus * 0.82;
-    const parallax = 1;
+    const parallax = reduced ? 1 : 1 + rawFocus * 0.02;
 
     return {
       '--scene-progress': progress,

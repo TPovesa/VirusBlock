@@ -10,6 +10,7 @@ import {
   fetchOwnVerifiedApps,
   fetchProfileOverview,
   formatVerifiedAppPlatform,
+  formatVerifiedAppPlatforms,
   humanizeError,
   normalizeVerifiedAppPlatform,
   requestProfileEmailChange,
@@ -33,7 +34,6 @@ import '../styles/auth.css';
 type ProfileTab = 'profile' | 'developer' | 'security';
 type AccountPending = 'name' | 'email' | 'password' | 'logout' | null;
 type DeveloperPending = 'load' | 'apply' | 'verify' | 'update' | null;
-type PlatformOption = '' | SiteVerifiedAppPlatform;
 type DraftStatus = 'idle' | 'saved';
 
 type ReviewFormState = {
@@ -41,7 +41,7 @@ type ReviewFormState = {
   appName: string;
   officialSiteUrl: string;
   description: string;
-  platform: PlatformOption;
+  platforms: SiteVerifiedAppPlatform[];
   releaseTag: string;
   releaseAssetName: string;
 };
@@ -112,22 +112,25 @@ const EMPTY_REVIEW_FORM: ReviewFormState = {
   appName: '',
   officialSiteUrl: '',
   description: '',
-  platform: '',
+  platforms: [],
   releaseTag: '',
   releaseAssetName: ''
 };
 
-function toPlatformOption(platform: string | null | undefined): PlatformOption {
-  const normalizedPlatform = normalizeVerifiedAppPlatform(String(platform || ''));
-  return (
-    normalizedPlatform === 'android'
-    || normalizedPlatform === 'windows'
-    || normalizedPlatform === 'linux'
-    || normalizedPlatform === 'plugins'
-    || normalizedPlatform === 'heroku'
-  )
-    ? normalizedPlatform
-    : '';
+function sanitizeReviewPlatforms(platforms: Array<string | SiteVerifiedAppPlatform> | null | undefined): SiteVerifiedAppPlatform[] {
+  return [...new Set(
+    (platforms || [])
+      .map((platform) => normalizeVerifiedAppPlatform(String(platform || '')))
+      .filter(
+        (platform): platform is SiteVerifiedAppPlatform => (
+          platform === 'android'
+          || platform === 'windows'
+          || platform === 'linux'
+          || platform === 'plugins'
+          || platform === 'heroku'
+        )
+      )
+  )];
 }
 
 function buildReviewFormFromApp(app: SiteVerifiedApp): ReviewFormState {
@@ -136,7 +139,7 @@ function buildReviewFormFromApp(app: SiteVerifiedApp): ReviewFormState {
     appName: app.appName || '',
     officialSiteUrl: app.officialSiteUrl || '',
     description: app.projectDescription || '',
-    platform: toPlatformOption(app.platform),
+    platforms: sanitizeReviewPlatforms(app.compatiblePlatforms || [String(app.platform || '')]),
     releaseTag: app.releaseTag || '',
     releaseAssetName: app.releaseAssetName || ''
   };
@@ -338,7 +341,7 @@ function ProfileVerifiedAppCard({
       : status === 'RUNNING' || status === 'QUEUED'
         ? 'В проверке'
         : (app.status || 'В проверке');
-  const platformLabel = formatVerifiedAppPlatform(String(app.platform || ''));
+  const platformLabel = formatVerifiedAppPlatforms(app.compatiblePlatforms || [String(app.platform || '')]);
   const authorLabel = app.authorName || 'Ваш профиль';
 
   return (
@@ -513,7 +516,7 @@ function VerifiedDeveloperWorkspace({
     () => (
       activePlatform === 'all'
         ? apps
-        : apps.filter((app) => normalizeVerifiedAppPlatform(String(app.platform || '')) === activePlatform)
+        : apps.filter((app) => sanitizeReviewPlatforms(app.compatiblePlatforms || [String(app.platform || '')]).includes(activePlatform))
     ),
     [activePlatform, apps]
   );
@@ -524,7 +527,7 @@ function VerifiedDeveloperWorkspace({
     setReviewForm(nextReviewForm);
     if (reviewAdvancedDetailsRef.current) {
       reviewAdvancedDetailsRef.current.open = Boolean(
-        nextReviewForm.platform || nextReviewForm.releaseTag || nextReviewForm.releaseAssetName
+        nextReviewForm.platforms.length || nextReviewForm.releaseTag || nextReviewForm.releaseAssetName
       );
     }
     if (typeof window !== 'undefined') {
@@ -589,19 +592,29 @@ function VerifiedDeveloperWorkspace({
             <details ref={reviewAdvancedDetailsRef} className="profile-advanced-details">
               <summary className="profile-advanced-summary">Расширенные настройки</summary>
               <div className="profile-panel-stack">
-                <label className="auth-field">
-                  <span className="auth-field-label">Платформа</span>
-                  <select
-                    className="auth-input"
-                    value={reviewForm.platform}
-                    onChange={(event) => setReviewForm((current) => ({ ...current, platform: event.target.value as PlatformOption }))}
-                  >
-                    <option value="">Определить автоматически</option>
-                    {VERIFIED_APP_PLATFORM_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                </label>
+                <div className="auth-field">
+                  <span className="auth-field-label">Совместимые платформы</span>
+                  <div className="profile-platform-toggle-grid" role="group" aria-label="Совместимые платформы">
+                    {VERIFIED_APP_PLATFORM_OPTIONS.map((option) => {
+                      const active = reviewForm.platforms.includes(option.value);
+                      return (
+                        <label key={option.value} className={`profile-platform-toggle${active ? ' is-active' : ''}`}>
+                          <input
+                            type="checkbox"
+                            checked={active}
+                            onChange={() => setReviewForm((current) => ({
+                              ...current,
+                              platforms: active
+                                ? current.platforms.filter((item) => item !== option.value)
+                                : [...current.platforms, option.value]
+                            }))}
+                          />
+                          <span>{option.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
 
                 <label className="auth-field">
                   <span className="auth-field-label">Версия или тег</span>
@@ -810,7 +823,13 @@ export function ProfilePage() {
   const [applyMessage, setApplyMessage] = useState(() => loadDraft(DEVELOPER_APPLICATION_DRAFT_KEY, { message: '' }).message);
   const [applicationDraftStatus, setApplicationDraftStatus] = useState<DraftStatus>('idle');
   const [showRetryForm, setShowRetryForm] = useState(false);
-  const [reviewForm, setReviewForm] = useState<ReviewFormState>(() => loadDraft(VERIFIED_REVIEW_DRAFT_KEY, EMPTY_REVIEW_FORM));
+  const [reviewForm, setReviewForm] = useState<ReviewFormState>(() => {
+    const draft = loadDraft(VERIFIED_REVIEW_DRAFT_KEY, EMPTY_REVIEW_FORM);
+    return {
+      ...draft,
+      platforms: sanitizeReviewPlatforms((draft as ReviewFormState).platforms)
+    };
+  });
   const [reviewDraftStatus, setReviewDraftStatus] = useState<DraftStatus>('idle');
 
   useEffect(() => {
@@ -819,19 +838,10 @@ export function ProfilePage() {
   }, [user?.email, user?.name]);
 
   useEffect(() => {
-    setReviewForm((current) => {
-      if (!current.platform) {
-        return current;
-      }
-      const normalizedPlatform = toPlatformOption(current.platform);
-      if (normalizedPlatform === current.platform) {
-        return current;
-      }
-      return {
-        ...current,
-        platform: normalizedPlatform
-      };
-    });
+    setReviewForm((current) => ({
+      ...current,
+      platforms: sanitizeReviewPlatforms(current.platforms)
+    }));
   }, []);
 
   useEffect(() => {
@@ -993,7 +1003,8 @@ export function ProfilePage() {
       appName: reviewForm.appName,
       officialSiteUrl: reviewForm.officialSiteUrl,
       description: reviewForm.description,
-      platform: reviewForm.platform ? (normalizeVerifiedAppPlatform(reviewForm.platform) as SiteVerifiedAppPlatform) : undefined,
+      platform: reviewForm.platforms.length === 1 ? reviewForm.platforms[0] : undefined,
+      platforms: reviewForm.platforms,
       releaseTag: reviewForm.releaseTag,
       releaseAssetName: reviewForm.releaseAssetName
     });
@@ -1022,6 +1033,7 @@ export function ProfilePage() {
       officialSiteUrl: app.officialSiteUrl || '',
       description: app.projectDescription || '',
       platform: normalizeVerifiedAppPlatform(String(app.platform || '')) as SiteVerifiedAppPlatform,
+      platforms: sanitizeReviewPlatforms(app.compatiblePlatforms || [String(app.platform || '')]),
       releaseTag: app.releaseTag || '',
       releaseAssetName: app.releaseAssetName || ''
     });

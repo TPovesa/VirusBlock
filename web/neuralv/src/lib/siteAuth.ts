@@ -170,6 +170,7 @@ export type SiteVerifiedAppGroup = {
 export type SiteVerifiedApp = {
   id?: string;
   platform: SiteVerifiedAppPlatform | string;
+  compatiblePlatforms?: SiteVerifiedAppPlatform[];
   appName: string;
   authorName?: string;
   repositoryUrl?: string;
@@ -227,9 +228,38 @@ export type SiteVerifiedAppReviewRequest = {
   officialSiteUrl?: string;
   description?: string;
   platform?: SiteVerifiedAppPlatform;
+  platforms?: SiteVerifiedAppPlatform[];
   releaseTag?: string;
   releaseAssetName?: string;
 };
+
+function mapCompatiblePlatforms(value: unknown, fallbackPlatform: string): SiteVerifiedAppPlatform[] {
+  const mapped = Array.isArray(value)
+    ? value
+        .map((item) => normalizeVerifiedAppPlatform(String(item || '')))
+        .filter(
+          (platform): platform is SiteVerifiedAppPlatform => (
+            platform === 'android'
+            || platform === 'windows'
+            || platform === 'linux'
+            || platform === 'plugins'
+            || platform === 'heroku'
+          )
+        )
+    : [];
+  const fallback = normalizeVerifiedAppPlatform(String(fallbackPlatform || ''));
+  if (
+    (fallback === 'android'
+      || fallback === 'windows'
+      || fallback === 'linux'
+      || fallback === 'plugins'
+      || fallback === 'heroku')
+    && !mapped.includes(fallback)
+  ) {
+    mapped.unshift(fallback);
+  }
+  return [...new Set(mapped)];
+}
 
 export type SiteProfileSystem = {
   platform: string;
@@ -1340,6 +1370,10 @@ function mapVerifiedApp(value: Record<string, unknown> | null | undefined): Site
   return {
     id: typeof value.id === 'string' ? value.id : undefined,
     platform: normalizeVerifiedAppPlatform(typeof value.platform === 'string' ? value.platform : 'windows'),
+    compatiblePlatforms: mapCompatiblePlatforms(
+      (value as Record<string, unknown>).compatible_platforms,
+      typeof value.platform === 'string' ? value.platform : 'windows'
+    ),
     appName: typeof value.app_name === 'string'
       ? value.app_name
       : (typeof value.name === 'string' ? value.name : 'Без названия'),
@@ -1382,6 +1416,18 @@ export function formatVerifiedAppPlatform(platform: string): string {
     default:
       return String(platform || '').trim() || 'Неизвестно';
   }
+}
+
+export function formatVerifiedAppPlatforms(platforms: Array<string | SiteVerifiedAppPlatform> | null | undefined): string {
+  const normalized = [...new Set(
+    (platforms || [])
+      .map((platform) => normalizeVerifiedAppPlatform(String(platform || '')))
+      .filter(Boolean)
+  )];
+  if (normalized.length === 0) {
+    return 'Неизвестно';
+  }
+  return normalized.map((platform) => formatVerifiedAppPlatform(String(platform))).join(' • ');
 }
 
 export function normalizeVerifiedAppPlatform(platform: string): SiteVerifiedAppPlatform | string {
@@ -1717,6 +1763,7 @@ export async function submitVerifiedAppReview(
     body: JSON.stringify({
       app_name: payload.appName,
       platform: payload.platform,
+      platforms: payload.platforms,
       repository_url: payload.repositoryUrl,
       official_site_url: payload.officialSiteUrl,
       description: payload.description,
@@ -1753,6 +1800,7 @@ export async function submitVerifiedAppUpdateCheck(
     body: JSON.stringify({
       app_name: payload.appName,
       platform: payload.platform,
+      platforms: payload.platforms,
       official_site_url: payload.officialSiteUrl,
       description: payload.description,
       release_tag: payload.releaseTag,

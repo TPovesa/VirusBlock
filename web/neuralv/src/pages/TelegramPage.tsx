@@ -1,3 +1,5 @@
+import { CenteredHeroSection } from '../components/CenteredHeroSection';
+import { StoryScene } from '../components/StoryScene';
 import '../styles/story.css';
 
 const telegramAssetVersion = '2.0.20260326';
@@ -20,31 +22,40 @@ const telegramArtifacts = [
 export function TelegramPage() {
   return (
     <div className="page-stack platform-story-shell telegram-page">
-      <section className="platform-hero">
-        <div className="platform-hero-center">
-          <article className="platform-hero-card platform-hero-card-centered">
-            <div className="platform-hero-copy platform-hero-copy-centered">
-              <h1>NeuralV для Telegram</h1>
-              <p>Два отдельных формата под разные Telegram-сценарии. Плагин остаётся быстрым вариантом для клиента, а модуль для Heroku подходит серверному контуру.</p>
-              <div className="platform-hero-actions">
-                <a className="nv-button" href={telegramArtifacts[0].downloadUrl} download>Скачать плагин</a>
-                <a className="shell-chip" href={telegramArtifacts[1].downloadUrl} download>Скачать модуль</a>
-              </div>
-            </div>
-          </article>
-        </div>
-      </section>
+      <CenteredHeroSection
+        title="NeuralV для Telegram"
+        body="Здесь два отдельных сценария: плагин для Extera/Ayu и модуль для Heroku. Оба остаются локальными и не зависят от внешней AI-проверки."
+        media={{
+          kind: 'image',
+          src: '/media/story/telegram.jpg',
+          alt: 'NeuralV Telegram'
+        }}
+        actions={[
+          { label: 'Скачать плагин', href: telegramArtifacts[0].downloadUrl, download: true },
+          { label: 'Скачать модуль', href: telegramArtifacts[1].downloadUrl, download: true, variant: 'secondary' }
+        ]}
+      />
 
-      <section className="platform-install-shell">
-        <div className="platform-section-heading platform-section-heading-centered">
-          <h2>Скачать</h2>
-        </div>
+      <div className="story-track platform-story-track">
+        <StoryScene
+          kicker="Telegram"
+          title="Два формата. Один локальный принцип проверки."
+          body="И плагин, и модуль проверяют код локально, без удалённого AI-контурa. Разница только в формате установки и окружении."
+          accent="Extera/Ayu и Heroku больше не расходятся по логике анализа."
+          visual="telegram"
+          mediaAlign="right"
+          chips={['Extera/Ayu', 'Heroku', 'Local-only']}
+        />
+      </div>
+
+      <section className="story-download-section">
+        <h2>Скачать</h2>
         <div className="platform-install-grid platform-install-grid-centered platform-install-grid-telegram">
           {telegramArtifacts.map((artifact) => (
             <article key={artifact.fileName} className="platform-install-card platform-install-card-centered">
               <h3>{artifact.title}</h3>
               <p>{artifact.description}</p>
-              <div className="platform-hero-actions">
+              <div className="platform-install-actions">
                 <a className="nv-button" href={artifact.downloadUrl} download>Скачать</a>
               </div>
             </article>

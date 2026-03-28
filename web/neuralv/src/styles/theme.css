@@ -3514,3 +3514,287 @@ body {
     padding-inline: 10px;
   }
 }
+
+/* 2026-03-28 mobile shell polish */
+.shell-drawer-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 16px;
+}
+
+.shell-drawer-body {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 14px;
+  padding-right: 2px;
+}
+
+.shell-drawer-head {
+  padding-bottom: 2px;
+}
+
+.shell-drawer-section {
+  gap: 10px;
+}
+
+.shell-drawer-section + .shell-drawer-section {
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.shell-drawer-list {
+  gap: 8px;
+}
+
+.shell-drawer-link {
+  min-height: 48px;
+  padding: 12px 14px;
+  align-items: center;
+  font-size: 0.96rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.shell-drawer-logout {
+  min-height: 46px;
+  margin-top: 2px;
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    padding: 12px 10px 32px;
+  }
+
+  .page-frame,
+  .site-footer {
+    width: min(100%, calc(100vw - 8px));
+  }
+
+  .shell-header {
+    top: 10px;
+    width: min(100%, calc(100vw - 12px));
+    margin-bottom: 18px;
+  }
+
+  .shell-header-inner {
+    min-height: 50px;
+    padding: 6px 10px;
+    border-radius: 20px;
+  }
+
+  .brand-link {
+    gap: 12px;
+  }
+
+  .brand-name {
+    font-size: 0.98rem;
+  }
+
+  .shell-drawer {
+    width: min(336px, calc(100vw - 10px));
+    padding: 8px 4px 8px 0;
+  }
+
+  .shell-drawer-panel {
+    gap: 14px;
+    padding: 14px;
+    border-radius: 22px;
+    max-height: calc(100vh - 16px);
+  }
+
+  .shell-drawer-body {
+    gap: 12px;
+  }
+
+  .shell-drawer-section + .shell-drawer-section {
+    padding-top: 12px;
+  }
+
+  .shell-drawer-section > span {
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+  }
+
+  .shell-drawer-link {
+    min-height: 44px;
+    padding: 11px 12px;
+    border-radius: 15px;
+    font-size: 0.92rem;
+  }
+
+  .support-launcher {
+    right: 10px;
+    left: 10px;
+    bottom: 10px;
+    width: auto;
+    justify-content: center;
+  }
+
+  .surface-card,
+  .hero-shell {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .page-stack,
+  .section-block,
+  .platform-page-stack,
+  .section-block-split,
+  .faq-section-shell,
+  .downloads-section {
+    gap: 16px;
+  }
+
+  .hero-actions,
+  .download-actions,
+  .auth-actions-row,
+  .action-preview-row {
+    width: 100%;
+  }
+
+  .hero-actions .nv-button,
+  .hero-actions .shell-chip,
+  .download-actions .nv-button,
+  .download-actions .shell-chip {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .site-footer {
+    margin-top: 20px;
+    padding-top: 16px;
+  }
+
+  .site-footer-grid {
+    gap: 12px;
+  }
+
+  .site-footer-links {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .footer-link {
+    min-height: 34px;
+    padding: 0 12px;
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 520px) {
+  .app-shell {
+    padding-inline: 8px;
+  }
+
+  .shell-header {
+    width: min(100%, calc(100vw - 8px));
+  }
+
+  .shell-header-inner {
+    padding-inline: 8px;
+    min-height: 48px;
+  }
+
+  .brand-badge {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+  }
+
+  .brand-badge-core {
+    width: 16px;
+    height: 22px;
+  }
+
+  .shell-drawer {
+    width: min(calc(100vw - 6px), 332px);
+    padding-right: 2px;
+  }
+
+  .shell-drawer-panel {
+    padding: 12px;
+    border-radius: 20px;
+  }
+
+  .shell-drawer-link {
+    font-size: 0.9rem;
+  }
+
+  .surface-card,
+  .hero-shell {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .nv-button,
+  .shell-chip {
+    min-height: 42px;
+    padding-inline: 14px;
+  }
+}
+
+/* 2026-03-28 mobile drawer refinement */
+.shell-header-inner {
+  min-height: 52px;
+}
+
+.shell-burger {
+  width: 40px;
+  height: 32px;
+  gap: 1px;
+}
+
+.shell-burger-line {
+  width: 22px;
+  height: 2.6px;
+}
+
+.shell-drawer-panel {
+  background:
+    linear-gradient(180deg, rgba(18, 21, 28, 0.98), rgba(11, 13, 18, 0.98)),
+    radial-gradient(circle at top right, rgba(201, 96, 108, 0.08), transparent 36%);
+}
+
+.shell-drawer-link {
+  min-height: 48px;
+  align-items: center;
+}
+
+@media (max-width: 760px) {
+  .shell-header-inner {
+    min-height: 48px;
+    padding: 6px 10px;
+  }
+
+  .shell-drawer {
+    width: min(344px, calc(100vw - 8px));
+    padding: 8px 2px 8px 0;
+  }
+
+  .shell-drawer-panel {
+    padding: 14px 12px;
+    border-radius: 22px;
+    box-shadow: 0 24px 50px rgba(0, 0, 0, 0.34);
+  }
+
+  .shell-drawer-head {
+    padding-bottom: 4px;
+  }
+
+  .shell-drawer-section > span {
+    font-size: 0.67rem;
+    letter-spacing: 0.14em;
+  }
+
+  .shell-drawer-link {
+    min-height: 46px;
+    padding: 12px 13px;
+    border-radius: 15px;
+    background: rgba(255, 255, 255, 0.026);
+  }
+
+  .shell-drawer-link.is-active,
+  .shell-drawer-link:hover {
+    background: rgba(201, 96, 108, 0.12);
+  }
+}

@@ -6,22 +6,31 @@ import '../styles/story.css';
 
 const scenes = [
   {
+    kicker: 'Проверка',
     title: 'Проверка начинается раньше тревоги',
     body: 'NeuralV сначала смотрит быстро и спокойно. Если системе есть за что зацепиться, дальше включается более строгий разбор.',
     accent: 'Быстрый ответ там, где он нужен. Глубокий разбор там, где он оправдан.',
-    visual: 'route' as const
+    visual: 'route' as const,
+    mediaAlign: 'right' as const,
+    chips: ['Локально', 'Быстрый этап', 'Глубокий разбор']
   },
   {
+    kicker: 'Платформы',
     title: 'Один продукт. Разные клиенты.',
     body: 'Android, Windows и Linux не копируют друг друга. Каждая версия подстраивается под свою систему и остаётся частью одного продукта.',
     accent: 'Общий аккаунт, общая логика и разный ритм под реальные устройства.',
-    visual: 'platforms' as const
+    visual: 'platforms' as const,
+    mediaAlign: 'left' as const,
+    chips: ['Android', 'Windows', 'Linux']
   },
   {
+    kicker: 'Интерфейс',
     title: 'Спокойный интерфейс. Чёткий результат.',
     body: 'Хорошая защита не должна утомлять. Нам важнее понятные действия, ясный итог и нормальная подача без лишнего шума.',
     accent: 'Когда проверка становится серьёзнее, интерфейс должен оставаться спокойным.',
-    visual: 'privacy' as const
+    visual: 'privacy' as const,
+    mediaAlign: 'right' as const,
+    chips: ['Понятный итог', 'Без лишней технички']
   }
 ] as const;
 
@@ -104,8 +113,11 @@ export function HomePage() {
             key={scene.title}
             title={scene.title}
             body={scene.body}
+            kicker={scene.kicker}
             accent={scene.accent}
             visual={scene.visual}
+            mediaAlign={scene.mediaAlign}
+            chips={scene.chips}
           />
         ))}
       </div>

@@ -116,6 +116,7 @@ async function ensureVerifiedAppsSchema(db = pool) {
                 official_site_url VARCHAR(700) DEFAULT NULL,
                 project_description VARCHAR(1200) DEFAULT NULL,
                 platform ${VERIFIED_APPS_PLATFORM_ENUM} NOT NULL,
+                platform_compatibility_json LONGTEXT DEFAULT NULL,
                 app_name VARCHAR(120) NOT NULL,
                 author_name VARCHAR(120) NOT NULL,
                 avatar_url VARCHAR(700) DEFAULT NULL,
@@ -166,6 +167,10 @@ async function ensureVerifiedAppsSchema(db = pool) {
         await db.query(`
             ALTER TABLE verified_apps
                 ADD COLUMN IF NOT EXISTS project_description VARCHAR(1200) DEFAULT NULL AFTER official_site_url
+        `);
+        await db.query(`
+            ALTER TABLE verified_apps
+                ADD COLUMN IF NOT EXISTS platform_compatibility_json LONGTEXT DEFAULT NULL AFTER platform
         `);
         await db.query(`
             ALTER TABLE verified_apps
@@ -228,6 +233,75 @@ function normalizePlatform(value) {
         default:
             return normalized;
     }
+}
+
+function collectPlatformTokens(value) {
+    if (Array.isArray(value)) {
+        return value
+            .flatMap((item) => collectPlatformTokens(item))
+            .filter((item) => String(item || '').trim());
+    }
+    if (typeof value === 'string') {
+        return value
+            .split(/[,\n]/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+    }
+    if (value === null || value === undefined) {
+        return [];
+    }
+    const normalized = String(value || '').trim();
+    return normalized ? [normalized] : [];
+}
+
+function parseCompatiblePlatformsInput(value) {
+    const tokens = collectPlatformTokens(value);
+    const platforms = [];
+    const invalid = [];
+    for (const token of tokens) {
+        const normalized = normalizePlatform(token);
+        if (!normalized || !validatePlatform(normalized)) {
+            invalid.push(token);
+            continue;
+        }
+        if (!platforms.includes(normalized)) {
+            platforms.push(normalized);
+        }
+    }
+    return {
+        provided: tokens.length > 0,
+        platforms,
+        invalid
+    };
+}
+
+function ensureCompatiblePlatforms(primaryPlatform, compatiblePlatforms = []) {
+    const normalizedPrimary = normalizePlatform(primaryPlatform);
+    const list = Array.isArray(compatiblePlatforms) ? compatiblePlatforms : [];
+    const merged = [];
+    if (normalizedPrimary && validatePlatform(normalizedPrimary)) {
+        merged.push(normalizedPrimary);
+    }
+    for (const item of list) {
+        const normalized = normalizePlatform(item);
+        if (normalized && validatePlatform(normalized) && !merged.includes(normalized)) {
+            merged.push(normalized);
+        }
+    }
+    return merged;
+}
+
+function serializeCompatiblePlatforms(primaryPlatform, compatiblePlatforms = []) {
+    const merged = ensureCompatiblePlatforms(primaryPlatform, compatiblePlatforms);
+    return merged.length > 0 ? JSON.stringify(merged) : null;
+}
+
+function parseCompatiblePlatformsFromRow(row) {
+    const parsed = parseJson(row?.platform_compatibility_json);
+    return ensureCompatiblePlatforms(
+        row?.platform,
+        Array.isArray(parsed) ? parsed : []
+    );
 }
 
 function normalizeUrl(value) {
@@ -940,6 +1014,7 @@ function toPrivateRecord(row) {
         app_name: row.app_name,
         author_name: row.author_name,
         platform: row.platform,
+        compatible_platforms: parseCompatiblePlatformsFromRow(row),
         repository_url: row.repository_url,
         release_artifact_url: row.release_artifact_url,
         release_tag: row.release_tag,
@@ -975,6 +1050,7 @@ function toPublicRecord(row) {
         app_name: row.app_name,
         author_name: row.author_name,
         platform: row.platform,
+        compatible_platforms: parseCompatiblePlatformsFromRow(row),
         avatar_url: row.avatar_url,
         public_summary: row.public_summary,
         verified_at: row.verified_at,
@@ -1353,8 +1429,8 @@ async function listPublicVerifiedApps({ platform = null, limit = 24, db = pool }
     const params = [];
     const normalizedPlatform = normalizePlatform(platform);
     if (normalizedPlatform && validatePlatform(normalizedPlatform)) {
-        clauses.push('platform = ?');
-        params.push(normalizedPlatform);
+        clauses.push('(platform = ? OR platform_compatibility_json LIKE ?)');
+        params.push(normalizedPlatform, `%"${normalizedPlatform}"%`);
     }
 
     const [rows] = await db.query(
@@ -1446,11 +1522,13 @@ async function queueExistingVerificationUpdate(existing, {
     selectedRelease,
     selectedAsset,
     selectedPlatform,
+    compatiblePlatforms,
     appName,
     officialSiteUrl,
     projectDescription,
     user
 }, db = pool) {
+    const compatibilityJson = serializeCompatiblePlatforms(selectedPlatform, compatiblePlatforms);
     const now = nowMs();
     await db.query(
         `UPDATE verified_apps
@@ -1466,6 +1544,7 @@ async function queueExistingVerificationUpdate(existing, {
              official_site_url = ?,
              project_description = ?,
              platform = ?,
+             platform_compatibility_json = ?,
              app_name = ?,
              author_name = ?,
              status = 'QUEUED',
@@ -1496,6 +1575,7 @@ async function queueExistingVerificationUpdate(existing, {
             officialSiteUrl || null,
             projectDescription,
             selectedPlatform,
+            compatibilityJson,
             appName,
             String(user.name || '').slice(0, 120) || 'Unknown',
             now,
@@ -1535,6 +1615,16 @@ async function createVerificationJob(userId, input, db = pool) {
     }
 
     const requiredAppName = requireAppName(input.app_name);
+    const compatiblePlatformsInput = parseCompatiblePlatformsInput(
+        Object.prototype.hasOwnProperty.call(input || {}, 'compatible_platforms')
+            ? input.compatible_platforms
+            : input.platforms
+    );
+    if (compatiblePlatformsInput.invalid.length > 0) {
+        const error = new Error('Unsupported compatible platform');
+        error.code = 'UNSUPPORTED_PLATFORM';
+        throw error;
+    }
     const projectDescription = normalizeProjectDescription(input.project_description || input.description);
     const releaseTag = normalizeReleaseTag(input.release_tag);
     const releaseAssetName = normalizeReleaseAssetName(input.release_asset_name);
@@ -1565,6 +1655,7 @@ async function createVerificationJob(userId, input, db = pool) {
     const selectedPlatform = discovery.platform;
     const selectedRelease = discovery.release;
     const selectedAsset = discovery.asset;
+    const compatiblePlatforms = ensureCompatiblePlatforms(selectedPlatform, compatiblePlatformsInput.platforms);
     const existingByRepo = await fetchLatestVerifiedAppByRepository(userId, repo.canonicalUrl, db);
 
     if (existingByRepo) {
@@ -1589,6 +1680,7 @@ async function createVerificationJob(userId, input, db = pool) {
             selectedRelease,
             selectedAsset,
             selectedPlatform,
+            compatiblePlatforms,
             appName,
             officialSiteUrl,
             projectDescription,
@@ -1634,8 +1726,8 @@ async function createVerificationJob(userId, input, db = pool) {
     const id = uuidv4();
     await db.query(
         `INSERT INTO verified_apps
-         (id, owner_user_id, repository_url, repository_owner, repository_name, release_artifact_url, release_tag, release_name, release_asset_name, release_published_at, official_site_url, project_description, platform, app_name, author_name, status, queued_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?)`,
+         (id, owner_user_id, repository_url, repository_owner, repository_name, release_artifact_url, release_tag, release_name, release_asset_name, release_published_at, official_site_url, project_description, platform, platform_compatibility_json, app_name, author_name, status, queued_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?)`,
         [
             id,
             userId,
@@ -1650,6 +1742,7 @@ async function createVerificationJob(userId, input, db = pool) {
             officialSiteUrl || null,
             projectDescription,
             selectedPlatform,
+            serializeCompatiblePlatforms(selectedPlatform, compatiblePlatforms),
             appName,
             String(user.name || '').slice(0, 120) || 'Unknown',
             now,
@@ -1726,6 +1819,16 @@ async function checkVerificationJobUpdate(userId, appId, input = {}, db = pool) 
             ? input.project_description
             : (Object.prototype.hasOwnProperty.call(input || {}, 'description') ? input.description : existing.project_description)
     );
+    const compatiblePlatformsInput = parseCompatiblePlatformsInput(
+        Object.prototype.hasOwnProperty.call(input || {}, 'compatible_platforms')
+            ? input.compatible_platforms
+            : input.platforms
+    );
+    if (compatiblePlatformsInput.invalid.length > 0) {
+        const error = new Error('Unsupported compatible platform');
+        error.code = 'UNSUPPORTED_PLATFORM';
+        throw error;
+    }
     const releaseTag = normalizeReleaseTag(input.release_tag);
     const releaseAssetName = normalizeReleaseAssetName(input.release_asset_name);
     const requestedAppName = normalizeAppName(input.app_name) || normalizeAppName(existing.app_name) || 'NeuralV App';
@@ -1746,11 +1849,16 @@ async function checkVerificationJobUpdate(userId, appId, input = {}, db = pool) 
         };
     }
 
+    const compatiblePlatforms = compatiblePlatformsInput.provided
+        ? ensureCompatiblePlatforms(discovery.platform, compatiblePlatformsInput.platforms)
+        : parseCompatiblePlatformsFromRow(existing);
+
     const app = await queueExistingVerificationUpdate(existing, {
         repo: discovery.repoMeta,
         selectedRelease: discovery.release,
         selectedAsset: discovery.asset,
         selectedPlatform: discovery.platform,
+        compatiblePlatforms,
         appName: requestedAppName,
         officialSiteUrl,
         projectDescription,
@@ -1845,6 +1953,7 @@ async function processVerificationJob(id, db = pool) {
             release_asset_name: analysis.releaseAssetName || null,
             release_published_at: analysis.releasePublishedAt || null,
             platform: analysis.platform || job.platform,
+            platform_compatibility_json: serializeCompatiblePlatforms(analysis.platform || job.platform, analysis.compatiblePlatforms),
             app_name: analysis.appName || job.app_name,
             avatar_url: analysis.avatarUrl,
             sha256: analysis.artifact.sha256,
@@ -2066,6 +2175,10 @@ async function analyzeVerificationCandidate(job) {
     return {
         status,
         platform: validatePlatform(normalizePlatform(aiResult.platform)) ? normalizePlatform(aiResult.platform) : targetPlatform,
+        compatiblePlatforms: ensureCompatiblePlatforms(
+            validatePlatform(normalizePlatform(aiResult.platform)) ? normalizePlatform(aiResult.platform) : targetPlatform,
+            parseCompatiblePlatformsFromRow(job)
+        ),
         appName: normalizeAppName(aiResult.appName || job.app_name || repo.name || repoMeta.repo) || job.app_name,
         releaseTag: selectedRelease.release.tagName,
         releaseName: selectedRelease.release.name || null,

@@ -158,6 +158,11 @@ export function AppShell() {
     window.document.body.scrollTop = 0;
   }, []);
 
+  const handleDrawerNavigate = useCallback(() => {
+    setMenuOpen(false);
+    scrollWindowToTop();
+  }, [scrollWindowToTop]);
+
   useLayoutEffect(() => {
     setMenuOpen(false);
     scrollWindowToTop();
@@ -411,68 +416,55 @@ export function AppShell() {
           <div className="shell-drawer-head">
             <strong>Меню</strong>
           </div>
-
-          <div className="shell-drawer-section">
-            <span>Сайт</span>
-            <div className="shell-drawer-list">
-              {productLinks.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === '/'}
-                  className={({ isActive }) => `shell-drawer-link${isActive ? ' is-active' : ''}`}
-                  onClick={scrollWindowToTop}
-                >
-                  {item.label}
-                </NavLink>
-              ))}
+          <div className="shell-drawer-body">
+            <div className="shell-drawer-section">
+              <span>Сайт</span>
+              <div className="shell-drawer-list">
+                {productLinks.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.to === '/'}
+                    className={({ isActive }) => `shell-drawer-link${isActive ? ' is-active' : ''}`}
+                    onClick={handleDrawerNavigate}
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
             </div>
-          </div>
 
-          <div className="shell-drawer-section">
-            <span>Клиенты</span>
-            <div className="shell-drawer-list">
-              {clientLinks.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) => `shell-drawer-link${isActive ? ' is-active' : ''}`}
-                  onClick={scrollWindowToTop}
-                >
-                  {item.label}
-                </NavLink>
-              ))}
+            <div className="shell-drawer-section">
+              <span>Клиенты</span>
+              <div className="shell-drawer-list">
+                {clientLinks.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) => `shell-drawer-link${isActive ? ' is-active' : ''}`}
+                    onClick={handleDrawerNavigate}
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
             </div>
-          </div>
 
-          <div className="shell-drawer-section">
-            <span>Аккаунт</span>
-            <div className="shell-drawer-list">
-              {accountLinks.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) => `shell-drawer-link${isActive ? ' is-active' : ''}`}
-                  onClick={scrollWindowToTop}
-                >
-                  {item.label}
-                </NavLink>
-              ))}
+            <div className="shell-drawer-section">
+              <span>Аккаунт</span>
+              <div className="shell-drawer-list">
+                {accountLinks.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) => `shell-drawer-link${isActive ? ' is-active' : ''}`}
+                    onClick={handleDrawerNavigate}
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
             </div>
-          </div>
-
-          <div className="shell-drawer-section">
-            <span>Поддержка</span>
-            <button
-              className="shell-drawer-link shell-drawer-link-button"
-              type="button"
-              onClick={() => {
-                setMenuOpen(false);
-                setSupportOpen(true);
-              }}
-            >
-              Открыть чат
-            </button>
           </div>
 
           {ready && session ? (

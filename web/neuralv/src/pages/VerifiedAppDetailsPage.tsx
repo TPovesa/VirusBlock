@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Navigate, useLocation, useParams } from 'react-router-dom';
+import { Navigate, useLocation, useParams } from 'react-router-dom';
+import { CenteredHeroSection } from '../components/CenteredHeroSection';
 import {
   buildVerifiedAppDetailsPath,
   fetchPublicVerifiedApps,
   formatVerifiedAppPlatform,
+  formatVerifiedAppPlatforms,
   humanizeError,
   matchesVerifiedAppRef,
   type SiteVerifiedApp
@@ -50,6 +52,21 @@ function formatStatus(app: SiteVerifiedApp) {
   return app.status || 'Проверено';
 }
 
+function getHeroMedia(platform: string) {
+  switch (formatVerifiedAppPlatform(platform)) {
+    case 'Android':
+      return { kind: 'video' as const, src: '/media/story/android-loop.mp4', poster: '/media/story/android.jpg', alt: 'Android verified app' };
+    case 'Linux':
+      return { kind: 'image' as const, src: '/media/story/linux.jpg', alt: 'Linux verified app' };
+    case 'Plugins':
+    case 'Heroku':
+      return { kind: 'image' as const, src: '/media/story/telegram.jpg', alt: 'Telegram verified app' };
+    case 'Windows':
+    default:
+      return { kind: 'video' as const, src: '/media/story/windows-loop.mp4', poster: '/media/story/windows.jpg', alt: 'Windows verified app' };
+  }
+}
+
 export function VerifiedAppDetailsPage() {
   const { appRef = '' } = useParams();
   const location = useLocation();
@@ -83,7 +100,7 @@ export function VerifiedAppDetailsPage() {
   }, [appRef]);
 
   const canonicalPath = useMemo(() => (app ? buildVerifiedAppDetailsPath(app) : ''), [app]);
-  const platformLabel = app ? formatVerifiedAppPlatform(String(app.platform || '')) : '';
+  const platformLabel = app ? formatVerifiedAppPlatforms(app.compatiblePlatforms || [String(app.platform || '')]) : '';
   const verifiedAt = app ? formatDate(app.verifiedAt || app.createdAt) : null;
   const artifactSize = app ? formatSize(app.artifactSizeBytes) : null;
 
@@ -91,98 +108,82 @@ export function VerifiedAppDetailsPage() {
     return <Navigate to={canonicalPath} replace />;
   }
 
+  if (loading) {
+    return (
+      <div className="page-stack platform-story-shell">
+        <CenteredHeroSection
+          title="Загружаем приложение…"
+          media={{ kind: 'image', src: '/media/story/platforms.jpg', alt: 'Loading verified app' }}
+        />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="page-stack platform-story-shell">
+        <CenteredHeroSection
+          title="Страница недоступна"
+          body={humanizeError(error)}
+          actions={[{ label: 'Вернуться в каталог', to: '/verified-apps' }]}
+          media={{ kind: 'image', src: '/media/story/route.jpg', alt: 'Verified app unavailable' }}
+        />
+      </div>
+    );
+  }
+
+  if (!app) {
+    return (
+      <div className="page-stack platform-story-shell">
+        <CenteredHeroSection
+          title="Приложение не найдено"
+          body="Запись в каталоге недоступна или уже была обновлена."
+          actions={[{ label: 'Вернуться в каталог', to: '/verified-apps' }]}
+          media={{ kind: 'image', src: '/media/story/privacy.jpg', alt: 'Verified app not found' }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="page-stack platform-story-shell">
-      <section className="platform-hero">
-        <div className="platform-hero-center">
-          <article className="platform-hero-card platform-hero-card-centered verified-app-details-card">
-            {loading ? (
-              <div className="platform-hero-copy platform-hero-copy-centered">
-                <h1>Загружаем приложение…</h1>
-              </div>
-            ) : error ? (
-              <div className="platform-hero-copy platform-hero-copy-centered">
-                <h1>Страница недоступна</h1>
-                <p>{humanizeError(error)}</p>
-                <div className="platform-hero-actions">
-                  <Link className="nv-button" to="/verified-apps">Вернуться в каталог</Link>
-                </div>
-              </div>
-            ) : app ? (
-              <>
-                <div className="platform-hero-copy platform-hero-copy-centered">
-                  <h1>{app.appName}</h1>
-                  <p>{app.publicSummary || app.projectDescription || 'Проверенное приложение из каталога NeuralV.'}</p>
-                  <div className="platform-hero-actions">
-                    {app.releaseArtifactUrl ? <a className="nv-button" href={app.releaseArtifactUrl} target="_blank" rel="noreferrer">Скачать</a> : null}
-                    {app.repositoryUrl ? <a className="shell-chip" href={app.repositoryUrl} target="_blank" rel="noreferrer">Репозиторий</a> : null}
-                    {app.officialSiteUrl ? <a className="shell-chip" href={app.officialSiteUrl} target="_blank" rel="noreferrer">Сайт</a> : null}
-                  </div>
-                </div>
-                <div className="platform-hero-grid platform-hero-grid-centered verified-app-details-grid">
-                  <div className="platform-main-stat">
-                    <strong>{platformLabel}</strong>
-                    <p>{formatStatus(app)}</p>
-                  </div>
-                  <div className="verified-app-details-meta-grid">
-                    {verifiedAt ? (
-                      <div className="verified-app-details-meta-card">
-                        <strong>{verifiedAt}</strong>
-                        <p>Дата проверки</p>
-                      </div>
-                    ) : null}
-                    {artifactSize ? (
-                      <div className="verified-app-details-meta-card">
-                        <strong>{artifactSize}</strong>
-                        <p>Размер файла</p>
-                      </div>
-                    ) : null}
-                    {app.releaseAssetName ? (
-                      <div className="verified-app-details-meta-card">
-                        <strong>{app.releaseAssetName}</strong>
-                        <p>Файл релиза</p>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="platform-hero-copy platform-hero-copy-centered">
-                <h1>Приложение не найдено</h1>
-                <p>Запись в каталоге недоступна или уже была обновлена.</p>
-                <div className="platform-hero-actions">
-                  <Link className="nv-button" to="/verified-apps">Вернуться в каталог</Link>
-                </div>
-              </div>
-            )}
+      <CenteredHeroSection
+        title={app.appName}
+        body={app.publicSummary || app.projectDescription || 'Проверенное приложение из каталога NeuralV.'}
+        actions={[
+          ...(app.releaseArtifactUrl ? [{ label: 'Скачать', href: app.releaseArtifactUrl, external: true }] : []),
+          ...(app.repositoryUrl ? [{ label: 'Репозиторий', href: app.repositoryUrl, external: true, variant: 'secondary' as const }] : []),
+          ...(app.officialSiteUrl ? [{ label: 'Сайт', href: app.officialSiteUrl, external: true, variant: 'secondary' as const }] : [])
+        ]}
+        media={getHeroMedia(String(app.platform || 'windows'))}
+        meta={[
+          { label: 'Раздел', value: platformLabel },
+          { label: 'Статус', value: formatStatus(app) },
+          ...(verifiedAt ? [{ label: 'Проверено', value: verifiedAt }] : []),
+          ...(artifactSize ? [{ label: 'Размер файла', value: artifactSize }] : [])
+        ]}
+      />
+
+      <section className="story-download-section">
+        <h2>Скачать</h2>
+        <div className="platform-install-grid platform-install-grid-centered verified-app-download-grid">
+          <article className="platform-install-card platform-install-card-centered">
+            <h3>Релиз</h3>
+            <p>Это тот же файл, который был указан для проверки и привязан к опубликованной версии.</p>
+            <div className="platform-install-actions">
+              {app.releaseArtifactUrl ? <a className="nv-button" href={app.releaseArtifactUrl} target="_blank" rel="noreferrer">Скачать</a> : <span className="profile-inline-note">Файл релиза не указан.</span>}
+            </div>
+          </article>
+          <article className="platform-install-card platform-install-card-centered">
+            <h3>Источник</h3>
+            <p>Здесь остаются основные ссылки, чтобы быстро сверить релиз, репозиторий и сайт проекта.</p>
+            <div className="platform-install-actions verified-app-download-actions">
+              {app.repositoryUrl ? <a className="shell-chip" href={app.repositoryUrl} target="_blank" rel="noreferrer">Репозиторий</a> : null}
+              {app.officialSiteUrl ? <a className="shell-chip" href={app.officialSiteUrl} target="_blank" rel="noreferrer">Сайт</a> : null}
+            </div>
           </article>
         </div>
       </section>
-
-      {!loading && !error && app ? (
-        <section className="platform-install-shell">
-          <div className="platform-section-heading platform-section-heading-centered">
-            <h2>Скачать</h2>
-          </div>
-          <div className="platform-install-grid platform-install-grid-centered verified-app-download-grid">
-            <article className="platform-install-card platform-install-card-centered">
-              <h3>Релиз</h3>
-              <p>Открывает тот файл, который был указан для проверки и привязан к опубликованной версии.</p>
-              <div className="platform-install-actions">
-                {app.releaseArtifactUrl ? <a className="nv-button" href={app.releaseArtifactUrl} target="_blank" rel="noreferrer">Скачать</a> : <span className="profile-inline-note">Файл релиза не указан.</span>}
-              </div>
-            </article>
-            <article className="platform-install-card platform-install-card-centered">
-              <h3>Источник</h3>
-              <p>Здесь остаются основные ссылки, чтобы можно было быстро сверить релиз, репозиторий и сайт проекта.</p>
-              <div className="platform-install-actions verified-app-download-actions">
-                {app.repositoryUrl ? <a className="shell-chip" href={app.repositoryUrl} target="_blank" rel="noreferrer">Репозиторий</a> : null}
-                {app.officialSiteUrl ? <a className="shell-chip" href={app.officialSiteUrl} target="_blank" rel="noreferrer">Сайт</a> : null}
-              </div>
-            </article>
-          </div>
-        </section>
-      ) : null}
     </div>
   );
 }

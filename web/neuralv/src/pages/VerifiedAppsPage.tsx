@@ -5,6 +5,7 @@ import {
   VERIFIED_APP_GROUPS,
   fetchPublicVerifiedApps,
   formatVerifiedAppPlatform,
+  formatVerifiedAppPlatforms,
   humanizeError,
   normalizeVerifiedAppPlatform,
   type SiteVerifiedApp,
@@ -28,7 +29,7 @@ function getFilterTitle(platform: SiteVerifiedAppFilter) {
 function VerifiedAppTile({ app }: { app: SiteVerifiedApp }) {
   const initial = (app.appName || '?').slice(0, 1).toUpperCase();
   const verifiedAt = app.verifiedAt ? new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium' }).format(new Date(app.verifiedAt)) : null;
-  const platformLabel = formatVerifiedAppPlatform(String(app.platform || ''));
+  const platformLabel = formatVerifiedAppPlatforms(app.compatiblePlatforms || [String(app.platform || '')]);
   const authorLabel = app.authorName || 'Проверенный разработчик';
 
   return (
