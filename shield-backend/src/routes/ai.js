@@ -127,6 +127,7 @@ router.post(
                 summary: result.summary,
                 verdict_suggestion: result.verdictSuggestion,
                 bullets: result.bullets,
+                full_report: result.fullReport || null,
                 model: result.model
             });
         } catch (error) {

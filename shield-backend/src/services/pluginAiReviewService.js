@@ -10,6 +10,7 @@ const MAX_BULLETS = 5;
 const MAX_META_KEYS = 20;
 const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const ALLOWED_VERDICTS = new Set(['clean', 'review', 'block']);
+const ALLOWED_MODES = new Set(['summary', 'full']);
 
 function parsePositiveInt(value, fallback) {
     const parsed = Number.parseInt(String(value || ''), 10);
@@ -189,6 +190,11 @@ function getMetaInput(body) {
     return body.meta ?? body.metadata ?? body.scan_meta ?? body.scanMeta ?? null;
 }
 
+function normalizeMode(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return ALLOWED_MODES.has(normalized) ? normalized : 'summary';
+}
+
 function normalizeRequestPayload(body) {
     if (!isPlainObject(body)) {
         throw createServiceError(
@@ -260,17 +266,22 @@ function normalizeVerdict(value) {
     return 'review';
 }
 
-function coerceResult(content) {
+function coerceResult(content, mode = 'summary') {
     const jsonBlock = extractJsonBlock(content);
     if (jsonBlock) {
         try {
             const parsed = JSON.parse(jsonBlock);
             const summary = cleanText(parsed.summary || parsed.result || parsed.message, 420);
             const bullets = uniqueStrings(parsed.bullets || parsed.highlights || parsed.reasons, MAX_BULLETS, 140);
+            const fullReport = cleanText(
+                parsed.full_report || parsed.fullReport || parsed.detailed_report || parsed.detailedReport,
+                2200
+            );
             return {
                 summary: summary || 'AI не смог уверенно сформировать краткую сводку. Нужна ручная проверка.',
                 verdictSuggestion: normalizeVerdict(parsed.verdict_suggestion || parsed.verdictSuggestion || parsed.verdict),
-                bullets
+                bullets,
+                fullReport: mode === 'full' ? (fullReport || summary || null) : null
             };
         } catch (error) {
             console.warn('Plugin AI review returned invalid JSON:', error?.message || error);
@@ -281,7 +292,8 @@ function coerceResult(content) {
     return {
         summary: fallbackSummary || 'AI не вернул пригодную сводку. Нужна ручная проверка.',
         verdictSuggestion: 'review',
-        bullets: []
+        bullets: [],
+        fullReport: mode === 'full' ? (fallbackSummary || null) : null
     };
 }
 
@@ -395,11 +407,25 @@ async function apiRequest(path, body = null) {
 }
 
 async function reviewPluginAnalysisSummary(payload) {
+    const mode = normalizeMode(payload?.mode);
     const normalizedInput = normalizeRequestPayload(payload);
+    const modePrompt = mode === 'full'
+        ? [
+            'Нужен полный человеческий отчёт.',
+            'Объясни поведение файла простым русским языком без номеров строк, названий правил, сигнатур и цитат из кода.',
+            'Не повторяй сырой локальный список находок подряд.',
+            'Сначала коротко скажи, что делает файл, потом что настораживает или почему его можно считать безопасным, затем чем это грозит на практике.',
+            'full_report должен быть цельным понятным текстом до 2200 символов.'
+        ].join(' ')
+        : [
+            'Нужна короткая сводка.',
+            'Не повторяй названия локальных правил, номера строк, сигнатуры, фрагменты кода и технический мусор.',
+            'Сформулируй вывод человеческим языком: что не так и почему это важно.'
+        ].join(' ');
     const completion = await apiRequest('/chat/completions', {
         model: PLUGIN_AI_REVIEW_MODEL,
         temperature: 0.1,
-        max_tokens: 700,
+        max_tokens: mode === 'full' ? 1200 : 700,
         messages: [
             {
                 role: 'system',
@@ -408,10 +434,12 @@ async function reviewPluginAnalysisSummary(payload) {
                     'На входе только локальные результаты анализа, summary, findings и file/meta без полного исходного кода.',
                     'Отвечай только по-русски и только JSON без Markdown.',
                     'Не придумывай факты и не преувеличивай уверенность.',
+                    'Пиши так, будто объясняешь человеку риск человеческим языком, а не пересказываешь машинный отчёт.',
                     'Если данных мало или они неоднозначны, verdict_suggestion должен быть "review".',
                     'Если сигналы выглядят benign/служебными и не видно опасной цепочки, можно дать "clean".',
                     'Если признаки вредоносного или явно опасного поведения сильные, верни "block".',
-                    'Формат ответа: {"summary":"<=420 chars","verdict_suggestion":"clean|review|block","bullets":["<=140 chars"]}.',
+                    modePrompt,
+                    'Формат ответа: {"summary":"<=420 chars","verdict_suggestion":"clean|review|block","bullets":["<=140 chars"],"full_report":"<=2200 chars or empty string"}.',
                     'bullets должен содержать 0-5 коротких пунктов.'
                 ].join(' ')
             },
@@ -431,11 +459,12 @@ async function reviewPluginAnalysisSummary(payload) {
         );
     }
 
-    const result = coerceResult(content);
+    const result = coerceResult(content, mode);
     return {
         summary: result.summary,
         verdictSuggestion: result.verdictSuggestion,
         bullets: result.bullets,
+        fullReport: result.fullReport,
         model: PLUGIN_AI_REVIEW_MODEL
     };
 }
