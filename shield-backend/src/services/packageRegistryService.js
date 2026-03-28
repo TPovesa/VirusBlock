@@ -356,7 +356,7 @@ function canonicalizeNvPackage(packageDef) {
         aliases: ensureAliases(packageDef, ['nv']),
         title: String(packageDef?.title || 'NV').trim() || 'NV',
         description: String(packageDef?.description || 'Пакетный менеджер NeuralV.').trim(),
-        homepage: String(packageDef?.homepage || 'https://sosiskibot.ru/nv/').trim(),
+        homepage: String(packageDef?.homepage || 'https://neuralvv.org/nv/').trim(),
         variants: [
             {
                 id: String(linuxVariant?.id || 'nv-linux').trim() || 'nv-linux',

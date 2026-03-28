@@ -205,7 +205,7 @@
       ],
       "title": "NV",
       "description": "Пакетный менеджер NeuralV.",
-      "homepage": "https://sosiskibot.ru/nv/",
+      "homepage": "https://neuralvv.org/nv/",
       "variants": [
         {
           "id": "nv-linux",
@@ -228,7 +228,9 @@
           "metadata": {
             "artifactPlatform": "nv-linux",
             "packageTrack": "nv-linux",
-            "updateChannel": "main"
+            "updateChannel": "main",
+            "releaseTagPattern": "nv-v{version}",
+            "releaseAssetPattern": "nv-linux-{version}.tar.gz"
           }
         },
         {
@@ -252,7 +254,9 @@
           "metadata": {
             "artifactPlatform": "nv-windows",
             "packageTrack": "nv-windows",
-            "updateChannel": "main"
+            "updateChannel": "main",
+            "releaseTagPattern": "nv-v{version}",
+            "releaseAssetPattern": "nv-{version}.exe"
           }
         }
       ]

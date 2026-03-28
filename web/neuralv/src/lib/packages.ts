@@ -72,6 +72,15 @@ function stableVariantDownloadUrl(entry: Record<string, unknown>, fallbackUrl: s
   }
 
   if (repo === 'Perdonus/NV') {
+    const releaseTagPattern = String(metadata?.releaseTagPattern ?? metadata?.release_tag_pattern ?? '').trim();
+    const releaseAssetPattern = String(metadata?.releaseAssetPattern ?? metadata?.release_asset_pattern ?? '').trim();
+    if (version && releaseTagPattern && releaseAssetPattern) {
+      const releaseTag = releaseTagPattern.replaceAll('{version}', version);
+      const releaseAsset = releaseAssetPattern.replaceAll('{version}', version);
+      if (releaseTag && releaseAsset) {
+        return `https://github.com/${repo}/releases/download/${releaseTag}/${releaseAsset}`;
+      }
+    }
     if (platform === 'nv-windows') return `${base}/windows/nv.exe`;
     if (platform === 'nv-linux') return `${base}/linux/nv-linux.tar.gz`;
   }

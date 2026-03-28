@@ -18,23 +18,23 @@ const fallbackRegistry = {
       title: 'NV',
       description: 'Пакетный менеджер для Windows и Linux.',
       homepage: '/nv/',
-      latest_version: '1.3.4',
+      latest_version: '1.3.9',
       variants: [
         {
           id: 'nv-linux',
           label: 'Linux',
           os: 'linux',
-          version: '1.3.4',
+          version: '1.3.9',
           install_command: 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh',
-          download_url: 'https://raw.githubusercontent.com/Perdonus/NV/linux-builds/linux/nv-linux-1.3.4.tar.gz'
+          download_url: 'https://github.com/Perdonus/NV/releases/download/nv-v1.3.9/nv-linux-1.3.9.tar.gz'
         },
         {
           id: 'nv-windows',
           label: 'Windows',
           os: 'windows',
-          version: '1.3.4',
+          version: '1.3.9',
           install_command: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1 | iex"',
-          download_url: 'https://raw.githubusercontent.com/Perdonus/NV/windows-builds/windows/nv-1.3.4.exe'
+          download_url: 'https://github.com/Perdonus/NV/releases/download/nv-v1.3.9/nv-1.3.9.exe'
         }
       ]
     },
