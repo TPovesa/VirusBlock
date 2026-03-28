@@ -2,14 +2,14 @@ import { CenteredHeroSection } from '../components/CenteredHeroSection';
 import { StoryScene } from '../components/StoryScene';
 import '../styles/story.css';
 
-const telegramAssetVersion = '3.0.20260329';
+const telegramAssetVersion = '3.0.20260329.2';
 
 const telegramArtifacts = [
   {
     title: 'Extera/Ayu',
-    description: 'Плагин для ExteraGram и AyuGram.',
-    fileName: 'NeuralV-3.plugin',
-    downloadUrl: `/downloads/telegram/NeuralV-3.plugin?v=${telegramAssetVersion}`
+    description: 'Файл NeuralV.plugin для ExteraGram и AyuGram.',
+    fileName: 'NeuralV.plugin',
+    downloadUrl: `/downloads/telegram/NeuralV.plugin?v=${telegramAssetVersion}`
   },
   {
     title: 'Heroku',
@@ -24,15 +24,15 @@ export function TelegramPage() {
     <div className="page-stack platform-story-shell telegram-page">
       <CenteredHeroSection
         title="NeuralV для Telegram"
-        body="Здесь два отдельных сценария: плагин для Extera/Ayu и модуль для Heroku. В обоих локальный анализ идёт первым, а серверный AI подключается как второй короткий ревьюер."
+        body="Здесь два отдельных сценария: файл NeuralV.plugin для Extera/Ayu и модуль NeuralV.py для Heroku. В обоих локальный анализ идёт первым, а серверный AI подключается как второй короткий ревьюер."
         media={{
           kind: 'image',
           src: '/media/story/telegram.jpg',
           alt: 'NeuralV Telegram'
         }}
         actions={[
-          { label: 'Скачать плагин', href: telegramArtifacts[0].downloadUrl, download: true },
-          { label: 'Скачать модуль', href: telegramArtifacts[1].downloadUrl, download: true, variant: 'secondary' }
+          { label: 'Скачать NeuralV.plugin', href: telegramArtifacts[0].downloadUrl, download: true },
+          { label: 'Скачать NeuralV.py', href: telegramArtifacts[1].downloadUrl, download: true, variant: 'secondary' }
         ]}
       />
 
@@ -40,8 +40,8 @@ export function TelegramPage() {
         <StoryScene
           kicker="Telegram"
           title="Два формата. Одна логика проверки."
-          body="И плагин, и модуль сначала прогоняют код локально, а затем подключают короткий серверный разбор через NeuralV. Пользователю не нужен никакой API-ключ."
-          accent="Extera/Ayu и Heroku проверяют и .plugin, и .py по одному и тому же правилу."
+          body="И файл NeuralV.plugin, и модуль NeuralV.py сначала прогоняют код локально, а затем подключают короткий серверный разбор через NeuralV. Пользователю не нужен никакой API-ключ."
+          accent="Extera/Ayu и Heroku проверяют NeuralV.plugin и NeuralV.py по одному и тому же правилу."
           visual="telegram"
           mediaAlign="right"
           chips={['Extera/Ayu', 'Heroku', 'Local + AI']}
@@ -49,7 +49,7 @@ export function TelegramPage() {
       </div>
 
       <section className="story-download-section">
-        <h2>Скачать</h2>
+        <h2>Скачать NeuralV</h2>
         <div className="platform-install-grid platform-install-grid-centered platform-install-grid-telegram">
           {telegramArtifacts.map((artifact) => (
             <article key={artifact.fileName} className="platform-install-card platform-install-card-centered">
