@@ -120,6 +120,8 @@ async function reviewVerifiedRepositoryWithAi(payload) {
         throw error;
     }
 
+    const userDescriptionProvided = Boolean(String(payload?.user_input?.description || '').trim());
+
     const completion = await apiRequest('/chat/completions', {
         model: VERIFIED_APPS_AI_MODEL,
         temperature: 0.08,
@@ -134,6 +136,7 @@ async function reviewVerifiedRepositoryWithAi(payload) {
                     'Твоя задача: дать практический вердикт, можно ли автоматически пометить релиз как безопасный.',
                     'Если есть признаки удалённой загрузки кода, обфускации, кражи данных, скрытого исполнения, персистентности, подозрительных install/update цепочек или иных опасных действий, не давай safe.',
                     'Если данных не хватает или релиз не выглядит проверяемым, тоже не давай safe.',
+                    'Если user_input.description пустой или отсутствует, не выдумывай описание от лица пользователя и верни "project_description": null.',
                     'Не считай опасностью сами по себе сигнатуры, rule-листы, blacklist-слова, тестовые образцы, документацию, regex-паттерны и строки-маркеры внутри анализаторов, сканеров и security tooling.',
                     'Если опасные термины встречаются только в коде проверки, в справочниках или в перечислениях паттернов, это не вредоносное поведение.',
                     'Опирайся на реальные исполняемые пути, реальные вызовы и реальные цепочки поведения, а не на одни только упоминания слов внутри строк.',
@@ -178,7 +181,9 @@ async function reviewVerifiedRepositoryWithAi(payload) {
     const highlights = uniqueStrings(parsed?.highlights, 8);
     const concerns = uniqueStrings(parsed?.concerns, 8);
     const summary = String(parsed?.summary || '').trim().slice(0, 220) || null;
-    const projectDescription = String(parsed?.project_description || '').trim().slice(0, 240) || null;
+    const projectDescription = userDescriptionProvided
+        ? (String(parsed?.project_description || '').trim().slice(0, 240) || null)
+        : null;
     const platform = normalizePlatform(parsed?.platform);
 
     return {

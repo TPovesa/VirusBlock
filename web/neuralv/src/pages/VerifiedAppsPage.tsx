@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
+  buildVerifiedAppDetailsPath,
   VERIFIED_APP_GROUPS,
   fetchPublicVerifiedApps,
   formatVerifiedAppPlatform,
@@ -54,6 +56,9 @@ function VerifiedAppTile({ app }: { app: SiteVerifiedApp }) {
       <div className="developer-app-links">
         {app.repositoryUrl ? <a className="shell-chip" href={app.repositoryUrl} target="_blank" rel="noreferrer">Репозиторий</a> : null}
         {app.officialSiteUrl ? <a className="shell-chip" href={app.officialSiteUrl} target="_blank" rel="noreferrer">Сайт</a> : null}
+      </div>
+      <div className="developer-app-action-row">
+        <Link className="nv-button" to={buildVerifiedAppDetailsPath(app)}>Скачать</Link>
       </div>
       {verifiedAt ? <div className="developer-app-footnote">Проверено: {verifiedAt}</div> : null}
     </article>

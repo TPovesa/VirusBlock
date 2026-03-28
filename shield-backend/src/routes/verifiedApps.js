@@ -5,6 +5,7 @@ const {
     createDeveloperApplication,
     reviewDeveloperApplicationAction,
     createVerificationJob,
+    checkVerificationJobUpdate,
     listMyVerifiedApps,
     listPublicVerifiedApps,
     fetchPublicVerifiedAppById
@@ -56,12 +57,16 @@ function mapServiceError(error) {
             return { status: 403, error: 'Сначала нужно получить статус разработчика.' };
         case 'UNSUPPORTED_PLATFORM':
             return { status: 400, error: 'Укажите поддерживаемую платформу.' };
+        case 'APP_NAME_REQUIRED':
+            return { status: 400, error: 'Укажите название приложения.' };
         case 'INVALID_REPOSITORY_URL':
             return { status: 400, error: 'Нужна ссылка на публичный GitHub-репозиторий.' };
         case 'PRIVATE_REPOSITORY_NOT_SUPPORTED':
             return { status: 400, error: 'Закрытые репозитории пока не поддерживаются.' };
         case 'INVALID_OFFICIAL_SITE_URL':
             return { status: 400, error: 'Ссылка на сайт указана неверно.' };
+        case 'VERIFIED_APP_NOT_FOUND':
+            return { status: 404, error: 'Приложение не найдено.' };
         case 'REPOSITORY_RELEASES_NOT_FOUND':
             return { status: 422, error: 'Для проверки нужен публичный GitHub Release с файлом сборки. Добавьте релиз в репозиторий и попробуйте ещё раз.' };
         case 'REPOSITORY_RELEASE_ASSET_NOT_FOUND':
@@ -166,7 +171,7 @@ async function handleMyVerifiedApps(req, res) {
 
 async function handleCreateVerificationJob(req, res) {
     try {
-        const app = await createVerificationJob(req.userId, {
+        const result = await createVerificationJob(req.userId, {
             repository_url: req.body?.repository_url,
             official_site_url: req.body?.official_site_url,
             platform: req.body?.platform,
@@ -175,10 +180,41 @@ async function handleCreateVerificationJob(req, res) {
             release_tag: req.body?.release_tag,
             release_asset_name: req.body?.release_asset_name
         });
-        res.status(201).json({
+
+        const status = result?.kind === 'created'
+            ? 201
+            : result?.kind === 'update_queued'
+                ? 202
+                : 200;
+        res.status(status).json({
             success: true,
-            app,
-            message: 'Проверка запущена. Сервер сам разберёт репозиторий, релизы и соберёт итог в списке.'
+            state: result?.kind || 'created',
+            app: result?.app || null,
+            message: result?.message || 'Проверка обновлена.'
+        });
+    } catch (error) {
+        const payload = mapServiceError(error);
+        res.status(payload.status).json(payload);
+    }
+}
+
+async function handleCheckVerificationUpdate(req, res) {
+    try {
+        const result = await checkVerificationJobUpdate(req.userId, req.params.id, {
+            official_site_url: req.body?.official_site_url,
+            platform: req.body?.platform,
+            app_name: req.body?.app_name,
+            description: req.body?.description,
+            release_tag: req.body?.release_tag,
+            release_asset_name: req.body?.release_asset_name
+        });
+
+        const status = result?.kind === 'update_queued' ? 202 : 200;
+        res.status(status).json({
+            success: true,
+            state: result?.kind || 'no_update',
+            app: result?.app || null,
+            message: result?.message || 'Проверка обновления завершена.'
         });
     } catch (error) {
         const payload = mapServiceError(error);
@@ -191,6 +227,7 @@ router.post(['/verified-apps/developer/apply', '/profile/developer/apply'], auth
 router.get('/verified-apps/developer/applications/:id/:action', handleDeveloperApplicationReview);
 router.get(['/verified-apps/mine', '/profile/developer/apps'], auth, handleMyVerifiedApps);
 router.post(['/verified-apps/mine', '/profile/developer/apps/verify'], auth, handleCreateVerificationJob);
+router.post(['/verified-apps/mine/:id/check-update', '/profile/developer/apps/:id/check-update'], auth, handleCheckVerificationUpdate);
 
 router.get('/verified-apps', async (req, res) => {
     try {

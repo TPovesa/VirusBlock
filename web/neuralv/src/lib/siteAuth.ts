@@ -223,7 +223,7 @@ export const VERIFIED_APP_GROUPS: SiteVerifiedAppGroup[] = [
 
 export type SiteVerifiedAppReviewRequest = {
   repositoryUrl: string;
-  appName?: string;
+  appName: string;
   officialSiteUrl?: string;
   description?: string;
   platform?: SiteVerifiedAppPlatform;
@@ -1409,6 +1409,32 @@ export function normalizeVerifiedAppPlatform(platform: string): SiteVerifiedAppP
     default:
       return normalized || 'windows';
   }
+}
+
+function slugifyVerifiedAppSegment(value: string): string {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9а-яё]+/gi, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || 'app';
+}
+
+export function buildVerifiedAppDetailsPath(app: Pick<SiteVerifiedApp, 'id' | 'appName'>): string {
+  const ref = String(app.id || '').trim() || slugifyVerifiedAppSegment(app.appName);
+  const slug = slugifyVerifiedAppSegment(app.appName);
+  return `/verified-apps/${encodeURIComponent(ref)}/${encodeURIComponent(slug)}`;
+}
+
+export function matchesVerifiedAppRef(app: Pick<SiteVerifiedApp, 'id' | 'appName'>, appRef: string): boolean {
+  const normalizedRef = decodeURIComponent(String(appRef || '').trim()).toLowerCase();
+  if (!normalizedRef) {
+    return false;
+  }
+  if (String(app.id || '').trim().toLowerCase() === normalizedRef) {
+    return true;
+  }
+  return slugifyVerifiedAppSegment(app.appName) === normalizedRef;
 }
 
 function getClientMeta(platform: string) {

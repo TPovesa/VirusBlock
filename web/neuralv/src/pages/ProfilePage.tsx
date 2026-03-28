@@ -1,7 +1,9 @@
 import { Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Link } from 'react-router-dom';
 import { PasswordStrength } from '../components/PasswordStrength';
 import { useSiteAuth } from '../components/SiteAuthProvider';
 import {
+  buildVerifiedAppDetailsPath,
   VERIFIED_APP_GROUPS,
   VERIFIED_APP_PLATFORM_OPTIONS,
   fetchDeveloperPortalState,
@@ -16,6 +18,7 @@ import {
   resolveDeveloperApplicationState,
   submitDeveloperApplication,
   submitVerifiedAppReview,
+  submitVerifiedAppUpdateCheck,
   type SiteDeveloperApplication,
   type SiteDeveloperPortalState,
   type SiteProfileOverview,
@@ -29,7 +32,7 @@ import '../styles/auth.css';
 
 type ProfileTab = 'profile' | 'developer' | 'security';
 type AccountPending = 'name' | 'email' | 'password' | 'logout' | null;
-type DeveloperPending = 'load' | 'apply' | 'verify' | null;
+type DeveloperPending = 'load' | 'apply' | 'verify' | 'update' | null;
 type PlatformOption = '' | SiteVerifiedAppPlatform;
 type DraftStatus = 'idle' | 'saved';
 
@@ -65,6 +68,7 @@ type VerifiedDeveloperWorkspaceProps = {
   reviewDraftStatus: DraftStatus;
   setReviewForm: Dispatch<SetStateAction<ReviewFormState>>;
   onVerify: (event: FormEvent) => Promise<void>;
+  onCheckUpdate: (app: SiteVerifiedApp) => Promise<void>;
 };
 
 type DeveloperApplicationCardProps = {
@@ -141,6 +145,13 @@ function buildReviewFormFromApp(app: SiteVerifiedApp): ReviewFormState {
 function canRetryVerifiedAppReview(app: SiteVerifiedApp) {
   const status = String(app.status || '').trim().toUpperCase();
   return Boolean(app.repositoryUrl) && status !== 'RUNNING' && status !== 'QUEUED';
+}
+
+function getRetryVerifiedAppReviewLabel(app: SiteVerifiedApp) {
+  const status = String(app.status || '').trim().toUpperCase();
+  return status === 'SAFE' || status === 'SUCCESS'
+    ? 'Проверить обновление'
+    : 'Повторить проверку';
 }
 
 function loadDraft<T>(key: string, fallback: T): T {
@@ -358,6 +369,9 @@ function ProfileVerifiedAppCard({
         {app.releaseArtifactUrl ? <a className="shell-chip" href={app.releaseArtifactUrl} target="_blank" rel="noreferrer">Релиз</a> : null}
         {app.officialSiteUrl ? <a className="shell-chip" href={app.officialSiteUrl} target="_blank" rel="noreferrer">Сайт</a> : null}
       </div>
+      <div className="developer-app-action-row">
+        <Link className="nv-button" to={buildVerifiedAppDetailsPath(app)}>Скачать</Link>
+      </div>
       <div className="developer-app-detail-shell">
         {showReport ? (
           <div className="developer-app-detail-scroll">
@@ -488,7 +502,8 @@ function VerifiedDeveloperWorkspace({
   reviewForm,
   reviewDraftStatus,
   setReviewForm,
-  onVerify
+  onVerify,
+  onCheckUpdate
 }: VerifiedDeveloperWorkspaceProps) {
   const [activePlatform, setActivePlatform] = useState<SiteVerifiedAppFilter>('all');
   const reviewSectionRef = useRef<HTMLElement | null>(null);
@@ -542,9 +557,10 @@ function VerifiedDeveloperWorkspace({
               <input
                 className="auth-input"
                 type="text"
+                required
                 value={reviewForm.appName}
                 onChange={(event) => setReviewForm((current) => ({ ...current, appName: event.target.value }))}
-                placeholder="Можно оставить пустым"
+                placeholder="Как называется приложение"
               />
             </label>
 
@@ -671,8 +687,19 @@ function VerifiedDeveloperWorkspace({
                 <div key={app.id || `${app.appName}-${normalizeVerifiedAppPlatform(String(app.platform || ''))}`} className="developer-app-card-stack">
                   <ProfileVerifiedAppCard app={app} />
                   {canRetryVerifiedAppReview(app) ? (
-                    <button className="nv-button developer-app-repeat-button" type="button" onClick={() => handleRetryReview(app)}>
-                      Повторить проверку
+                    <button
+                      className="nv-button developer-app-repeat-button"
+                      type="button"
+                      disabled={pending !== null}
+                      onClick={() => {
+                        if (getRetryVerifiedAppReviewLabel(app) === 'Проверить обновление') {
+                          void onCheckUpdate(app);
+                          return;
+                        }
+                        handleRetryReview(app);
+                      }}
+                    >
+                      {getRetryVerifiedAppReviewLabel(app)}
                     </button>
                   ) : null}
                 </div>
@@ -954,6 +981,10 @@ export function ProfilePage() {
     if (developerPending || pending) {
       return;
     }
+    if (!reviewForm.appName.trim()) {
+      setError('Укажи название приложения.');
+      return;
+    }
     setDeveloperPending('verify');
     setMessage('');
     setError('');
@@ -975,6 +1006,31 @@ export function ProfilePage() {
     setReviewForm({ ...EMPTY_REVIEW_FORM });
     clearDraft(VERIFIED_REVIEW_DRAFT_KEY);
     setReviewDraftStatus('idle');
+    await loadDeveloperData();
+    setDeveloperPending(null);
+  }
+
+  async function handleDeveloperCheckUpdate(app: SiteVerifiedApp) {
+    if (developerPending || pending || !app.id) {
+      return;
+    }
+    setDeveloperPending('update');
+    setMessage('');
+    setError('');
+    const result = await submitVerifiedAppUpdateCheck(app.id, {
+      appName: app.appName,
+      officialSiteUrl: app.officialSiteUrl || '',
+      description: app.projectDescription || '',
+      platform: normalizeVerifiedAppPlatform(String(app.platform || '')) as SiteVerifiedAppPlatform,
+      releaseTag: app.releaseTag || '',
+      releaseAssetName: app.releaseAssetName || ''
+    });
+    if (!result.ok) {
+      setError(result.error || 'Не удалось проверить обновление.');
+      setDeveloperPending(null);
+      return;
+    }
+    setMessage(result.data?.message || 'Проверка обновления завершена.');
     await loadDeveloperData();
     setDeveloperPending(null);
   }
@@ -1064,6 +1120,7 @@ export function ProfilePage() {
                 reviewDraftStatus={reviewDraftStatus}
                 setReviewForm={setReviewForm}
                 onVerify={handleDeveloperVerify}
+                onCheckUpdate={handleDeveloperCheckUpdate}
               />
             ) : applicationState === 'pending' ? (
               <article className="content-card profile-panel-card profile-panel-card-featured profile-panel-card-centered">

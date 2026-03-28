@@ -980,7 +980,12 @@ function toPublicRecord(row) {
         verified_at: row.verified_at,
         repository_url: row.repository_url,
         official_site_url: row.official_site_url,
+        release_artifact_url: row.release_artifact_url,
+        release_name: row.release_name,
+        release_asset_name: row.release_asset_name,
+        project_description: row.project_description,
         artifact_file_name: row.artifact_file_name,
+        artifact_size_bytes: row.artifact_size_bytes,
         release_tag: row.release_tag,
         status: row.status
     };
@@ -1380,6 +1385,129 @@ async function fetchPublicVerifiedAppById(id, db = pool) {
     return toPublicRecord(row);
 }
 
+async function fetchLatestVerifiedAppByRepository(userId, repositoryUrl, db = pool) {
+    await ensureVerifiedAppsSchema(db);
+    const [rows] = await db.query(
+        `SELECT *
+         FROM verified_apps
+         WHERE owner_user_id = ? AND repository_url = ?
+         ORDER BY updated_at DESC, created_at DESC
+         LIMIT 1`,
+        [userId, repositoryUrl]
+    );
+    return rows[0] || null;
+}
+
+function sameReleaseSelection(existing, release, asset) {
+    const existingArtifactUrl = normalizeUrl(existing?.release_artifact_url);
+    const nextArtifactUrl = normalizeUrl(asset?.browserDownloadUrl);
+    const existingArtifactSize = Number(existing?.artifact_size_bytes || 0);
+    const nextArtifactSize = Number(asset?.size || 0);
+    const existingPublishedAt = Number(existing?.release_published_at || 0);
+    const nextPublishedAt = Number(release?.publishedAt || 0);
+    if (existingArtifactUrl && nextArtifactUrl && existingArtifactUrl === nextArtifactUrl) {
+        if (existingArtifactSize > 0 && nextArtifactSize > 0 && existingArtifactSize !== nextArtifactSize) {
+            return false;
+        }
+        if (existingPublishedAt > 0 && nextPublishedAt > 0 && existingPublishedAt !== nextPublishedAt) {
+            return false;
+        }
+        return true;
+    }
+
+    const existingTag = normalizeReleaseTag(existing?.release_tag);
+    const nextTag = normalizeReleaseTag(release?.tagName);
+    const existingAssetName = normalizeReleaseAssetName(existing?.release_asset_name);
+    const nextAssetName = normalizeReleaseAssetName(asset?.name);
+    if (!(existingTag && nextTag && existingAssetName && nextAssetName && existingTag === nextTag && existingAssetName === nextAssetName)) {
+        return false;
+    }
+    if (existingArtifactSize > 0 && nextArtifactSize > 0 && existingArtifactSize !== nextArtifactSize) {
+        return false;
+    }
+    if (existingPublishedAt > 0 && nextPublishedAt > 0 && existingPublishedAt !== nextPublishedAt) {
+        return false;
+    }
+    return true;
+}
+
+function requireAppName(value) {
+    const normalized = normalizeAppName(value);
+    if (!normalized) {
+        const error = new Error('Application name is required');
+        error.code = 'APP_NAME_REQUIRED';
+        throw error;
+    }
+    return normalized;
+}
+
+async function queueExistingVerificationUpdate(existing, {
+    repo,
+    selectedRelease,
+    selectedAsset,
+    selectedPlatform,
+    appName,
+    officialSiteUrl,
+    projectDescription,
+    user
+}, db = pool) {
+    const now = nowMs();
+    await db.query(
+        `UPDATE verified_apps
+         SET repository_url = ?,
+             repository_owner = ?,
+             repository_name = ?,
+             repository_default_branch = NULL,
+             release_artifact_url = ?,
+             release_tag = ?,
+             release_name = ?,
+             release_asset_name = ?,
+             release_published_at = ?,
+             official_site_url = ?,
+             project_description = ?,
+             platform = ?,
+             app_name = ?,
+             author_name = ?,
+             status = 'QUEUED',
+             sha256 = NULL,
+             artifact_file_name = NULL,
+             artifact_size_bytes = NULL,
+             artifact_content_type = NULL,
+             risk_score = 0,
+             summary_json = NULL,
+             findings_json = NULL,
+             public_summary = NULL,
+             error_message = NULL,
+             queued_at = ?,
+             started_at = NULL,
+             completed_at = NULL,
+             verified_at = NULL,
+             updated_at = ?
+         WHERE id = ?`,
+        [
+            repo.canonicalUrl,
+            repo.owner,
+            repo.repo,
+            selectedAsset.browserDownloadUrl,
+            selectedRelease.tagName,
+            selectedRelease.name,
+            selectedAsset.name,
+            selectedRelease.publishedAt,
+            officialSiteUrl || null,
+            projectDescription,
+            selectedPlatform,
+            appName,
+            String(user.name || '').slice(0, 120) || 'Unknown',
+            now,
+            now,
+            existing.id
+        ]
+    );
+
+    enqueueVerificationJob(existing.id);
+    return toPrivateRecord(await fetchVerifiedAppById(existing.id, db));
+}
+
 async function createVerificationJob(userId, input, db = pool) {
     await ensureVerifiedAppsSchema(db);
     if (!isVerifiedAppsAiConfigured()) {
@@ -1406,6 +1534,7 @@ async function createVerificationJob(userId, input, db = pool) {
         throw error;
     }
 
+    const requiredAppName = requireAppName(input.app_name);
     const projectDescription = normalizeProjectDescription(input.project_description || input.description);
     const releaseTag = normalizeReleaseTag(input.release_tag);
     const releaseAssetName = normalizeReleaseAssetName(input.release_asset_name);
@@ -1426,7 +1555,7 @@ async function createVerificationJob(userId, input, db = pool) {
 
     const discovery = await discoverVerificationSubmission({
         repositoryUrl: input.repository_url,
-        appName: input.app_name,
+        appName: requiredAppName,
         platform: platformOverride,
         releaseTag,
         releaseAssetName
@@ -1436,6 +1565,41 @@ async function createVerificationJob(userId, input, db = pool) {
     const selectedPlatform = discovery.platform;
     const selectedRelease = discovery.release;
     const selectedAsset = discovery.asset;
+    const existingByRepo = await fetchLatestVerifiedAppByRepository(userId, repo.canonicalUrl, db);
+
+    if (existingByRepo) {
+        if (['QUEUED', 'RUNNING'].includes(String(existingByRepo.status || '').toUpperCase())) {
+            return {
+                kind: 'in_progress',
+                app: toPrivateRecord(existingByRepo),
+                message: 'Текущая проверка этого приложения ещё не завершилась.'
+            };
+        }
+
+        if (sameReleaseSelection(existingByRepo, selectedRelease, selectedAsset)) {
+            return {
+                kind: 'no_update',
+                app: toPrivateRecord(existingByRepo),
+                message: 'Нового релиза для повторной проверки пока нет.'
+            };
+        }
+
+        const app = await queueExistingVerificationUpdate(existingByRepo, {
+            repo,
+            selectedRelease,
+            selectedAsset,
+            selectedPlatform,
+            appName,
+            officialSiteUrl,
+            projectDescription,
+            user
+        }, db);
+        return {
+            kind: 'update_queued',
+            app,
+            message: 'Найден новый релиз. Перепроверка уже запущена.'
+        };
+    }
 
     const [activeRows] = await db.query(
         `SELECT COUNT(*) AS active_count
@@ -1466,107 +1630,138 @@ async function createVerificationJob(userId, input, db = pool) {
         throw error;
     }
 
-    const [existingRows] = await db.query(
-        `SELECT id, status
-         FROM verified_apps
-         WHERE owner_user_id = ? AND release_artifact_url = ?
-         ORDER BY created_at DESC
-         LIMIT 1`,
-        [userId, selectedAsset.browserDownloadUrl]
+    const now = nowMs();
+    const id = uuidv4();
+    await db.query(
+        `INSERT INTO verified_apps
+         (id, owner_user_id, repository_url, repository_owner, repository_name, release_artifact_url, release_tag, release_name, release_asset_name, release_published_at, official_site_url, project_description, platform, app_name, author_name, status, queued_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?)`,
+        [
+            id,
+            userId,
+            repo.canonicalUrl,
+            repo.owner,
+            repo.repo,
+            selectedAsset.browserDownloadUrl,
+            selectedRelease.tagName,
+            selectedRelease.name,
+            selectedAsset.name,
+            selectedRelease.publishedAt,
+            officialSiteUrl || null,
+            projectDescription,
+            selectedPlatform,
+            appName,
+            String(user.name || '').slice(0, 120) || 'Unknown',
+            now,
+            now,
+            now
+        ]
     );
-    const existing = existingRows[0];
-    if (existing && ['QUEUED', 'RUNNING', 'SAFE'].includes(String(existing.status || ''))) {
-        const error = new Error('Verification already exists for this artifact');
-        error.code = 'VERIFICATION_ALREADY_EXISTS';
-        error.jobId = existing.id;
-        error.status = existing.status;
+    enqueueVerificationJob(id);
+    return {
+        kind: 'created',
+        app: toPrivateRecord(await fetchVerifiedAppById(id, db)),
+        message: 'Проверка запущена. Сервер сам разберёт репозиторий, релизы и соберёт итог в списке.'
+    };
+}
+
+async function checkVerificationJobUpdate(userId, appId, input = {}, db = pool) {
+    await ensureVerifiedAppsSchema(db);
+    if (!isVerifiedAppsAiConfigured()) {
+        const error = new Error('AI review is not configured');
+        error.code = 'VERIFICATION_AI_NOT_CONFIGURED';
         throw error;
     }
 
-    const now = nowMs();
-    const id = existing ? existing.id : uuidv4();
-    if (existing && String(existing.status || '') === 'FAILED') {
-        await db.query(
-            `UPDATE verified_apps
-             SET repository_url = ?,
-                 repository_owner = ?,
-                 repository_name = ?,
-                 repository_default_branch = NULL,
-                 release_artifact_url = ?,
-                 release_tag = ?,
-                 release_name = ?,
-                 release_asset_name = ?,
-                 release_published_at = ?,
-                 official_site_url = ?,
-                 project_description = ?,
-                 platform = ?,
-                 app_name = ?,
-                 author_name = ?,
-                 status = 'QUEUED',
-                 sha256 = NULL,
-                 artifact_file_name = NULL,
-                 artifact_size_bytes = NULL,
-                 artifact_content_type = NULL,
-                 risk_score = 0,
-                 summary_json = NULL,
-                 findings_json = NULL,
-                 public_summary = NULL,
-                 error_message = NULL,
-                 queued_at = ?,
-                 started_at = NULL,
-                 completed_at = NULL,
-                 verified_at = NULL,
-                 updated_at = ?
-             WHERE id = ?`,
-            [
-                repo.canonicalUrl,
-                repo.owner,
-                repo.repo,
-                selectedAsset.browserDownloadUrl,
-                selectedRelease.tagName,
-                selectedRelease.name,
-                selectedAsset.name,
-                selectedRelease.publishedAt,
-                officialSiteUrl || null,
-                projectDescription,
-                selectedPlatform,
-                appName,
-                String(user.name || '').slice(0, 120) || 'Unknown',
-                now,
-                now,
-                id
-            ]
-        );
-    } else {
-        await db.query(
-            `INSERT INTO verified_apps
-             (id, owner_user_id, repository_url, repository_owner, repository_name, release_artifact_url, release_tag, release_name, release_asset_name, release_published_at, official_site_url, project_description, platform, app_name, author_name, status, queued_at, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?)`,
-            [
-                id,
-                userId,
-                repo.canonicalUrl,
-                repo.owner,
-                repo.repo,
-                selectedAsset.browserDownloadUrl,
-                selectedRelease.tagName,
-                selectedRelease.name,
-                selectedAsset.name,
-                selectedRelease.publishedAt,
-                officialSiteUrl || null,
-                projectDescription,
-                selectedPlatform,
-                appName,
-                String(user.name || '').slice(0, 120) || 'Unknown',
-                now,
-                now,
-                now
-            ]
-        );
+    const user = await fetchUserById(userId, { db });
+    if (!user) {
+        const error = new Error('User not found');
+        error.code = 'USER_NOT_FOUND';
+        throw error;
+    }
+    if (!user.is_verified_developer) {
+        const error = new Error('Developer verification required');
+        error.code = 'VERIFIED_DEVELOPER_REQUIRED';
+        throw error;
     }
 
-    enqueueVerificationJob(id);
-    return toPrivateRecord(await fetchVerifiedAppById(id, db));
+    const existing = await fetchVerifiedAppById(appId, db);
+    if (!existing || String(existing.owner_user_id || '') !== String(userId || '')) {
+        const error = new Error('Verified app not found');
+        error.code = 'VERIFIED_APP_NOT_FOUND';
+        throw error;
+    }
+
+    if (['QUEUED', 'RUNNING'].includes(String(existing.status || '').toUpperCase())) {
+        return {
+            kind: 'in_progress',
+            app: toPrivateRecord(existing),
+            message: 'Текущая проверка этого приложения ещё не завершилась.'
+        };
+    }
+
+    const platformOverride = normalizePlatform(input.platform || input.platform_override || existing.platform);
+    if (platformOverride && !validatePlatform(platformOverride)) {
+        const error = new Error('Unsupported platform');
+        error.code = 'UNSUPPORTED_PLATFORM';
+        throw error;
+    }
+
+    const officialSiteUrl = normalizeUrl(input.official_site_url || existing.official_site_url);
+    if (officialSiteUrl) {
+        try {
+            const parsed = new URL(officialSiteUrl);
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                throw new Error('unsupported');
+            }
+        } catch (_) {
+            const error = new Error('Invalid official site URL');
+            error.code = 'INVALID_OFFICIAL_SITE_URL';
+            throw error;
+        }
+    }
+
+    const projectDescription = normalizeProjectDescription(
+        Object.prototype.hasOwnProperty.call(input || {}, 'project_description')
+            ? input.project_description
+            : (Object.prototype.hasOwnProperty.call(input || {}, 'description') ? input.description : existing.project_description)
+    );
+    const releaseTag = normalizeReleaseTag(input.release_tag);
+    const releaseAssetName = normalizeReleaseAssetName(input.release_asset_name);
+    const requestedAppName = normalizeAppName(input.app_name) || normalizeAppName(existing.app_name) || 'NeuralV App';
+
+    const discovery = await discoverVerificationSubmission({
+        repositoryUrl: existing.repository_url,
+        appName: requestedAppName,
+        platform: platformOverride,
+        releaseTag,
+        releaseAssetName
+    });
+
+    if (sameReleaseSelection(existing, discovery.release, discovery.asset)) {
+        return {
+            kind: 'no_update',
+            app: toPrivateRecord(existing),
+            message: 'Нового релиза для повторной проверки пока нет.'
+        };
+    }
+
+    const app = await queueExistingVerificationUpdate(existing, {
+        repo: discovery.repoMeta,
+        selectedRelease: discovery.release,
+        selectedAsset: discovery.asset,
+        selectedPlatform: discovery.platform,
+        appName: requestedAppName,
+        officialSiteUrl,
+        projectDescription,
+        user
+    }, db);
+
+    return {
+        kind: 'update_queued',
+        app,
+        message: 'Найден новый релиз. Перепроверка уже запущена.'
+    };
 }
 
 async function updateJobStatus(id, values, db = pool) {
@@ -2030,6 +2225,7 @@ module.exports = {
     createDeveloperApplication,
     reviewDeveloperApplicationAction,
     createVerificationJob,
+    checkVerificationJobUpdate,
     listMyVerifiedApps,
     listPublicVerifiedApps,
     fetchVerifiedAppById,

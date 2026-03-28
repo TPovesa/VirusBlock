@@ -12,6 +12,7 @@ import { RegisterPage } from './pages/RegisterPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AccountActionPage } from './pages/AccountActionPage';
 import { VerifiedAppsPage } from './pages/VerifiedAppsPage';
+import { VerifiedAppDetailsPage } from './pages/VerifiedAppDetailsPage';
 import { TelegramPage } from './pages/TelegramPage';
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -53,6 +54,8 @@ export default function App() {
         <Route path="/linux" element={<LinuxPage />} />
         <Route path="/telegram" element={<TelegramPage />} />
         <Route path="/verified-apps" element={<VerifiedAppsPage />} />
+        <Route path="/verified-apps/:appRef" element={<VerifiedAppDetailsPage />} />
+        <Route path="/verified-apps/:appRef/:slug" element={<VerifiedAppDetailsPage />} />
         <Route path="/login" element={<RequireGuest><LoginPage /></RequireGuest>} />
         <Route path="/register" element={<RequireGuest><RegisterPage /></RequireGuest>} />
         <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
