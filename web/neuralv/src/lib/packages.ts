@@ -75,8 +75,8 @@ function stableVariantDownloadUrl(entry: Record<string, unknown>, fallbackUrl: s
     const releaseTagPattern = String(metadata?.releaseTagPattern ?? metadata?.release_tag_pattern ?? '').trim();
     const releaseAssetPattern = String(metadata?.releaseAssetPattern ?? metadata?.release_asset_pattern ?? '').trim();
     if (version && releaseTagPattern && releaseAssetPattern) {
-      const releaseTag = releaseTagPattern.replaceAll('{version}', version);
-      const releaseAsset = releaseAssetPattern.replaceAll('{version}', version);
+      const releaseTag = releaseTagPattern.split('{version}').join(version);
+      const releaseAsset = releaseAssetPattern.split('{version}').join(version);
       if (releaseTag && releaseAsset) {
         return `https://github.com/${repo}/releases/download/${releaseTag}/${releaseAsset}`;
       }
