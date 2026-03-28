@@ -6,6 +6,7 @@
 import hashlib
 import io
 import json
+import ast
 import os
 import re
 import threading
@@ -30,7 +31,7 @@ from ui.bulletin import BulletinHelper
 from android.app import Activity
 from android.content import ClipData, Context, Intent
 from android.graphics import Color
-from android.graphics.drawable import GradientDrawable
+from android.graphics.drawable import ColorDrawable, GradientDrawable
 from android.net import Uri
 from android.util import TypedValue
 from android.view import Gravity, MotionEvent, View, ViewGroup
@@ -386,37 +387,79 @@ def _extract_plugin_identity(filename: str, code: str) -> Dict[str, str]:
         "display_version": "",
     }
 
-    patterns = {
-        "display_name": [
-            r'(?m)^\s*__name__\s*=\s*["\']([^"\']+)["\']',
-            r'(?m)^\s*name\s*=\s*["\']([^"\']+)["\']',
-        ],
-        "display_version": [
-            r'(?m)^\s*__version__\s*=\s*["\']([^"\']+)["\']',
-            r'(?m)^\s*version\s*=\s*["\']([^"\']+)["\']',
-            r'(?m)^\s*__version__\s*=\s*\(([^)]+)\)',
-        ],
-    }
+    def _normalize_literal(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, (str, int, float)):
+            return str(value).strip()
+        if isinstance(value, (list, tuple)):
+            parts = [str(part).strip() for part in value if str(part).strip()]
+            return ".".join(parts)
+        if isinstance(value, dict):
+            name_value = value.get("name")
+            if isinstance(name_value, str):
+                return name_value.strip()
+        return ""
 
-    for field, field_patterns in patterns.items():
-        for pattern in field_patterns:
-            match = re.search(pattern, source)
-            if not match:
+    def _module_assignments(module: Any) -> Dict[str, Any]:
+        values = {}
+        for node in getattr(module, "body", []):
+            try:
+                if isinstance(node, ast.Assign):
+                    value = ast.literal_eval(node.value)
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            values[target.id] = value
+                elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
+                    values[node.target.id] = ast.literal_eval(node.value)
+            except Exception:
                 continue
-            value = str(match.group(1) or "").strip()
-            if field == "display_version" and "," in value and '"' not in value and "'" not in value:
-                value = ".".join(part.strip() for part in value.split(",") if part.strip())
+        return values
+
+    def _extract_class_name(module: Any) -> str:
+        for node in getattr(module, "body", []):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            for base in node.bases:
+                base_repr = ""
+                if isinstance(base, ast.Name):
+                    base_repr = base.id
+                elif isinstance(base, ast.Attribute):
+                    base_repr = base.attr
+                if base_repr in ("BasePlugin", "Module"):
+                    return str(node.name or "").strip()
+        return ""
+
+    try:
+        module = ast.parse(source)
+        values = _module_assignments(module)
+        for key in ("__name__", "name"):
+            value = _normalize_literal(values.get(key))
             if value:
-                result[field] = value
+                result["display_name"] = value
                 break
+        for key in ("__version__", "version", "VERSION", "version_info"):
+            value = _normalize_literal(values.get(key))
+            if value:
+                result["display_version"] = value
+                break
+        if not result["display_name"]:
+            strings_value = values.get("strings") or values.get("all_strings")
+            name_value = _normalize_literal(strings_value)
+            if name_value:
+                result["display_name"] = name_value
+        if not result["display_name"]:
+            result["display_name"] = _extract_class_name(module)
+    except Exception:
+        pass
 
     if not result["display_name"]:
-        class_match = re.search(r'(?m)^\s*class\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((?:BasePlugin|loader\.Module)\)', source)
+        class_match = re.search(r'(?m)^class\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((?:BasePlugin|loader\.Module)\)', source)
         if class_match:
             result["display_name"] = class_match.group(1).strip()
 
     if not result["display_name"]:
-        result["display_name"] = os.path.basename(filename or "Плагин")
+        result["display_name"] = os.path.splitext(os.path.basename(filename or "Плагин"))[0]
 
     return result
 
@@ -788,10 +831,10 @@ class NeuralVPlugin(BasePlugin):
         root = LinearLayout(context)
         root.setOrientation(LinearLayout.VERTICAL)
         root.setPadding(
-            int(AndroidUtilities.dp(4)),
-            int(AndroidUtilities.dp(18)),
-            int(AndroidUtilities.dp(4)),
-            int(AndroidUtilities.dp(6)),
+            int(AndroidUtilities.dp(0)),
+            int(AndroidUtilities.dp(22)),
+            int(AndroidUtilities.dp(0)),
+            int(AndroidUtilities.dp(0)),
         )
         root.setBackgroundColor(Color.TRANSPARENT)
 
@@ -806,27 +849,38 @@ class NeuralVPlugin(BasePlugin):
             ),
         )
 
+        drag_zone = LinearLayout(context)
+        drag_zone.setOrientation(LinearLayout.VERTICAL)
+        drag_zone.setPadding(0, 0, 0, 0)
+        card.addView(
+            drag_zone,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+
         handle = View(context)
         handle_bg = GradientDrawable()
         handle_bg.setCornerRadius(float(AndroidUtilities.dp(3)))
-        handle_bg.setColor(int(self._with_alpha(self._sheet_muted_color(), 0x90)))
+        handle_bg.setColor(int(self._with_alpha(self._sheet_muted_color(), 0xD2)))
         handle.setBackground(handle_bg)
-        handle_lp = LinearLayout.LayoutParams(int(AndroidUtilities.dp(40)), int(AndroidUtilities.dp(5)))
+        handle_lp = LinearLayout.LayoutParams(int(AndroidUtilities.dp(48)), int(AndroidUtilities.dp(5)))
         handle_lp.gravity = Gravity.CENTER_HORIZONTAL
         handle_lp.setMargins(0, int(AndroidUtilities.dp(10)), 0, int(AndroidUtilities.dp(14)))
-        card.addView(handle, handle_lp)
+        drag_zone.addView(handle, handle_lp)
 
         title_view = TextView(context)
         title_view.setText(title)
         title_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 21)
         title_view.setTextColor(int(self._sheet_text_color()))
         title_view.setPadding(int(AndroidUtilities.dp(18)), 0, int(AndroidUtilities.dp(18)), 0)
-        card.addView(title_view)
+        drag_zone.addView(title_view)
 
         if subtitle:
             subtitle_view = TextView(context)
             subtitle_view.setText(subtitle)
-            subtitle_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
+            subtitle_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13)
             subtitle_view.setTextColor(int(self._sheet_muted_color()))
             subtitle_view.setPadding(
                 int(AndroidUtilities.dp(18)),
@@ -834,7 +888,7 @@ class NeuralVPlugin(BasePlugin):
                 int(AndroidUtilities.dp(18)),
                 0,
             )
-            card.addView(subtitle_view)
+            drag_zone.addView(subtitle_view)
 
         if body_text:
             scroll = ScrollView(context)
@@ -844,9 +898,9 @@ class NeuralVPlugin(BasePlugin):
             body_view.setLineSpacing(float(AndroidUtilities.dp(4)), 1.05)
             body_view.setTextColor(int(self._sheet_text_color()))
             body_view.setPadding(
-                int(AndroidUtilities.dp(18)),
+                int(AndroidUtilities.dp(16)),
                 int(AndroidUtilities.dp(14)),
-                int(AndroidUtilities.dp(18)),
+                int(AndroidUtilities.dp(16)),
                 int(AndroidUtilities.dp(6)),
             )
             scroll.addView(body_view)
@@ -885,9 +939,9 @@ class NeuralVPlugin(BasePlugin):
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
             row_lp.setMargins(
-                int(AndroidUtilities.dp(12)),
+                int(AndroidUtilities.dp(8)),
                 int(AndroidUtilities.dp(10)),
-                int(AndroidUtilities.dp(12)),
+                int(AndroidUtilities.dp(8)),
                 0,
             )
             card.addView(row_view, row_lp)
@@ -902,10 +956,10 @@ class NeuralVPlugin(BasePlugin):
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
             actions_lp.setMargins(
+                int(AndroidUtilities.dp(8)),
                 int(AndroidUtilities.dp(12)),
-                int(AndroidUtilities.dp(12)),
-                int(AndroidUtilities.dp(12)),
-                int(AndroidUtilities.dp(12)),
+                int(AndroidUtilities.dp(8)),
+                int(AndroidUtilities.dp(10)),
             )
             for action in actions:
                 def _click(handler=action.get("on_click"), close_first=bool(action.get("close_first"))):
@@ -942,19 +996,30 @@ class NeuralVPlugin(BasePlugin):
             if window is not None:
                 window.setGravity(Gravity.BOTTOM)
                 window.setDimAmount(0.58)
+                try:
+                    window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                    decor = window.getDecorView()
+                    if decor is not None:
+                        decor.setPadding(0, 0, 0, 0)
+                    log("[NeuralV] sheet window background set to transparent")
+                except Exception as bg_error:
+                    log(f"[NeuralV] sheet window background setup failed: {bg_error}")
                 window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         except Exception as error:
             log(f"[NeuralV] show sheet dialog failed: {error}")
             return None
-        self._bind_sheet_swipe_close(handle, card, holder)
+        log("[NeuralV] sheet dialog shown, binding swipe close")
+        self._bind_sheet_swipe_close(drag_zone, card, holder)
         return dialog
 
     def _bind_sheet_swipe_close(self, handle, motion_view, holder):
         try:
             if handle is None or motion_view is None:
+                log("[NeuralV] bind sheet swipe skipped: missing handle or motion view")
                 return
             iface = find_class("android.view.View$OnTouchListener")
             if iface is None:
+                log("[NeuralV] bind sheet swipe skipped: OnTouchListener class missing")
                 return
             Proxy = dynamic_proxy(iface)
             state = {"active": False, "drag": False, "y0": 0.0}
@@ -967,6 +1032,7 @@ class NeuralVPlugin(BasePlugin):
                             state["active"] = True
                             state["drag"] = False
                             state["y0"] = float(event.getRawY())
+                            log(f"[NeuralV] sheet swipe down start y={state['y0']}")
                             return True
                         if action == MotionEvent.ACTION_MOVE and state.get("active"):
                             dy = float(event.getRawY()) - float(state.get("y0", 0.0))
@@ -980,19 +1046,22 @@ class NeuralVPlugin(BasePlugin):
                                 except Exception:
                                     pass
                                 return True
-                            return True
+                            return False
                         if action in (MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL):
                             dy = float(event.getRawY()) - float(state.get("y0", 0.0))
                             drag = bool(state.get("drag"))
                             state["active"] = False
                             state["drag"] = False
+                            log(f"[NeuralV] sheet swipe release dy={dy} drag={drag}")
                             if drag and dy >= float(AndroidUtilities.dp(34.0)):
+                                log("[NeuralV] sheet swipe dismiss threshold reached")
                                 try:
                                     target_y = max(float(AndroidUtilities.dp(180.0)), max(0.0, dy) + float(AndroidUtilities.dp(120.0)))
                                     motion_view.animate().translationY(target_y).alpha(0.0).setDuration(210).start()
                                     if holder[0] is not None:
                                         run_on_ui_thread(lambda: holder[0].dismiss(), 215)
-                                except Exception:
+                                except Exception as dismiss_error:
+                                    log(f"[NeuralV] sheet swipe animated dismiss failed: {dismiss_error}")
                                     try:
                                         if holder[0] is not None:
                                             holder[0].dismiss()
@@ -1001,20 +1070,23 @@ class NeuralVPlugin(BasePlugin):
                                 return True
                             try:
                                 motion_view.animate().translationY(0.0).alpha(1.0).setDuration(190).start()
-                            except Exception:
+                            except Exception as reset_error:
+                                log(f"[NeuralV] sheet swipe reset animation failed: {reset_error}")
                                 try:
                                     motion_view.setTranslationY(0.0)
                                     motion_view.setAlpha(1.0)
                                 except Exception:
                                     pass
-                            return True
-                    except Exception:
+                            return drag
+                    except Exception as touch_error:
+                        log(f"[NeuralV] sheet swipe touch failed: {touch_error}\n{traceback.format_exc()}")
                         return False
                     return False
 
             handle.setOnTouchListener(_Swipe())
+            log("[NeuralV] sheet swipe listener bound")
         except Exception as error:
-            log(f"[NeuralV] bind sheet swipe failed: {error}")
+            log(f"[NeuralV] bind sheet swipe failed: {error}\n{traceback.format_exc()}")
 
     def _get_max_bytes(self) -> int:
         return 10 * 1024 * 1024
@@ -1809,7 +1881,7 @@ class NeuralVPlugin(BasePlugin):
             display_version = str(result.get("display_version") or "").strip()
             subtitle = display_name
             if display_version:
-                subtitle = f"{display_name}\nВерсия {display_version}"
+                subtitle = f"{display_name}\n{display_version}"
             actions = [
                 {
                     "label": "Отправить в чат",

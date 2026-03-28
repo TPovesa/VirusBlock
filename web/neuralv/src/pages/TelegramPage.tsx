@@ -2,7 +2,7 @@ import { CenteredHeroSection } from '../components/CenteredHeroSection';
 import { StoryScene } from '../components/StoryScene';
 import '../styles/story.css';
 
-const telegramAssetVersion = '3.1.20260329.2';
+const telegramAssetVersion = '3.1.20260329.3';
 
 const telegramArtifacts = [
   {
