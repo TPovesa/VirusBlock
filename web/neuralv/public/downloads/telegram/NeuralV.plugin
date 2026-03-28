@@ -33,7 +33,7 @@ from android.graphics import Color
 from android.graphics.drawable import GradientDrawable
 from android.net import Uri
 from android.util import TypedValue
-from android.view import Gravity, View
+from android.view import Gravity, MotionEvent, View, ViewGroup
 from android.widget import LinearLayout, ScrollView, TextView
 from org.telegram.messenger import AndroidUtilities, ApplicationLoader, FileLoader, MessageObject
 from org.telegram.ui.ActionBar import AlertDialog, Theme
@@ -379,6 +379,48 @@ def _strip_strings_and_comments(code: str) -> str:
         return str(code or "")
 
 
+def _extract_plugin_identity(filename: str, code: str) -> Dict[str, str]:
+    source = str(code or "")
+    result = {
+        "display_name": "",
+        "display_version": "",
+    }
+
+    patterns = {
+        "display_name": [
+            r'(?m)^\s*__name__\s*=\s*["\']([^"\']+)["\']',
+            r'(?m)^\s*name\s*=\s*["\']([^"\']+)["\']',
+        ],
+        "display_version": [
+            r'(?m)^\s*__version__\s*=\s*["\']([^"\']+)["\']',
+            r'(?m)^\s*version\s*=\s*["\']([^"\']+)["\']',
+            r'(?m)^\s*__version__\s*=\s*\(([^)]+)\)',
+        ],
+    }
+
+    for field, field_patterns in patterns.items():
+        for pattern in field_patterns:
+            match = re.search(pattern, source)
+            if not match:
+                continue
+            value = str(match.group(1) or "").strip()
+            if field == "display_version" and "," in value and '"' not in value and "'" not in value:
+                value = ".".join(part.strip() for part in value.split(",") if part.strip())
+            if value:
+                result[field] = value
+                break
+
+    if not result["display_name"]:
+        class_match = re.search(r'(?m)^\s*class\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((?:BasePlugin|loader\.Module)\)', source)
+        if class_match:
+            result["display_name"] = class_match.group(1).strip()
+
+    if not result["display_name"]:
+        result["display_name"] = os.path.basename(filename or "Плагин")
+
+    return result
+
+
 def _declared_family(filename: str) -> str:
     lower = (filename or "").lower()
     if lower.endswith(".plugin"):
@@ -671,7 +713,7 @@ class NeuralVPlugin(BasePlugin):
     def _sheet_card_background(self, radius_dp: int = 28):
         bg = GradientDrawable()
         bg.setCornerRadius(float(AndroidUtilities.dp(radius_dp)))
-        bg.setColor(int(self._sheet_surface_color()))
+        bg.setColor(int(self._with_alpha(self._sheet_surface_color(), 0x00)))
         bg.setStroke(int(AndroidUtilities.dp(1)), int(self._with_alpha(self._sheet_divider_color(), 0xB0)))
         return bg
 
@@ -746,10 +788,10 @@ class NeuralVPlugin(BasePlugin):
         root = LinearLayout(context)
         root.setOrientation(LinearLayout.VERTICAL)
         root.setPadding(
-            int(AndroidUtilities.dp(12)),
-            int(AndroidUtilities.dp(10)),
-            int(AndroidUtilities.dp(12)),
-            int(AndroidUtilities.dp(10)),
+            int(AndroidUtilities.dp(4)),
+            int(AndroidUtilities.dp(18)),
+            int(AndroidUtilities.dp(4)),
+            int(AndroidUtilities.dp(6)),
         )
         root.setBackgroundColor(Color.TRANSPARENT)
 
@@ -815,6 +857,8 @@ class NeuralVPlugin(BasePlugin):
             body_lp.setMargins(0, int(AndroidUtilities.dp(10)), 0, 0)
             try:
                 scroll.setVerticalScrollBarEnabled(True)
+                scroll.setScrollbarFadingEnabled(False)
+                scroll.setScrollBarStyle(View.SCROLLBARS_INSIDE_INSET)
             except Exception:
                 pass
             card.addView(scroll, body_lp)
@@ -898,10 +942,79 @@ class NeuralVPlugin(BasePlugin):
             if window is not None:
                 window.setGravity(Gravity.BOTTOM)
                 window.setDimAmount(0.58)
+                window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         except Exception as error:
             log(f"[NeuralV] show sheet dialog failed: {error}")
             return None
+        self._bind_sheet_swipe_close(handle, card, holder)
         return dialog
+
+    def _bind_sheet_swipe_close(self, handle, motion_view, holder):
+        try:
+            if handle is None or motion_view is None:
+                return
+            iface = find_class("android.view.View$OnTouchListener")
+            if iface is None:
+                return
+            Proxy = dynamic_proxy(iface)
+            state = {"active": False, "drag": False, "y0": 0.0}
+
+            class _Swipe(Proxy):
+                def onTouch(self, _v, event):
+                    try:
+                        action = int(event.getActionMasked())
+                        if action == MotionEvent.ACTION_DOWN:
+                            state["active"] = True
+                            state["drag"] = False
+                            state["y0"] = float(event.getRawY())
+                            return True
+                        if action == MotionEvent.ACTION_MOVE and state.get("active"):
+                            dy = float(event.getRawY()) - float(state.get("y0", 0.0))
+                            if dy > float(AndroidUtilities.dp(6.0)) or bool(state.get("drag")):
+                                state["drag"] = True
+                                motion_view.setTranslationY(
+                                    min(float(AndroidUtilities.dp(260.0)), max(0.0, dy))
+                                )
+                                try:
+                                    motion_view.setAlpha(max(0.78, 1.0 - (max(0.0, dy) / float(AndroidUtilities.dp(700.0)))))
+                                except Exception:
+                                    pass
+                                return True
+                            return True
+                        if action in (MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL):
+                            dy = float(event.getRawY()) - float(state.get("y0", 0.0))
+                            drag = bool(state.get("drag"))
+                            state["active"] = False
+                            state["drag"] = False
+                            if drag and dy >= float(AndroidUtilities.dp(34.0)):
+                                try:
+                                    target_y = max(float(AndroidUtilities.dp(180.0)), max(0.0, dy) + float(AndroidUtilities.dp(120.0)))
+                                    motion_view.animate().translationY(target_y).alpha(0.0).setDuration(210).start()
+                                    if holder[0] is not None:
+                                        run_on_ui_thread(lambda: holder[0].dismiss(), 215)
+                                except Exception:
+                                    try:
+                                        if holder[0] is not None:
+                                            holder[0].dismiss()
+                                    except Exception:
+                                        pass
+                                return True
+                            try:
+                                motion_view.animate().translationY(0.0).alpha(1.0).setDuration(190).start()
+                            except Exception:
+                                try:
+                                    motion_view.setTranslationY(0.0)
+                                    motion_view.setAlpha(1.0)
+                                except Exception:
+                                    pass
+                            return True
+                    except Exception:
+                        return False
+                    return False
+
+            handle.setOnTouchListener(_Swipe())
+        except Exception as error:
+            log(f"[NeuralV] bind sheet swipe failed: {error}")
 
     def _get_max_bytes(self) -> int:
         return 10 * 1024 * 1024
@@ -1099,13 +1212,7 @@ class NeuralVPlugin(BasePlugin):
             self._show_error("NeuralV: не удалось скопировать текст.")
 
     def _render_result_body(self, result: dict) -> str:
-        lines = [str(result.get("report") or "").strip()]
-        source_meta = result.get("source_meta") or {}
-        plugin_name = str(source_meta.get("plugin_name") or "").strip()
-        if plugin_name:
-            lines.append("")
-            lines.append(f"Источник: {plugin_name}")
-        return "\n".join([item for item in lines if item]).strip()
+        return str(result.get("report") or "").strip()
 
     def _ensure_runtime_context(self, result: dict) -> Optional[Dict[str, Any]]:
         context = self.runtime_contexts.get(str(result.get("id") or ""))
@@ -1157,6 +1264,8 @@ class NeuralVPlugin(BasePlugin):
                             "report": item.get("report"),
                             "summary": item.get("summary"),
                             "bullets": list(item.get("bullets") or []),
+                            "display_name": item.get("display_name"),
+                            "display_version": item.get("display_version"),
                             "source_meta": dict(item.get("source_meta") or {}),
                             "can_disable": bool((item.get("source_meta") or {}).get("plugin_id")),
                         },
@@ -1535,17 +1644,9 @@ class NeuralVPlugin(BasePlugin):
         final_verdict = self._merge_verdicts(analysis["verdict"], ai_result.get("verdict_suggestion"))
         final_icon = VERDICT_ICONS[final_verdict]
 
-        lines = [
-            f"Файл: {filename}",
-            f"Тип: {analysis['detected_label']}",
-            f"Итог: {final_icon} {final_verdict}",
-        ]
-        lines.append("")
-        lines.append("Кратко:")
-        lines.append(ai_summary or self._build_local_fallback_summary(analysis))
+        lines = [ai_summary or self._build_local_fallback_summary(analysis)]
         if merged_bullets:
             lines.append("")
-            lines.append("Что стоит учесть:")
             for item in merged_bullets:
                 lines.append(f"- {item}")
         return {
@@ -1565,6 +1666,8 @@ class NeuralVPlugin(BasePlugin):
             "summary": str(result.get("summary") or ""),
             "bullets": list(result.get("bullets") or []),
             "local_verdict": result.get("local_verdict"),
+            "display_name": str(result.get("display_name") or ""),
+            "display_version": str(result.get("display_version") or ""),
         }
 
     def _list_installed_plugin_sources(self) -> List[Dict[str, Any]]:
@@ -1615,11 +1718,16 @@ class NeuralVPlugin(BasePlugin):
         source_meta: Optional[Dict[str, Any]] = None,
     ) -> dict:
         entry_id = hashlib.sha1(f"{time.time()}::{filename}::{code_content[:240]}".encode("utf-8", "ignore")).hexdigest()[:16]
+        identity = _extract_plugin_identity(filename, code_content)
         result = self._clone_result(result_template)
         result["id"] = entry_id
         result["filename"] = filename
         result["source_meta"] = dict(source_meta or {})
         result["can_disable"] = bool(result["source_meta"].get("plugin_id"))
+        if source_meta and source_meta.get("plugin_name") and not identity.get("display_name"):
+            identity["display_name"] = str(source_meta.get("plugin_name"))
+        result["display_name"] = identity.get("display_name") or os.path.basename(filename or "Плагин")
+        result["display_version"] = identity.get("display_version") or ""
         self.runtime_contexts[entry_id] = {
             "filename": filename,
             "code": code_content,
@@ -1635,6 +1743,8 @@ class NeuralVPlugin(BasePlugin):
             "report": result["report"],
             "summary": result["summary"],
             "bullets": list(result.get("bullets") or []),
+            "display_name": result.get("display_name"),
+            "display_version": result.get("display_version"),
             "source_meta": dict(source_meta or {}),
         }
         self.analysis_history = [history_entry] + [item for item in self.analysis_history if item.get("id") != entry_id]
@@ -1695,6 +1805,11 @@ class NeuralVPlugin(BasePlugin):
                 log("[NeuralV] result dialog activity missing, sending report directly")
                 self._send_report_to_chat(peer_id, reply_to, result["report"])
                 return
+            display_name = str(result.get("display_name") or filename or "Плагин").strip()
+            display_version = str(result.get("display_version") or "").strip()
+            subtitle = display_name
+            if display_version:
+                subtitle = f"{display_name}\nВерсия {display_version}"
             actions = [
                 {
                     "label": "Отправить в чат",
@@ -1707,17 +1822,11 @@ class NeuralVPlugin(BasePlugin):
                     "icon": "📋",
                     "on_click": lambda: self._copy_to_clipboard(result["report"]),
                 },
-                {
-                    "label": "Полный отчёт",
-                    "icon": "🧠",
-                    "close_first": True,
-                    "on_click": lambda: run_on_queue(lambda: self._request_full_report_task(result, peer_id, reply_to)),
-                },
             ]
             actions.append({"label": "Закрыть", "icon": "✕", "close_first": True})
             self._show_sheet_dialog(
                 f"{result['icon']} {result['verdict']}",
-                str(result.get("summary") or filename),
+                subtitle,
                 body_text=self._render_result_body(result),
                 actions=actions,
                 max_body_height_dp=300,
