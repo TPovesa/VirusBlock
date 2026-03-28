@@ -549,6 +549,42 @@ def _sorted_findings(findings):
     return sorted(findings, key=lambda item: (item["score"], SEVERITY_RANK[item["severity"]]), reverse=True)
 
 
+
+def _looks_like_framework_local(filename: str, code: str, detected_family: str) -> bool:
+    source = str(code or "")
+    lowered = f"{filename or ''}\n{source[:12000]}".lower()
+    name_hits = 0
+    for token in ["mandrelib", "library", "framework", "toolkit", "sdk", "helper", "host"]:
+        if token in lowered:
+            name_hits += 1
+    subsystem_hits = 0
+    for token in [
+        "class ", "def ", "bottomsheet", "pluginscontroller", "fileprovider", "intent.", "requests.get",
+        "zipfile", "shutil", "loadclass", "dex", "install", "reload", "helper", "storage", "ui.", "hook"
+    ]:
+        if token in lowered:
+            subsystem_hits += 1
+    if detected_family == "extera" and name_hits >= 1 and subsystem_hits >= 6:
+        return True
+    if name_hits >= 2 and subsystem_hits >= 5:
+        return True
+    return False
+
+
+def _downgrade_library_findings(findings: list) -> list:
+    softened = []
+    library_ids = {"network", "sensitive_send", "destructive_fs", "surveillance", "elevation", "secret_access"}
+    for finding in findings:
+        item = dict(finding)
+        if item.get("id") in library_ids:
+            item["score"] = max(1, int(item.get("score") or 1) - 2)
+            if item.get("severity") == "Критично":
+                item["severity"] = "Высоко"
+            elif item.get("severity") == "Высоко":
+                item["severity"] = "Средне"
+        softened.append(item)
+    return softened
+
 def analyze_code(filename: str, code: str) -> dict:
     code = (code or "").replace("\r\n", "\n").replace("\r", "\n")
     raw_lines = code.split("\n")
@@ -585,10 +621,36 @@ def analyze_code(filename: str, code: str) -> dict:
                 "hits": [],
             })
 
+    framework_library = _looks_like_framework_local(filename, code, detected)
+    if framework_library:
+        findings = _downgrade_library_findings(findings)
     findings = _sorted_findings(findings)
     score = sum(item["score"] for item in findings)
     if mismatch:
         score += 2
+    if framework_library:
+        combo_ids = {item.get("id") for item in findings if item.get("id") in {"obfuscated_exec", "network_exec", "exfiltration_chain"}}
+        if not combo_ids:
+            score = max(0, score - 8)
+        else:
+            score = max(0, score - 3)
+
+    hard_ids = {item.get("id") for item in findings}
+    library_only_ids = {
+        "reverse_shell",
+        "network_exec",
+        "exfiltration_chain",
+        "runtime_exec",
+        "remote_download",
+        "destructive_fs",
+        "secret_access",
+        "sensitive_send",
+        "network",
+        "elevation",
+        "surveillance",
+    }
+    if framework_library and hard_ids and hard_ids.issubset(library_only_ids):
+        score = min(score, 9)
 
     if score >= 13:
         verdict = "Опасно"
@@ -623,6 +685,7 @@ def analyze_code(filename: str, code: str) -> dict:
         "icon": VERDICT_ICONS[verdict],
         "score": score,
         "exec_scope_only": True,
+        "framework_library": framework_library,
     }
 
 
@@ -870,13 +933,17 @@ class NeuralVPlugin(BasePlugin):
         card = LinearLayout(context)
         card.setOrientation(LinearLayout.VERTICAL)
         card.setBackground(self._sheet_card_background())
-        root.addView(
-            card,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ),
+        card_lp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
         )
+        card_lp.setMargins(
+            int(AndroidUtilities.dp(18)),
+            0,
+            int(AndroidUtilities.dp(18)),
+            0,
+        )
+        root.addView(card, card_lp)
 
         drag_zone = LinearLayout(context)
         drag_zone.setOrientation(LinearLayout.VERTICAL)
@@ -1657,6 +1724,8 @@ class NeuralVPlugin(BasePlugin):
             f"Локальный вердикт: {analysis['verdict']}",
             f"Счёт риска: {analysis['score']}",
         ]
+        if analysis.get("framework_library"):
+            parts.append("Файл похож на общую библиотеку или framework")
         if analysis["mismatch"]:
             parts.append("Есть несовпадение между именем файла и реальной структурой")
         if analysis["findings"]:
@@ -1756,7 +1825,7 @@ class NeuralVPlugin(BasePlugin):
                 "local_score": analysis["score"],
                 "mismatch": analysis["mismatch"],
                 "exec_scope_only": analysis.get("exec_scope_only"),
-                "library_candidate": _looks_like_framework_plugin(filename, code, identity),
+                "library_candidate": bool(analysis.get("framework_library")) or _looks_like_framework_plugin(filename, code, identity),
             },
         }
         try:
