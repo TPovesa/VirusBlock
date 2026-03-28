@@ -573,7 +573,11 @@ class NeuralVPlugin(BasePlugin):
             log(f"[NeuralV] save history failed: {error}")
 
     def _with_alpha(self, color: int, alpha: int) -> int:
-        return (max(0, min(255, alpha)) << 24) | (int(color) & 0x00FFFFFF)
+        value = (max(0, min(255, alpha)) << 24) | (int(color) & 0x00FFFFFF)
+        value &= 0xFFFFFFFF
+        if value >= 0x80000000:
+            value -= 0x100000000
+        return int(value)
 
     def _sheet_surface_color(self) -> int:
         try:
