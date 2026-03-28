@@ -464,6 +464,36 @@ def _extract_plugin_identity(filename: str, code: str) -> Dict[str, str]:
     return result
 
 
+def _build_share_report_text(result: dict, report_text: str) -> str:
+    display_name = str(result.get("display_name") or result.get("filename") or "Плагин").strip()
+    display_version = str(result.get("display_version") or "").strip()
+    verdict = str(result.get("verdict") or "Результат").strip()
+    lines = [
+        "NeuralV",
+        f"Плагин: {display_name}",
+    ]
+    if display_version:
+        lines.append(f"Версия: {display_version}")
+    lines.append(f"Вердикт: {verdict}")
+    body = str(report_text or "").strip()
+    if body:
+        lines.extend(["", body])
+    return "\n".join(lines).strip()
+
+
+def _looks_like_framework_plugin(filename: str, code: str, identity: Optional[Dict[str, str]] = None) -> bool:
+    name_bits = [str(filename or ""), str((identity or {}).get("display_name") or "")]
+    name_text = " ".join(name_bits).lower()
+    if any(token in name_text for token in ["lib", "library", "framework", "sdk", "toolkit", "host", "core"]):
+        return True
+    source = str(code or "")
+    hints = 0
+    for token in ["class ", "def ", "BottomSheet", "PluginsController", "FileProvider", "Intent.", "loadClass", "install", "reload", "helper"]:
+        if token.lower() in source.lower():
+            hints += 1
+    return hints >= 5
+
+
 def _declared_family(filename: str) -> str:
     lower = (filename or "").lower()
     if lower.endswith(".plugin"):
@@ -1159,7 +1189,7 @@ class NeuralVPlugin(BasePlugin):
                         direct_intent.setPackage(package_name)
                         activity.startActivity(direct_intent)
                         log(f"[NeuralV] opened direct Telegram share modal: package={package_name}")
-                        BulletinHelper.show_info("NeuralV: чат не найден, открыл окно отправки.")
+                        BulletinHelper.show_info("NeuralV: выберите чат и отправьте отчёт вручную.")
                         return
                     except Exception as direct_error:
                         log(f"[NeuralV] direct share modal failed for package={package_name}: {direct_error}")
@@ -1168,7 +1198,7 @@ class NeuralVPlugin(BasePlugin):
                 chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 activity.startActivity(chooser)
                 log("[NeuralV] opened chooser share modal fallback")
-                BulletinHelper.show_info("NeuralV: чат не найден, открыл окно отправки.")
+                BulletinHelper.show_info("NeuralV: выберите чат и отправьте отчёт вручную.")
             except Exception as error:
                 log(f"[NeuralV] share modal failed: {error}\n{traceback.format_exc()}")
                 BulletinHelper.show_error("NeuralV: не удалось открыть окно пересылки.")
@@ -1447,6 +1477,7 @@ class NeuralVPlugin(BasePlugin):
 
     def _show_full_report_dialog(self, result: dict, report_text: str, peer_id: Optional[int], reply_to: Any = None):
         def action():
+            share_text = _build_share_report_text(result, report_text)
             actions = [
                 {
                     "label": "Скопировать",
@@ -1457,7 +1488,8 @@ class NeuralVPlugin(BasePlugin):
                     "label": "Отправить в чат",
                     "icon": "✉️",
                     "filled": True,
-                    "on_click": lambda: self._send_report_to_chat(peer_id, reply_to, report_text),
+                    "close_first": True,
+                    "on_click": lambda: self._send_report_to_chat(peer_id, reply_to, share_text),
                 },
             ]
             if result.get("can_disable"):
@@ -1654,6 +1686,7 @@ class NeuralVPlugin(BasePlugin):
         }
 
     def _request_ai_review(self, filename: str, code: str, analysis: dict, mode: str = "summary") -> dict:
+        identity = _extract_plugin_identity(filename, code)
         payload = {
             "mode": mode,
             "summary": self._build_local_summary(analysis),
@@ -1663,6 +1696,8 @@ class NeuralVPlugin(BasePlugin):
                 "filename": filename,
                 "declared_type": analysis["declared_family"],
                 "detected_type": analysis["detected_family"],
+                "display_name": identity.get("display_name") or "",
+                "display_version": identity.get("display_version") or "",
             },
             "meta": {
                 "plugin_surface": "exteragram",
@@ -1670,6 +1705,7 @@ class NeuralVPlugin(BasePlugin):
                 "local_score": analysis["score"],
                 "mismatch": analysis["mismatch"],
                 "exec_scope_only": analysis.get("exec_scope_only"),
+                "library_candidate": _looks_like_framework_plugin(filename, code, identity),
             },
         }
         try:
@@ -1873,9 +1909,10 @@ class NeuralVPlugin(BasePlugin):
         )
 
         def action():
+            share_text = _build_share_report_text(result, result["report"])
             if not self._dialog_context():
                 log("[NeuralV] result dialog activity missing, sending report directly")
-                self._send_report_to_chat(peer_id, reply_to, result["report"])
+                self._send_report_to_chat(peer_id, reply_to, share_text)
                 return
             display_name = str(result.get("display_name") or filename or "Плагин").strip()
             display_version = str(result.get("display_version") or "").strip()
@@ -1887,7 +1924,8 @@ class NeuralVPlugin(BasePlugin):
                     "label": "Отправить в чат",
                     "icon": "✉️",
                     "filled": True,
-                    "on_click": lambda: self._send_report_to_chat(peer_id, reply_to, result["report"]),
+                    "close_first": True,
+                    "on_click": lambda: self._send_report_to_chat(peer_id, reply_to, share_text),
                 },
                 {
                     "label": "Скопировать",
