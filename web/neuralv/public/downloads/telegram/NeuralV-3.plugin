@@ -786,7 +786,7 @@ class NeuralVPlugin(BasePlugin):
     def _sheet_card_background(self, radius_dp: int = 28):
         bg = GradientDrawable()
         bg.setCornerRadius(float(AndroidUtilities.dp(radius_dp)))
-        bg.setColor(int(self._with_alpha(self._sheet_surface_color(), 0x00)))
+        bg.setColor(int(self._with_alpha(self._sheet_surface_color(), 0xF2)))
         bg.setStroke(int(AndroidUtilities.dp(1)), int(self._with_alpha(self._sheet_divider_color(), 0xB0)))
         return bg
 
@@ -860,9 +860,9 @@ class NeuralVPlugin(BasePlugin):
         root = LinearLayout(context)
         root.setOrientation(LinearLayout.VERTICAL)
         root.setPadding(
-            int(AndroidUtilities.dp(0)),
+            int(AndroidUtilities.dp(10)),
             int(AndroidUtilities.dp(22)),
-            int(AndroidUtilities.dp(0)),
+            int(AndroidUtilities.dp(10)),
             int(AndroidUtilities.dp(0)),
         )
         root.setBackgroundColor(Color.TRANSPARENT)
