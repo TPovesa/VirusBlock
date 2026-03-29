@@ -79,6 +79,13 @@ function buildPublicReleaseDownloadUrl(platform) {
     return `${PUBLIC_WEB_BASE}/basedata/api/releases/download?platform=${encodeURIComponent(normalized)}`;
 }
 
+function buildPublicReleaseDownloadUrlForKind(platform, kind = '') {
+    const normalized = normalizePlatform(platform);
+    const normalizedKind = String(kind || '').trim().toLowerCase();
+    const suffix = normalizedKind ? `&kind=${encodeURIComponent(normalizedKind)}` : '';
+    return `${PUBLIC_WEB_BASE}/basedata/api/releases/download?platform=${encodeURIComponent(normalized)}${suffix}`;
+}
+
 function shouldProxyInternalDownload(source) {
     const repo = normalizeText(source?.repo);
     return repo === 'tpovesa/virusblock' || repo === 'perdonus/fatalerror' || repo === 'perdonus/nv';
@@ -277,6 +284,11 @@ function canonicalizeNeuralVPackage(packageDef) {
     });
 
     const windowsMetadata = rewriteLegacyRepoReferencesDeep(windowsVariant?.metadata || {}) || {};
+    const windowsPortableUrl = buildPublicReleaseDownloadUrlForKind('windows', 'portable');
+    const windowsSetupUrl = buildPublicReleaseDownloadUrlForKind('windows', 'setup');
+    const windowsManifestUrl = `${PUBLIC_WEB_BASE}/basedata/api/releases/manifest?platform=windows`;
+    const windowsPsInstall = 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://neuralvv.org/install/nv.ps1 | iex; & (Join-Path $env:LOCALAPPDATA \'NV\\nv.exe\') install @lvls/neuralv"';
+    const windowsCmdInstall = 'curl.exe -fsSL https://neuralvv.org/install/nv.cmd -o "%TEMP%\\nv-install.cmd" && cmd /c "%TEMP%\\nv-install.cmd" && "%LOCALAPPDATA%\\NV\\nv.exe" install @lvls/neuralv';
     const windowsVariantRecord = {
         id: 'windows',
         label: String(windowsVariant?.label || 'Windows').trim() || 'Windows',
@@ -320,15 +332,24 @@ function canonicalizeNeuralVPackage(packageDef) {
                 ...(windowsMetadata.commands || {}),
                 powershell: {
                     ...((windowsMetadata.commands && windowsMetadata.commands.powershell) || {}),
-                    install: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://neuralvv.org/install/nv.ps1 | iex; & (Join-Path $env:LOCALAPPDATA \'NV\\nv.exe\') install @lvls/neuralv"',
+                    install: windowsPsInstall,
                     update: '& (Join-Path $env:LOCALAPPDATA \'NV\\nv.exe\') install @lvls/neuralv'
                 },
                 cmd: {
                     ...((windowsMetadata.commands && windowsMetadata.commands.cmd) || {}),
-                    install: 'curl.exe -fsSL https://neuralvv.org/install/nv.cmd -o "%TEMP%\\nv-install.cmd" && cmd /c "%TEMP%\\nv-install.cmd" && "%LOCALAPPDATA%\\NV\\nv.exe" install @lvls/neuralv',
+                    install: windowsCmdInstall,
                     update: '"%LOCALAPPDATA%\\NV\\nv.exe" install @lvls/neuralv'
                 }
-            }
+            },
+            setupUrl: windowsSetupUrl,
+            portableUrl: windowsPortableUrl,
+            powershellInstallCommand: windowsPsInstall,
+            cmdInstallCommand: windowsCmdInstall,
+            installScriptPs1: `${PUBLIC_WEB_BASE}/install/nv.ps1`,
+            installScriptCmd: `${PUBLIC_WEB_BASE}/install/nv.cmd`,
+            manifest_url: windowsManifestUrl,
+            releaseTag: 'windows-v{version}',
+            component_versions: {}
         }
     };
 
