@@ -266,6 +266,226 @@ function normalizeVerdict(value) {
     return 'review';
 }
 
+function normalizeCompareText(value) {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function collectPromptContextText(input) {
+    const parts = [];
+    if (input?.summary) parts.push(input.summary);
+    if (input?.analysis) parts.push(input.analysis);
+    if (Array.isArray(input?.findings)) {
+        for (const finding of input.findings) {
+            if (!finding || typeof finding !== 'object') {
+                continue;
+            }
+            for (const field of ['title', 'summary', 'detail', 'rule', 'file']) {
+                if (finding[field]) {
+                    parts.push(String(finding[field]));
+                }
+            }
+            if (Array.isArray(finding.tags)) {
+                parts.push(finding.tags.join(' '));
+            }
+        }
+    }
+    for (const source of [input?.file, input?.meta]) {
+        if (!source || typeof source !== 'object') {
+            continue;
+        }
+        for (const value of Object.values(source)) {
+            if (Array.isArray(value)) {
+                parts.push(value.join(' '));
+                continue;
+            }
+            if (value && typeof value === 'object') {
+                parts.push(JSON.stringify(value));
+                continue;
+            }
+            if (value !== null && value !== undefined) {
+                parts.push(String(value));
+            }
+        }
+    }
+    return parts.join('\n').toLowerCase();
+}
+
+function looksLikeBenignTooling(input) {
+    const text = collectPromptContextText(input);
+    if (!text) {
+        return false;
+    }
+
+    const familyTerms = [
+        'mandrelib', 'neuralv', 'library', 'framework', 'toolkit', 'shared lib',
+        'plugin sdk', 'dev sdk', 'helper', 'helpers', 'analyzer', 'analysis',
+        'scanner', 'validator', 'diagnostic', 'diagnostics', 'report', 'review',
+        'security tool', 'security_tool', 'antivirus', 'audit'
+    ];
+    const subsystemTerms = [
+        'plugin management', 'pluginscontroller', 'share', 'export', 'report upload',
+        'logging', 'updater', 'diagnostics', 'http', 'requests', 'httpx', 'intent',
+        'fileprovider', 'zip', 'shutil', 'dexclassloader', 'socket', 'device helper'
+    ];
+
+    const familyHits = familyTerms.reduce((count, term) => count + (text.includes(term) ? 1 : 0), 0);
+    const subsystemHits = subsystemTerms.reduce((count, term) => count + (text.includes(term) ? 1 : 0), 0);
+    const explicitFlag = text.includes('framework_library') || text.includes('security_tool_candidate') || text.includes('security tool');
+
+    return explicitFlag || familyHits >= 2 || (familyHits >= 1 && subsystemHits >= 2);
+}
+
+function softenAlarmistText(text, options = {}) {
+    const { verdict = 'review', benignTooling = false } = options;
+    let value = cleanText(text, 2400);
+    if (!value) {
+        return null;
+    }
+
+    value = value.replace(/\s+/g, ' ').trim();
+
+    if (benignTooling && verdict !== 'block') {
+        const replacements = [
+            [/удал[её]нн(?:ый|ого) взлом[ау]?/gi, 'неподтверждённый удалённый сценарий'],
+            [/удал[её]нн(?:ый|ого) контроль[я]?/gi, 'внешнее управление'],
+            [/обратн(?:ая|ой) оболочк[аи]/gi, 'сетевой командный сценарий'],
+            [/утечк[аи] данн(?:ых|ым)/gi, 'риск передачи данных'],
+            [/повреждени[ея] системы/gi, 'риск нежелательных изменений'],
+            [/повреждат(?:ь|ся) систем[уы]/gi, 'приводить к нежелательным изменениям'],
+            [/вредоносного кода/gi, 'нежелательного кода'],
+            [/выполнять код из сети/gi, 'динамически загружать внешние модули']
+        ];
+        for (const [pattern, replacement] of replacements) {
+            value = value.replace(pattern, replacement);
+        }
+    }
+
+    return value;
+}
+
+function rewriteBenignToolingBullet(bullet) {
+    const value = cleanText(bullet, 160);
+    if (!value) {
+        return null;
+    }
+
+    const lowered = value.toLowerCase();
+    if (/удал[её]н|exec|выполн|оболочк|reverse shell|код из сети/.test(lowered)) {
+        return 'Есть механизмы динамической загрузки или запуска модулей, поэтому важен контекст их реального использования.';
+    }
+    if (/утечк|send|post|upload|token|session|cookie|секрет|данн/.test(lowered)) {
+        return 'Есть сетевой обмен данными, поэтому стоит отдельно проверить, какие данные реально уходят наружу.';
+    }
+    if (/file|файл|remove|delete|unlink|rmtree|zip|shutil|import модулей|импорт/.test(lowered)) {
+        return 'Есть операции с файлами и импортом модулей, поэтому код лучше оценивать в контексте его назначения.';
+    }
+    return value;
+}
+
+function buildBenignToolingSummary(input, verdictSuggestion) {
+    const fileName = cleanText(
+        input?.file?.plugin_name
+        || input?.file?.name
+        || input?.file?.title
+        || input?.meta?.plugin_name
+        || input?.meta?.name,
+        120
+    );
+    const prefix = fileName ? `${fileName}: ` : '';
+    if (verdictSuggestion === 'clean') {
+        return `${prefix}файл больше похож на библиотеку или служебный модуль. Внутри есть системные и сетевые helper-механизмы, но по текущим данным явная вредоносная цепочка не подтверждена.`;
+    }
+    return `${prefix}файл больше похож на библиотеку или служебный модуль. Внутри есть мощные системные возможности, но по текущему контексту это выглядит как инфраструктурный код, а не как подтверждённый вредоносный сценарий.`;
+}
+
+function dedupeBullets(summary, bullets, options = {}) {
+    const { verdict = 'review', benignTooling = false } = options;
+    const normalizedSummary = normalizeCompareText(summary);
+    const seen = new Set();
+    const out = [];
+
+    for (const rawBullet of Array.isArray(bullets) ? bullets : []) {
+        let bullet = softenAlarmistText(rawBullet, { verdict, benignTooling });
+        if (benignTooling && verdict !== 'block') {
+            bullet = rewriteBenignToolingBullet(bullet);
+        }
+        bullet = cleanText(bullet, 140);
+        if (!bullet) {
+            continue;
+        }
+
+        const normalized = normalizeCompareText(bullet);
+        if (!normalized || normalized === normalizedSummary || normalizedSummary.includes(normalized) || normalized.includes(normalizedSummary)) {
+            continue;
+        }
+        if (seen.has(normalized)) {
+            continue;
+        }
+
+        if (benignTooling && verdict !== 'block') {
+            const skipPatterns = [
+                /удал[её]нн.*сценар/i,
+                /внешнее управление/i,
+                /сетевой командный сценарий/i,
+                /риск передачи данных/i,
+                /нежелательн.*код/i
+            ];
+            if (skipPatterns.some((pattern) => pattern.test(bullet)) && out.length >= 2) {
+                continue;
+            }
+        }
+
+        seen.add(normalized);
+        out.push(bullet);
+        if (out.length >= MAX_BULLETS) {
+            break;
+        }
+    }
+
+    return out;
+}
+
+function postProcessAiResult(result, input, mode = 'summary') {
+    const benignTooling = looksLikeBenignTooling(input);
+    const verdictSuggestion = normalizeVerdict(result?.verdictSuggestion);
+    let summary = softenAlarmistText(result?.summary, {
+        verdict: verdictSuggestion,
+        benignTooling
+    });
+    let fullReport = mode === 'full'
+        ? softenAlarmistText(result?.fullReport, {
+            verdict: verdictSuggestion,
+            benignTooling
+        })
+        : null;
+
+    if (benignTooling && verdictSuggestion !== 'block') {
+        const alarmistSummary = /^(?:плагин|файл) содержит|удал[её]нн|обратн(?:ая|ой) оболочк|утечк|повреждени|повреждат|вредоносн|выполнять код из сети|динамически загружать внешние модули|нежелательным изменениям|взлом/i.test(summary || '');
+        if (!summary || alarmistSummary) {
+            summary = buildBenignToolingSummary(input, verdictSuggestion);
+        }
+        if (fullReport && (/^(?:плагин|файл) содержит|удал[её]нн|обратн(?:ая|ой) оболочк|утечк|повреждени|вредоносн|динамически загружать внешние модули|нежелательным изменениям/i.test(fullReport))) {
+            fullReport = `${summary} Стоит отдельно проверить, какие данные реально уходят наружу, как работает импорт модулей и нет ли скрытой автоматизации вне штатного сценария.`;
+        }
+    }
+
+    const bullets = dedupeBullets(summary, result?.bullets, {
+        verdict: verdictSuggestion,
+        benignTooling
+    });
+
+    return {
+        summary: cleanText(summary, 420) || 'AI не смог уверенно сформировать краткую сводку. Нужна ручная проверка.',
+        verdictSuggestion,
+        bullets,
+        fullReport: mode === 'full' ? (cleanText(fullReport, 2200) || cleanText(summary, 2200) || null) : null
+    };
+}
+
 function coerceResult(content, mode = 'summary') {
     const jsonBlock = extractJsonBlock(content);
     if (jsonBlock) {
@@ -414,13 +634,15 @@ async function reviewPluginAnalysisSummary(payload) {
             'Нужен полный человеческий отчёт.',
             'Объясни поведение файла простым русским языком без номеров строк, названий правил, сигнатур и цитат из кода.',
             'Не повторяй сырой локальный список находок подряд.',
-            'Сначала коротко скажи, что делает файл, потом что настораживает или почему его можно считать безопасным, затем чем это грозит на практике.',
+            'Сначала коротко скажи, что это за файл и для чего он нужен, потом спокойно объясни спорные места или почему его можно считать безопасным, затем чем это может быть важно на практике.',
+            'Пиши связным абзацем, а не сухим чек-листом.',
             'full_report должен быть цельным понятным текстом до 2200 символов.'
         ].join(' ')
         : [
             'Нужна короткая сводка.',
             'Не повторяй названия локальных правил, номера строк, сигнатуры, фрагменты кода и технический мусор.',
-            'Сформулируй вывод человеческим языком: что не так и почему это важно.'
+            'Сформулируй вывод человеческим языком: что не так и почему это важно.',
+            'Не начинай с шаблона вида "Плагин содержит функции" или "Файл содержит код". Сначала коротко опиши роль файла, затем риск или его отсутствие.'
         ].join(' ');
     const completion = await apiRequest('/chat/completions', {
         model: PLUGIN_AI_REVIEW_MODEL,
@@ -435,6 +657,8 @@ async function reviewPluginAnalysisSummary(payload) {
                     'Отвечай только по-русски и только JSON без Markdown.',
                     'Не придумывай факты и не преувеличивай уверенность.',
                     'Пиши так, будто объясняешь человеку риск человеческим языком, а не пересказываешь машинный отчёт. Не драматизируй benign library/framework код.',
+                    'Summary должен быть обычным человеческим абзацем, а не шаблоном в стиле "файл содержит функции".',
+                    'bullets должны только дополнять summary. Не дублируй summary другими словами и не переписывай локальные findings почти дословно.',
                     'Считай доказательством только поведение, которое выглядит как реально исполняемый код.',
                     'Не считай угрозой совпадения внутри строк, комментариев, regex-шаблонов, rule-листов, help-текста, шаблонов отчёта, сигнатурных словарей и кода самого анализатора.',
                     'Если файл похож на диагностический инструмент, сканер, анализатор, валидатор или генератор отчётов, не трактуй упоминания опасных API внутри его правил как вредоносное поведение сами по себе.',
@@ -444,6 +668,8 @@ async function reviewPluginAnalysisSummary(payload) {
                     'Для библиотек, framework-кода и служебных анализаторов block допустим только когда явно видна цельная вредоносная цепочка. Сам по себе bootstrap, installer, plugin management, share/export, network helper, storage helper, logging/report upload, updater, diagnostics или dev tooling не повод для block.',
                     'Если файл похож на MandreLib-подобную общую библиотеку для плагинов или на плагин-анализатор вроде NeuralV, оценивай его как benign tooling surface: отдельно отмечай спорные подсистемы, но не объявляй весь файл вредоносным без явного злоупотребления. Для таких файлов clean или review должны быть основным исходом по умолчанию.',
                     'Для benign utility/library/security-tool кода по умолчанию предпочитай спокойный вывод: есть спорные возможности, но явная вредоносная цепочка не подтверждена. Не пиши про удалённый взлом, утечку данных, damage, удалённый контроль или reverse shell, если этого прямо не видно из поведения.',
+                    'Пиши summary человеческим языком: что это за файл, почему он сам по себе выглядит спокойно или спорно, и на что реально стоит смотреть. Не начинай summary с фраз вроде "Локальный слой..." или "Локальный анализ показал...".',
+                    'Для benign library/framework/security-tool файлов bullets должны быть короткими и конкретными. Не дублируй summary и не перечисляй generic scare-phrases. Лучше 2-4 осмысленных пункта, чем 5 шумных.',
                     'Признаки вроде exec, startup, runas, токены, keylogger, persistence и похожие термины считаются значимыми только когда видно их прикладное использование, а не перечисление или поиск таких паттернов.',
                     'Если локальные findings выглядят как следствие сигнатурного анализа и не подтверждаются реальным поведением, снижай уверенность и используй verdict_suggestion = "review" или "clean".',
                     'Если данных мало или они неоднозначны, verdict_suggestion должен быть "review".',
@@ -451,7 +677,7 @@ async function reviewPluginAnalysisSummary(payload) {
                     'Если признаки вредоносного или явно опасного поведения сильные, верни "block". Но для library/framework/security-tool кода block допустим только при действительно подтверждённой исполняемой вредоносной цепочке: удалённая догрузка и запуск, скрытый канал управления, скрытая кража данных, закрепление ради скрытого запуска или явный destructive path.',
                     modePrompt,
                     'Формат ответа: {"summary":"<=420 chars","verdict_suggestion":"clean|review|block","bullets":["<=140 chars"],"full_report":"<=2200 chars or empty string"}.',
-                    'bullets должен содержать 0-5 коротких пунктов.'
+                    'bullets должен содержать 0-4 коротких пункта.'
                 ].join(' ')
             },
             {
@@ -470,7 +696,7 @@ async function reviewPluginAnalysisSummary(payload) {
         );
     }
 
-    const result = coerceResult(content, mode);
+    const result = postProcessAiResult(coerceResult(content, mode), normalizedInput, mode);
     return {
         summary: result.summary,
         verdictSuggestion: result.verdictSuggestion,
