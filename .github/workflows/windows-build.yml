@@ -21,6 +21,7 @@ concurrency:
 permissions:
   contents: write
 
+# Keep a cheap manual republish path by allowing harmless workflow-only touches.
 jobs:
   build-windows:
     name: Build Windows WinUI GUI

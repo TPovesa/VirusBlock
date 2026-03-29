@@ -876,8 +876,8 @@ async function getReleaseManifest() {
             const withRegistry = wrapArtifactForPublicDownload(
                 ensureArtifactSystemRequirements(attachRegistryMetadata(normalized, registryMatch))
             );
-            const current = merged.get(withRegistry.platform);
-            merged.set(withRegistry.platform, current ? mergeArtifact(current, withRegistry) : withRegistry);
+            const mergedArtifact = merged.get(withRegistry.platform);
+            merged.set(withRegistry.platform, mergedArtifact ? mergeArtifact(mergedArtifact, withRegistry) : withRegistry);
         }
     }
 

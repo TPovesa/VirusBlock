@@ -5,6 +5,8 @@ const { Readable } = require('stream');
 const router = express.Router();
 const { getReleaseManifest } = require('../services/releaseManifestService');
 const REPO_ROOT = path.resolve(__dirname, '../../..');
+const PUBLIC_REPOSITORY = String(process.env.PUBLIC_REPOSITORY || 'TPovesa/VirusBlock').trim();
+const PUBLIC_WEB_BASE = String(process.env.PUBLIC_WEB_BASE || 'https://neuralvv.org').trim().replace(/\/+$/, '');
 
 function normalizePlatform(input) {
     const value = String(input || '').trim().toLowerCase();
@@ -69,7 +71,24 @@ function isLocalProxyUrl(value) {
 
 function normalizeRepoName(value) {
     const repo = String(value || '').trim();
-    return repo.toLowerCase() === 'perdonus/fatalerror' ? 'TPovesa/VirusBlock' : repo;
+    return repo.toLowerCase() === 'perdonus/fatalerror' ? PUBLIC_REPOSITORY : repo;
+}
+
+function buildPublicReleaseDownloadUrl(platform, kind = '') {
+    const normalizedPlatform = encodeURIComponent(normalizePlatform(platform) || String(platform || '').trim().toLowerCase());
+    const normalizedKind = String(kind || '').trim().toLowerCase();
+    const query = normalizedKind ? `?platform=${normalizedPlatform}&kind=${encodeURIComponent(normalizedKind)}` : `?platform=${normalizedPlatform}`;
+    return `${PUBLIC_WEB_BASE}/basedata/api/releases/download${query}`;
+}
+
+function rewriteInternalUrl(value) {
+    const url = String(value || '').trim();
+    if (!url) {
+        return '';
+    }
+    return url
+        .replace(/https:\/\/github\.com\/Perdonus\/fatalerror/gi, `https://github.com/${PUBLIC_REPOSITORY}`)
+        .replace(/https:\/\/raw\.githubusercontent\.com\/Perdonus\/fatalerror/gi, `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}`);
 }
 
 function parseInternalRawUrl(value) {
@@ -98,6 +117,18 @@ function contentTypeForFileName(fileName) {
     if (lower.endsWith('.tar.gz') || lower.endsWith('.tgz')) return 'application/gzip';
     if (lower.endsWith('.exe')) return 'application/vnd.microsoft.portable-executable';
     return 'application/octet-stream';
+}
+
+function buildPublicInstallScriptUrl(platform, kind) {
+    const normalizedPlatform = normalizePlatform(platform);
+    if (normalizedPlatform === 'windows') {
+        if (kind === 'cmd') return `${PUBLIC_WEB_BASE}/install/nv.cmd`;
+        return `${PUBLIC_WEB_BASE}/install/nv.ps1`;
+    }
+    if (normalizedPlatform === 'linux' || normalizedPlatform === 'shell') {
+        return `${PUBLIC_WEB_BASE}/install/linux.sh`;
+    }
+    return '';
 }
 
 function gitRefForBranch(branch) {
@@ -187,6 +218,84 @@ function resolveDownloadTarget(artifact, kind = '') {
     }
 }
 
+function sanitizeArtifactForPublicResponse(artifact) {
+    if (!artifact || typeof artifact !== 'object') {
+        return artifact;
+    }
+
+    const platform = normalizePlatform(artifact.platform);
+    const metadata = artifact.metadata && typeof artifact.metadata === 'object'
+        ? JSON.parse(JSON.stringify(artifact.metadata))
+        : {};
+
+    const applyPublicTarget = (sourceKey, kind = '') => {
+        if (metadata[sourceKey]) {
+            metadata[sourceKey] = buildPublicReleaseDownloadUrl(platform, kind);
+        }
+    };
+
+    if (metadata.source_repo) {
+        metadata.source_repo = normalizeRepoName(metadata.source_repo);
+    }
+    if (metadata.versionSource && typeof metadata.versionSource === 'object' && metadata.versionSource.repo) {
+        metadata.versionSource.repo = normalizeRepoName(metadata.versionSource.repo);
+    }
+    if (Array.isArray(metadata.relatedSources)) {
+        metadata.relatedSources = metadata.relatedSources.map((entry) => {
+            if (!entry || typeof entry !== 'object') {
+                return entry;
+            }
+            return {
+                ...entry,
+                repo: normalizeRepoName(entry.repo)
+            };
+        });
+    }
+
+    applyPublicTarget('sourceDownloadUrl');
+    applyPublicTarget('sourcePortableUrl', 'portable');
+    applyPublicTarget('sourceSetupUrl', 'setup');
+    applyPublicTarget('sourceDaemonUrl', 'daemon');
+    applyPublicTarget('sourceStableArtifactUrl', 'artifact');
+    applyPublicTarget('sourceStableCliArtifactUrl', 'cli');
+
+    metadata.portableUrl = buildPublicReleaseDownloadUrl(platform, 'portable');
+    if (platform === 'windows') {
+        metadata.setupUrl = buildPublicReleaseDownloadUrl(platform, 'setup');
+    }
+    if (platform === 'shell') {
+        metadata.daemonUrl = buildPublicReleaseDownloadUrl(platform, 'daemon');
+        metadata.stableArtifactUrl = buildPublicReleaseDownloadUrl(platform, 'artifact');
+        metadata.stableCliArtifactUrl = buildPublicReleaseDownloadUrl(platform, 'cli');
+    }
+    if (platform === 'linux') {
+        metadata.stableArtifactUrl = buildPublicReleaseDownloadUrl(platform, 'artifact');
+        metadata.stableCliArtifactUrl = buildPublicReleaseDownloadUrl(platform, 'cli');
+        metadata.daemonUrl = buildPublicReleaseDownloadUrl(platform, 'daemon');
+    }
+
+    const powershellInstall = buildPublicInstallScriptUrl(platform, 'ps1');
+    const cmdInstall = buildPublicInstallScriptUrl(platform, 'cmd');
+    if (platform === 'windows') {
+        if (metadata.installScriptPs1) metadata.installScriptPs1 = powershellInstall;
+        if (metadata.installScriptCmd) metadata.installScriptCmd = cmdInstall;
+        if (metadata.powershellInstallCommand && metadata.commands?.powershell?.install) {
+            metadata.powershellInstallCommand = metadata.commands.powershell.install;
+        }
+        if (metadata.cmdInstallCommand && metadata.commands?.cmd?.install) {
+            metadata.cmdInstallCommand = metadata.commands.cmd.install;
+        }
+    } else if (platform === 'linux' || platform === 'shell') {
+        if (metadata.installScript) metadata.installScript = buildPublicInstallScriptUrl(platform, 'sh');
+    }
+
+    return {
+        ...artifact,
+        download_url: buildPublicReleaseDownloadUrl(platform),
+        metadata
+    };
+}
+
 router.get('/manifest', async (req, res) => {
     try {
         const manifest = await getReleaseManifest();
@@ -199,6 +308,8 @@ router.get('/manifest', async (req, res) => {
         const selectedArtifact = platform
             ? artifacts.find((artifact) => String(artifact.platform || '').trim().toLowerCase() === platform) || null
             : null;
+        const publicArtifacts = artifacts.map((artifact) => sanitizeArtifactForPublicResponse(artifact));
+        const publicSelectedArtifact = selectedArtifact ? sanitizeArtifactForPublicResponse(selectedArtifact) : null;
 
         return res.json({
             success: true,
@@ -206,23 +317,23 @@ router.get('/manifest', async (req, res) => {
             release_channel: manifest.release_channel || 'main',
             partial: Boolean(manifest.partial),
             platform: platform || null,
-            version: selectedArtifact?.version || null,
-            download_url: selectedArtifact?.download_url || null,
-            install_command: selectedArtifact?.install_command || null,
-            update_command: selectedArtifact?.update_command || null,
-            update_policy: selectedArtifact?.update_policy || null,
-            auto_update: typeof selectedArtifact?.auto_update === 'boolean' ? selectedArtifact.auto_update : null,
-            setupUrl: selectedArtifact?.metadata?.setupUrl || selectedArtifact?.download_url || null,
-            portableUrl: selectedArtifact?.metadata?.portableUrl || selectedArtifact?.download_url || null,
-            package_registry_url: selectedArtifact?.metadata?.package_registry_url || null,
-            package_name: selectedArtifact?.metadata?.package_name || null,
-            variant_id: selectedArtifact?.metadata?.variant_id || null,
-            selected_artifact: selectedArtifact,
+            version: publicSelectedArtifact?.version || null,
+            download_url: publicSelectedArtifact?.download_url || null,
+            install_command: publicSelectedArtifact?.install_command || null,
+            update_command: publicSelectedArtifact?.update_command || null,
+            update_policy: publicSelectedArtifact?.update_policy || null,
+            auto_update: typeof publicSelectedArtifact?.auto_update === 'boolean' ? publicSelectedArtifact.auto_update : null,
+            setupUrl: publicSelectedArtifact?.metadata?.setupUrl || publicSelectedArtifact?.download_url || null,
+            portableUrl: publicSelectedArtifact?.metadata?.portableUrl || publicSelectedArtifact?.download_url || null,
+            package_registry_url: publicSelectedArtifact?.metadata?.package_registry_url || null,
+            package_name: publicSelectedArtifact?.metadata?.package_name || null,
+            variant_id: publicSelectedArtifact?.metadata?.variant_id || null,
+            selected_artifact: publicSelectedArtifact,
             sources,
-            artifacts,
+            artifacts: publicArtifacts,
             manifest: {
                 ...manifest,
-                artifacts,
+                artifacts: publicArtifacts,
                 sources
             }
         });
@@ -254,6 +365,8 @@ router.get('/download', async (req, res) => {
         if (!target.url) {
             return res.status(404).json({ error: 'download target unavailable' });
         }
+
+        target.url = rewriteInternalUrl(target.url);
 
         const internalRaw = parseInternalRawUrl(target.url);
         if (internalRaw) {
