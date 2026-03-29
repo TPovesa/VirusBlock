@@ -35,7 +35,7 @@ from android.graphics.drawable import ColorDrawable, GradientDrawable
 from android.net import Uri
 from android.util import TypedValue
 from android.view import Gravity, MotionEvent, View, ViewGroup
-from android.widget import LinearLayout, ScrollView, TextView
+from android.widget import FrameLayout, LinearLayout, ScrollView, TextView
 from org.telegram.messenger import AndroidUtilities, ApplicationLoader, FileLoader, MessageObject
 from org.telegram.ui.ActionBar import AlertDialog, Theme
 from com.exteragram.messenger.plugins import PluginsController
@@ -754,6 +754,8 @@ class NeuralVPlugin(BasePlugin):
         self._loading_status_view = None
         self._loading_progress_fill = None
         self._loading_progress_gap = None
+        self._loading_progress_track = None
+        self._sheet_dialog = None
         self._last_report_text = ""
         self._last_report_peer = None
 
@@ -963,13 +965,23 @@ class NeuralVPlugin(BasePlugin):
 
     def _sheet_body_height_dp(self, body_text: str, max_body_height_dp: int) -> int:
         text = str(body_text or "")
-        estimated_lines = max(text.count("\n") + 1, (len(text) // 42) + 1)
-        estimated_dp = 46 + (estimated_lines * 11)
-        return int(max(120, min(max_body_height_dp, estimated_dp)))
+        estimated_lines = max(text.count("\n") + 1, (len(text) // 36) + 1)
+        estimated_dp = 82 + (estimated_lines * 16)
+        return int(max(180, min(max_body_height_dp, estimated_dp)))
 
     def _sheet_rows_height_dp(self, rows_count: int, max_rows_height_dp: int = 430) -> int:
-        estimated_dp = 18 + (max(0, int(rows_count)) * 70)
-        return int(max(140, min(max_rows_height_dp, estimated_dp)))
+        estimated_dp = 28 + (max(0, int(rows_count)) * 78)
+        return int(max(170, min(max_rows_height_dp, estimated_dp)))
+
+    def _dismiss_sheet_dialog(self):
+        def action():
+            try:
+                if self._sheet_dialog is not None and hasattr(self._sheet_dialog, "dismiss"):
+                    self._sheet_dialog.dismiss()
+            except Exception:
+                pass
+            self._sheet_dialog = None
+        run_on_ui_thread(action)
 
     def _show_sheet_dialog(
         self,
@@ -1100,11 +1112,15 @@ class NeuralVPlugin(BasePlugin):
             rows_container.setOrientation(LinearLayout.VERTICAL)
             rows_host.addView(
                 rows_container,
-                LinearLayout.LayoutParams(
+                FrameLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ),
             )
+            try:
+                rows_host.setFillViewport(True)
+            except Exception:
+                pass
             rows_height_dp = self._sheet_rows_height_dp(len(rows))
             rows_lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -1120,6 +1136,8 @@ class NeuralVPlugin(BasePlugin):
                         holder[0].dismiss()
                     except Exception:
                         pass
+                    if self._sheet_dialog == holder[0]:
+                        self._sheet_dialog = None
                 if callable(handler):
                     handler()
             row_view = self._create_sheet_row(
@@ -1167,6 +1185,8 @@ class NeuralVPlugin(BasePlugin):
                             holder[0].dismiss()
                         except Exception:
                             pass
+                        if self._sheet_dialog == holder[0]:
+                            self._sheet_dialog = None
                     if callable(handler):
                         handler()
 
@@ -1187,6 +1207,8 @@ class NeuralVPlugin(BasePlugin):
                                     holder[0].dismiss()
                                 except Exception:
                                     pass
+                                if self._sheet_dialog == holder[0]:
+                                    self._sheet_dialog = None
                             if callable(handler):
                                 handler()
 
@@ -1230,6 +1252,7 @@ class NeuralVPlugin(BasePlugin):
         try:
             dialog = Dialog(context)
             holder[0] = dialog
+            self._sheet_dialog = dialog
             try:
                 dialog.setCancelable(True)
                 dialog.setCanceledOnTouchOutside(True)
@@ -1502,8 +1525,22 @@ class NeuralVPlugin(BasePlugin):
                 int(AndroidUtilities.dp(18)),
             )
             card.setBackground(self._sheet_card_background())
-            root.addView(
-                card,
+            card_lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            card_lp.setMargins(
+                int(AndroidUtilities.dp(20)),
+                0,
+                int(AndroidUtilities.dp(20)),
+                0,
+            )
+            root.addView(card, card_lp)
+
+            title_row = LinearLayout(activity)
+            title_row.setOrientation(LinearLayout.HORIZONTAL)
+            card.addView(
+                title_row,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1512,46 +1549,27 @@ class NeuralVPlugin(BasePlugin):
 
             title_view = TextView(activity)
             title_view.setText(title)
-            title_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20)
+            title_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 19)
             title_view.setTextColor(int(self._sheet_text_color()))
-            card.addView(title_view)
+            title_row.addView(
+                title_view,
+                LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1.0,
+                ),
+            )
 
             percent_view = TextView(activity)
             percent_view.setText("2%")
-            percent_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
-            percent_view.setTextColor(int(self._sheet_muted_color()))
+            percent_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16)
+            percent_view.setTextColor(int(self._sheet_accent_color()))
             percent_lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
-            percent_lp.setMargins(0, int(AndroidUtilities.dp(8)), 0, 0)
-            card.addView(percent_view, percent_lp)
-
-            track = LinearLayout(activity)
-            track.setOrientation(LinearLayout.HORIZONTAL)
-            track_bg = GradientDrawable()
-            track_bg.setCornerRadius(float(AndroidUtilities.dp(999)))
-            track_bg.setColor(int(self._with_alpha(self._sheet_muted_color(), 0x26)))
-            track.setBackground(track_bg)
-            track_lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                int(AndroidUtilities.dp(10)),
-            )
-            track_lp.setMargins(0, int(AndroidUtilities.dp(12)), 0, 0)
-            card.addView(track, track_lp)
-
-            fill_view = View(activity)
-            fill_bg = GradientDrawable()
-            fill_bg.setCornerRadius(float(AndroidUtilities.dp(999)))
-            fill_bg.setColor(int(self._sheet_accent_color()))
-            fill_view.setBackground(fill_bg)
-            fill_lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 2.0)
-            track.addView(fill_view, fill_lp)
-
-            gap_view = View(activity)
-            gap_view.setBackgroundColor(Color.TRANSPARENT)
-            gap_lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 98.0)
-            track.addView(gap_view, gap_lp)
+            percent_lp.setMargins(int(AndroidUtilities.dp(10)), 0, 0, 0)
+            title_row.addView(percent_view, percent_lp)
 
             status_view = TextView(activity)
             status_view.setText(self._loading_label)
@@ -1561,8 +1579,32 @@ class NeuralVPlugin(BasePlugin):
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
-            status_lp.setMargins(0, int(AndroidUtilities.dp(12)), 0, 0)
+            status_lp.setMargins(0, int(AndroidUtilities.dp(10)), 0, 0)
             card.addView(status_view, status_lp)
+
+            track = FrameLayout(activity)
+            track_bg = GradientDrawable()
+            track_bg.setCornerRadius(float(AndroidUtilities.dp(999)))
+            track_bg.setColor(int(self._with_alpha(self._sheet_muted_color(), 0x32)))
+            track.setBackground(track_bg)
+            track_lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                int(AndroidUtilities.dp(12)),
+            )
+            track_lp.setMargins(0, int(AndroidUtilities.dp(12)), 0, 0)
+            card.addView(track, track_lp)
+
+            fill_view = View(activity)
+            fill_bg = GradientDrawable()
+            fill_bg.setCornerRadius(float(AndroidUtilities.dp(999)))
+            fill_bg.setColor(int(self._sheet_accent_color()))
+            fill_view.setBackground(fill_bg)
+            fill_lp = FrameLayout.LayoutParams(
+                int(AndroidUtilities.dp(18)),
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            )
+            track.addView(fill_view, fill_lp)
+            gap_view = None
 
             dialog.setContentView(root)
             self._loading_dialog = dialog
@@ -1571,16 +1613,29 @@ class NeuralVPlugin(BasePlugin):
             self._loading_status_view = status_view
             self._loading_progress_fill = fill_view
             self._loading_progress_gap = gap_view
+            self._loading_progress_track = track
             self._loading_active = True
             try:
                 dialog.show()
                 window = dialog.getWindow()
                 if window is not None:
+                    window.setGravity(Gravity.CENTER)
                     window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                    try:
+                        decor = window.getDecorView()
+                        if decor is not None:
+                            decor.setPadding(0, 0, 0, 0)
+                    except Exception:
+                        pass
+                    try:
+                        window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    except Exception:
+                        pass
                     try:
                         window.setDimAmount(0.58)
                     except Exception:
                         pass
+                log("[NeuralV] loading dialog shown")
             except Exception as error:
                 log(f"[NeuralV] loading dialog show failed: {error}")
             self._refresh_loading_ui()
@@ -1617,13 +1672,21 @@ class NeuralVPlugin(BasePlugin):
                 self._loading_percent_view.setText(f"{progress}%")
             if self._loading_status_view is not None:
                 self._loading_status_view.setText(label)
-            if self._loading_progress_fill is not None and self._loading_progress_gap is not None:
+            if self._loading_progress_fill is not None and self._loading_progress_track is not None:
+                track_width = 0
+                try:
+                    track_width = int(self._loading_progress_track.getWidth())
+                except Exception:
+                    track_width = 0
+                if track_width <= 0:
+                    try:
+                        track_width = int(AndroidUtilities.dp(220))
+                    except Exception:
+                        track_width = 220
+                fill_width = max(int(AndroidUtilities.dp(18)), int((max(2, progress) / 100.0) * track_width))
                 fill_lp = self._loading_progress_fill.getLayoutParams()
-                gap_lp = self._loading_progress_gap.getLayoutParams()
-                fill_lp.weight = max(0.01, float(progress))
-                gap_lp.weight = max(0.01, float(100 - progress))
+                fill_lp.width = fill_width
                 self._loading_progress_fill.setLayoutParams(fill_lp)
-                self._loading_progress_gap.setLayoutParams(gap_lp)
         except Exception:
             pass
 
@@ -1644,6 +1707,7 @@ class NeuralVPlugin(BasePlugin):
             self._loading_status_view = None
             self._loading_progress_fill = None
             self._loading_progress_gap = None
+            self._loading_progress_track = None
         run_on_ui_thread(action)
 
     def _open_main_menu(self):
@@ -1717,7 +1781,7 @@ class NeuralVPlugin(BasePlugin):
 
     def _show_history_sheet(self):
         if not self.analysis_history:
-            self._show_info("NeuralV: история пока пустая.")
+            self._show_history_empty_sheet()
             return
 
         def action():
@@ -1752,10 +1816,22 @@ class NeuralVPlugin(BasePlugin):
                 "История проверок",
                 rows=rows,
                 actions=[
-                    {"label": "Очистить историю", "danger": True, "on_click": self._confirm_clear_history},
+                    {"label": "Очистить историю", "danger": True, "close_first": True, "on_click": self._confirm_clear_history},
                     {"label": "Назад", "close_first": True},
                 ],
                 max_body_height_dp=1,
+            )
+        run_on_ui_thread(action)
+
+    def _show_history_empty_sheet(self):
+        def action():
+            self._show_sheet_dialog(
+                "История проверок",
+                body_text="История пока пустая. Новые результаты появятся здесь после первой проверки.",
+                actions=[
+                    {"label": "Назад", "close_first": True},
+                ],
+                max_body_height_dp=220,
             )
         run_on_ui_thread(action)
 
@@ -1776,7 +1852,9 @@ class NeuralVPlugin(BasePlugin):
         self.analysis_history = []
         self.runtime_contexts.clear()
         self._save_history()
+        self._dismiss_sheet_dialog()
         self._show_success("NeuralV: история очищена.")
+        self._show_history_empty_sheet()
 
     def _request_full_report_task(self, result: dict, peer_id: Optional[int], reply_to: Any = None):
         context = self._ensure_runtime_context(result)
@@ -1905,7 +1983,7 @@ class NeuralVPlugin(BasePlugin):
                 str(result.get("filename") or "NeuralV"),
                 body_text=report_text,
                 actions=actions,
-                max_body_height_dp=560,
+                max_body_height_dp=760,
             )
         run_on_ui_thread(action)
 
@@ -2409,7 +2487,6 @@ class NeuralVPlugin(BasePlugin):
                     "label": "Назад",
                     "compact_row": True,
                     "close_first": True,
-                    "on_click": self._show_history_sheet,
                 })
             else:
                 actions.append({
@@ -2424,7 +2501,7 @@ class NeuralVPlugin(BasePlugin):
                 subtitle,
                 body_text=self._render_result_body(result),
                 actions=actions,
-                max_body_height_dp=440,
+                max_body_height_dp=680,
             )
             if result["verdict"] == "Опасно":
                 BulletinHelper.show_error(f"{result['icon']} {result['verdict']}")
