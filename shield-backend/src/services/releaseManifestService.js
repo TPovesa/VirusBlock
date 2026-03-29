@@ -498,11 +498,14 @@ function wrapArtifactForPublicDownload(artifact) {
     );
     if (sourceDownloadUrl && !isPublicDownloadProxyUrl(sourceDownloadUrl)) {
         metadata.sourceDownloadUrl = sourceDownloadUrl;
+    } else if (isPublicDownloadProxyUrl(metadata.sourceDownloadUrl)) {
+        delete metadata.sourceDownloadUrl;
     }
 
     const promoteKind = (publicKey, sourceKey, kind) => {
         const current = rewriteLegacyInternalUrls(String(metadata[publicKey] || '').trim());
-        if (current && !isPublicDownloadProxyUrl(current) && !metadata[sourceKey]) {
+        const existingSource = rewriteLegacyInternalUrls(String(metadata[sourceKey] || '').trim());
+        if (current && !isPublicDownloadProxyUrl(current) && (!existingSource || isPublicDownloadProxyUrl(existingSource))) {
             metadata[sourceKey] = current;
         }
         if (metadata[sourceKey]) {
