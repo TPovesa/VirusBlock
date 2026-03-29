@@ -571,19 +571,56 @@ def _looks_like_framework_local(filename: str, code: str, detected_family: str) 
     return False
 
 
+def _looks_like_security_tool_local(filename: str, code: str, detected_family: str) -> bool:
+    source = str(code or "")
+    lowered = f"{filename or ''}\n{source[:14000]}".lower()
+    name_hits = 0
+    for token in ["neuralv", "antivirus", "scanner", "scan", "review", "analysis", "audit", "verdict"]:
+        if token in lowered:
+            name_hits += 1
+    subsystem_hits = 0
+    for token in ["analyze_code", "findings", "local verdict", "ai_review_url", "plugin-review", "history", "report", "summary", "signature", "rule", "bulletinhelper"]:
+        if token in lowered:
+            subsystem_hits += 1
+    return detected_family == "extera" and name_hits >= 2 and subsystem_hits >= 4
+
+
 def _downgrade_library_findings(findings: list) -> list:
     softened = []
-    library_ids = {"network", "sensitive_send", "destructive_fs", "surveillance", "elevation", "secret_access"}
+    library_ids = {
+        "network",
+        "sensitive_send",
+        "destructive_fs",
+        "surveillance",
+        "elevation",
+        "secret_access",
+        "runtime_exec",
+        "remote_download",
+        "reverse_shell",
+        "network_exec",
+        "exfiltration_chain",
+    }
     for finding in findings:
         item = dict(finding)
         if item.get("id") in library_ids:
-            item["score"] = max(1, int(item.get("score") or 1) - 2)
+            penalty = 3 if item.get("id") in {"reverse_shell", "network_exec", "exfiltration_chain"} else 2
+            item["score"] = max(1, int(item.get("score") or 1) - penalty)
             if item.get("severity") == "Критично":
-                item["severity"] = "Высоко"
-            elif item.get("severity") == "Высоко":
                 item["severity"] = "Средне"
+            elif item.get("severity") == "Высоко":
+                item["severity"] = "Низко" if item.get("id") in {"remote_download", "runtime_exec"} else "Средне"
         softened.append(item)
     return softened
+
+
+def _has_confirmed_tooling_malicious_chain(hard_ids: set) -> bool:
+    if "obfuscated_exec" in hard_ids:
+        return True
+    if "persistence" in hard_ids and ("network_exec" in hard_ids or "exfiltration_chain" in hard_ids):
+        return True
+    if "reverse_shell" in hard_ids and "obfuscation" in hard_ids:
+        return True
+    return False
 
 def analyze_code(filename: str, code: str) -> dict:
     code = (code or "").replace("\r\n", "\n").replace("\r", "\n")
@@ -622,7 +659,8 @@ def analyze_code(filename: str, code: str) -> dict:
             })
 
     framework_library = _looks_like_framework_local(filename, code, detected)
-    if framework_library:
+    security_tool = _looks_like_security_tool_local(filename, code, detected)
+    if framework_library or security_tool:
         findings = _downgrade_library_findings(findings)
     findings = _sorted_findings(findings)
     score = sum(item["score"] for item in findings)
@@ -634,6 +672,8 @@ def analyze_code(filename: str, code: str) -> dict:
             score = max(0, score - 8)
         else:
             score = max(0, score - 3)
+    if security_tool:
+        score = max(0, score - 4)
 
     hard_ids = {item.get("id") for item in findings}
     library_only_ids = {
@@ -649,8 +689,13 @@ def analyze_code(filename: str, code: str) -> dict:
         "elevation",
         "surveillance",
     }
-    if framework_library and hard_ids and hard_ids.issubset(library_only_ids):
-        score = min(score, 9)
+    confirmed_chain = _has_confirmed_tooling_malicious_chain(hard_ids)
+    if (framework_library or security_tool) and hard_ids and hard_ids.issubset(library_only_ids):
+        score = min(score, 7 if security_tool else 9)
+    if security_tool and "obfuscated_exec" not in hard_ids and "obfuscation" not in hard_ids:
+        score = min(score, 4)
+    if (framework_library or security_tool) and not confirmed_chain:
+        score = min(score, 4)
 
     if score >= 13:
         verdict = "Опасно"
@@ -686,6 +731,7 @@ def analyze_code(filename: str, code: str) -> dict:
         "score": score,
         "exec_scope_only": True,
         "framework_library": framework_library,
+        "security_tool": security_tool,
     }
 
 
@@ -859,9 +905,9 @@ class NeuralVPlugin(BasePlugin):
         button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16)
         button.setGravity(Gravity.CENTER)
         button.setPadding(
-            int(AndroidUtilities.dp(16)),
-            int(AndroidUtilities.dp(14)),
-            int(AndroidUtilities.dp(16)),
+            int(AndroidUtilities.dp(12)),
+            int(AndroidUtilities.dp(13)),
+            int(AndroidUtilities.dp(12)),
             int(AndroidUtilities.dp(14)),
         )
         fill, stroke, text_color = self._sheet_button_palette(filled=filled, danger=danger)
@@ -1087,7 +1133,7 @@ class NeuralVPlugin(BasePlugin):
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 )
-                button_lp.setMargins(0, 0, 0, int(AndroidUtilities.dp(10)))
+                button_lp.setMargins(int(AndroidUtilities.dp(4)), 0, int(AndroidUtilities.dp(4)), int(AndroidUtilities.dp(10)))
                 actions_wrap.addView(button, button_lp)
             card.addView(actions_wrap, actions_lp)
 
@@ -1600,7 +1646,7 @@ class NeuralVPlugin(BasePlugin):
                 {
                     "label": "Скопировать",
                     "icon": "📋",
-                    "on_click": lambda: self._copy_to_clipboard(report_text),
+                    "on_click": lambda: self._copy_to_clipboard(share_text),
                 },
                 {
                     "label": "Отправить в чат",
@@ -1726,6 +1772,8 @@ class NeuralVPlugin(BasePlugin):
         ]
         if analysis.get("framework_library"):
             parts.append("Файл похож на общую библиотеку или framework")
+        if analysis.get("security_tool"):
+            parts.append("Файл похож на служебный инструмент проверки или анализа")
         if analysis["mismatch"]:
             parts.append("Есть несовпадение между именем файла и реальной структурой")
         if analysis["findings"]:
@@ -1737,6 +1785,13 @@ class NeuralVPlugin(BasePlugin):
 
     def _local_reason_bullets(self, analysis: dict, limit: int = 4) -> List[str]:
         items: List[str] = []
+        if analysis.get("framework_library") or analysis.get("security_tool"):
+            items.append("Файл похож на общую библиотеку, framework или служебный инструмент.")
+            if analysis.get("findings"):
+                items.append("Внутри есть сетевые, файловые и служебные helper-слои, которые в таком типе плагинов сами по себе не означают вредоносность.")
+            if analysis.get("mismatch"):
+                items.append("Имя файла не совпадает с тем, как он устроен внутри.")
+            return items[:limit]
         if analysis.get("mismatch"):
             items.append("Имя файла не совпадает с тем, как он устроен внутри.")
         for finding in analysis.get("findings", []):
@@ -1770,6 +1825,8 @@ class NeuralVPlugin(BasePlugin):
     def _build_local_fallback_summary(self, analysis: dict) -> str:
         if analysis["verdict"] == "Безопасно":
             return "Локальный слой не увидел цепочку, которая выглядела бы как вредоносное поведение."
+        if analysis.get("framework_library") or analysis.get("security_tool"):
+            return "Файл содержит служебные сетевые, файловые или системные подсистемы, поэтому ему нужен спокойный контекстный разбор, а не жёсткий alarmist-вердикт."
         if analysis["verdict"] == "Осторожно":
             return "Файл выглядит спорно: в нём есть поведение, которое требует ручной проверки перед запуском."
         return "Файл показывает опасную цепочку поведения. Запускать его без ручной проверки и изоляции не стоит."
@@ -1826,6 +1883,7 @@ class NeuralVPlugin(BasePlugin):
                 "mismatch": analysis["mismatch"],
                 "exec_scope_only": analysis.get("exec_scope_only"),
                 "library_candidate": bool(analysis.get("framework_library")) or _looks_like_framework_plugin(filename, code, identity),
+                "security_tool_candidate": bool(analysis.get("security_tool")),
             },
         }
         try:
@@ -1858,18 +1916,63 @@ class NeuralVPlugin(BasePlugin):
                 "full_report": "",
             }
 
-    def _merge_verdicts(self, local_verdict: str, ai_suggestion: str) -> str:
+    def _merge_verdicts(self, local_verdict: str, ai_suggestion: str, analysis: Optional[dict] = None) -> str:
         order = {"Безопасно": 0, "Осторожно": 1, "Опасно": 2}
         ai_map = {"clean": "Безопасно", "review": "Осторожно", "block": "Опасно"}
         ai_verdict = ai_map.get(str(ai_suggestion or "").strip().lower(), local_verdict)
+        if analysis and (analysis.get("framework_library") or analysis.get("security_tool")):
+            confirmed_chain = _has_confirmed_tooling_malicious_chain({item.get("id") for item in (analysis.get("findings") or [])})
+            if ai_verdict == "Безопасно" and local_verdict == "Осторожно":
+                return "Безопасно"
+            if ai_verdict == "Опасно" and not confirmed_chain:
+                return "Осторожно" if local_verdict == "Осторожно" else "Безопасно"
         return local_verdict if order[local_verdict] >= order[ai_verdict] else ai_verdict
 
+    def _sanitize_ai_review(self, ai_result: dict, analysis: dict) -> dict:
+        result = dict(ai_result or {})
+        if not (analysis.get("framework_library") or analysis.get("security_tool")):
+            return result
+        confirmed_chain = _has_confirmed_tooling_malicious_chain({item.get("id") for item in (analysis.get("findings") or [])})
+        if confirmed_chain:
+            return result
+        alarmist_markers = [
+            "удалён",
+            "взлом",
+            "обратн",
+            "reverse shell",
+            "утеч",
+            "поврежд",
+            "вредонос",
+            "удалённый контроль",
+            "повредить систему",
+        ]
+        summary = str(result.get("summary") or "").strip()
+        if not summary or any(marker in summary.lower() for marker in alarmist_markers):
+            result["summary"] = self._build_local_fallback_summary(analysis)
+        clean_bullets = []
+        for bullet in [str(item).strip() for item in (result.get("bullets") or []) if str(item).strip()]:
+            lowered = bullet.lower()
+            if any(marker in lowered for marker in alarmist_markers):
+                continue
+            clean_bullets.append(bullet)
+        if not clean_bullets:
+            clean_bullets = self._local_reason_bullets(analysis)
+        result["bullets"] = clean_bullets[:5]
+        suggestion = str(result.get("verdict_suggestion") or "").strip().lower()
+        if suggestion == "block":
+            result["verdict_suggestion"] = "review"
+        full_report = str(result.get("full_report") or "").strip()
+        if full_report and any(marker in full_report.lower() for marker in alarmist_markers):
+            result["full_report"] = ""
+        return result
+
     def _compose_report(self, filename: str, analysis: dict, ai_result: dict) -> dict:
+        ai_result = self._sanitize_ai_review(ai_result, analysis)
         ai_summary = str(ai_result.get("summary") or "").strip()
         ai_bullets = [str(item).strip() for item in (ai_result.get("bullets") or []) if str(item).strip()]
         local_bullets = self._local_reason_bullets(analysis)
         merged_bullets = self._dedupe_bullets(ai_bullets, local_bullets)
-        final_verdict = self._merge_verdicts(analysis["verdict"], ai_result.get("verdict_suggestion"))
+        final_verdict = self._merge_verdicts(analysis["verdict"], ai_result.get("verdict_suggestion"), analysis)
         final_icon = VERDICT_ICONS[final_verdict]
 
         lines = [ai_summary or self._build_local_fallback_summary(analysis)]
@@ -2050,7 +2153,7 @@ class NeuralVPlugin(BasePlugin):
                 {
                     "label": "Скопировать",
                     "icon": "📋",
-                    "on_click": lambda: self._copy_to_clipboard(result["report"]),
+                    "on_click": lambda: self._copy_to_clipboard(share_text),
                 },
             ]
             actions.append({"label": "Закрыть", "icon": "✕", "close_first": True})
