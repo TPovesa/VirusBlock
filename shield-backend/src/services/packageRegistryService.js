@@ -18,6 +18,13 @@ function normalizeSourceRepo(repo) {
     return normalizeText(value) === 'perdonus/fatalerror' ? 'TPovesa/VirusBlock' : value;
 }
 
+function rewriteLegacyInternalUrls(value) {
+    return String(value || '')
+        .replace(/github\.com\/Perdonus\/fatalerror/gi, 'github.com/TPovesa/VirusBlock')
+        .replace(/raw\.githubusercontent\.com\/Perdonus\/fatalerror/gi, 'raw.githubusercontent.com/TPovesa/VirusBlock')
+        .replace(/"repo":"Perdonus\/fatalerror"/gi, '"repo":"TPovesa/VirusBlock"');
+}
+
 function normalizeHomepageUrl(value, fallback) {
     const text = String(value || '').trim();
     if (!text) {
@@ -523,15 +530,12 @@ function normalizeArtifact(item) {
     if (!item || typeof item !== 'object') return null;
     const platform = normalizePlatform(item.platform || item.platform_id || item.id);
     if (!platform) return null;
-    const rewriteLegacyRepo = (value) => String(value || '')
-        .replace(/github\.com\/Perdonus\/fatalerror/gi, 'github.com/TPovesa/VirusBlock')
-        .replace(/raw\.githubusercontent\.com\/Perdonus\/fatalerror/gi, 'raw.githubusercontent.com/TPovesa/VirusBlock');
     return {
         platform,
         channel: String(item.channel || '').trim() || 'main',
         version: String(item.version || '').trim() || 'pending',
         sha256: String(item.sha256 || '').trim(),
-        download_url: rewriteLegacyRepo(String(item.download_url || item.downloadUrl || '').trim()),
+        download_url: rewriteLegacyInternalUrls(String(item.download_url || item.downloadUrl || '').trim()),
         install_command: String(item.install_command || item.installCommand || '').trim(),
         update_command: String(item.update_command || item.updateCommand || '').trim(),
         update_policy: String(item.update_policy || item.updatePolicy || '').trim(),
@@ -539,7 +543,7 @@ function normalizeArtifact(item) {
         file_name: String(item.file_name || item.fileName || '').trim(),
         notes: Array.isArray(item.notes) ? item.notes.map((entry) => String(entry).trim()).filter(Boolean) : [],
         metadata: item.metadata && typeof item.metadata === 'object'
-            ? JSON.parse(rewriteLegacyRepo(JSON.stringify(item.metadata)))
+            ? JSON.parse(rewriteLegacyInternalUrls(JSON.stringify(item.metadata)))
             : {}
     };
 }
@@ -684,7 +688,7 @@ function buildVariantRecord(packageDef, definition, primaryArtifact, primarySour
         launcher_path: String(definition.launcher_path || '').trim(),
         notes: primaryArtifact?.notes?.length ? primaryArtifact.notes : [],
         components,
-        metadata: {
+        metadata: JSON.parse(rewriteLegacyInternalUrls(JSON.stringify({
             ...definitionMetadata,
             ...primaryArtifactMetadata,
             source: definition.source || null,
@@ -704,7 +708,7 @@ function buildVariantRecord(packageDef, definition, primaryArtifact, primarySour
                 sha256: entry.artifact.sha256,
                 manifest_url: manifestUrl(entry.source)
             }))
-        }
+        }))
     };
 }
 
