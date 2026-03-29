@@ -32,8 +32,8 @@ const {
 const AUTH_CODE_TTL_MINUTES = parseInt(process.env.AUTH_CODE_TTL_MINUTES || '15', 10);
 const PASSWORD_RESET_TTL_MINUTES = parseInt(process.env.PASSWORD_RESET_TTL_MINUTES || '30', 10);
 const PASSWORD_MIN_LENGTH = 8;
-const SITE_RESET_WEB_URL = String(process.env.APP_RESET_WEB_URL || 'https://sosiskibot.ru/neuralv/reset-password').trim();
-const SITE_ACCOUNT_ACTION_WEB_URL = String(process.env.APP_ACCOUNT_ACTION_WEB_URL || 'https://sosiskibot.ru/neuralv/account-action').trim();
+const SITE_RESET_WEB_URL = String(process.env.APP_RESET_WEB_URL || 'https://neuralvv.org/reset-password').trim();
+const SITE_ACCOUNT_ACTION_WEB_URL = String(process.env.APP_ACCOUNT_ACTION_WEB_URL || 'https://neuralvv.org/account-action').trim();
 
 const SITE_ACTION_PURPOSES = {
     'profile-name': 'PROFILE_NAME_CHANGE',
@@ -170,7 +170,7 @@ function getProfileActionWebBaseUrl(action) {
         [PROFILE_ACTION_EMAIL_CHANGE]: process.env.APP_PROFILE_EMAIL_CHANGE_WEB_URL || SITE_ACCOUNT_ACTION_WEB_URL,
         [PROFILE_ACTION_PASSWORD_CHANGE]: process.env.APP_PROFILE_PASSWORD_CHANGE_WEB_URL || SITE_ACCOUNT_ACTION_WEB_URL
     };
-    return String(map[action] || process.env.APP_PROFILE_ACTION_WEB_URL || SITE_ACCOUNT_ACTION_WEB_URL || 'https://sosiskibot.ru/neuralv/account-action').trim();
+    return String(map[action] || process.env.APP_PROFILE_ACTION_WEB_URL || SITE_ACCOUNT_ACTION_WEB_URL || 'https://neuralvv.org/account-action').trim();
 }
 
 function getProfileActionLink(action, token) {

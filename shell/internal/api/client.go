@@ -92,7 +92,7 @@ type ManifestArtifact struct {
 
 func NewClient(baseURL string) *Client {
 	if strings.TrimSpace(baseURL) == "" {
-		baseURL = "https://sosiskibot.ru/basedata"
+		baseURL = "https://neuralvv.org/basedata"
 	}
 
 	return &Client{

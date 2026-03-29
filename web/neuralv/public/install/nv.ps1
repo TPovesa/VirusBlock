@@ -1,16 +1,13 @@
 $ErrorActionPreference = 'Stop'
-$repo = 'Perdonus/NV'
-$rawBase = "https://raw.githubusercontent.com/$repo/windows-builds"
-$manifest = Invoke-RestMethod "$rawBase/manifest.json"
-$artifact = $manifest.artifacts | Where-Object { $_.platform -eq 'nv-windows' } | Select-Object -First 1
-if (-not $artifact -or -not $artifact.download_url) { throw 'nv-windows artifact not found' }
+$baseUrl = if ([string]::IsNullOrWhiteSpace($env:NEURALV_BASE_URL)) { 'https://neuralvv.org' } else { $env:NEURALV_BASE_URL.TrimEnd('/') }
+$downloadUrl = if ([string]::IsNullOrWhiteSpace($env:NV_DOWNLOAD_URL)) { "$baseUrl/basedata/api/releases/download?platform=nv-windows" } else { $env:NV_DOWNLOAD_URL }
 $installRoot = Join-Path $env:USERPROFILE 'AppData\Local\NV'
 New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
 $target = Join-Path $installRoot 'nv.exe'
 $wrapper = Join-Path $installRoot 'nv.cmd'
 $tempTarget = Join-Path $installRoot 'nv.download.exe'
 if (Test-Path $tempTarget) { Remove-Item -Force $tempTarget }
-Invoke-WebRequest -Uri $artifact.download_url -OutFile $tempTarget
+Invoke-WebRequest -Uri $downloadUrl -OutFile $tempTarget
 Move-Item -Force $tempTarget $target
 Set-Content -Path $wrapper -Value "@echo off`r`n`"$target`" %*`r`n" -Encoding ASCII
 
@@ -24,7 +21,7 @@ function Add-UserPathEntry {
     }
     $exists = $false
     foreach ($segment in $segments) {
-        if ($segment.TrimEnd('\') -ieq $PathEntry.TrimEnd('\')) {
+        if ($segment.TrimEnd('\\') -ieq $PathEntry.TrimEnd('\\')) {
             $exists = $true
             break
         }
@@ -36,7 +33,7 @@ function Add-UserPathEntry {
         }
         [Environment]::SetEnvironmentVariable('Path', ($updatedSegments -join ';'), 'User')
     }
-    if (-not (($env:Path -split ';') | Where-Object { $_.TrimEnd('\') -ieq $PathEntry.TrimEnd('\') })) {
+    if (-not (($env:Path -split ';') | Where-Object { $_.TrimEnd('\\') -ieq $PathEntry.TrimEnd('\\') })) {
         $env:Path = "$PathEntry;$env:Path"
     }
 }

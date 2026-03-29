@@ -16,7 +16,7 @@ NeuralV теперь живёт как единая многоплатформе
 - Единая авторизация идёт через `/basedata/api/auth`.
 - Android deep scan и desktop scans разделены на уровне API и БД.
 - Website читает release manifest из `/basedata/api/releases/manifest`.
-- Linux shell устанавливается через `curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash`.
+- Linux shell устанавливается через `curl -fsSL https://neuralvv.org/install/linux.sh | bash`.
 
 ## CI/CD
 GitHub Actions теперь готовятся собирать:

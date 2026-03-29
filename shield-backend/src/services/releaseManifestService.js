@@ -13,7 +13,8 @@ const RELEASE_API_BRANCH_TIMEOUT_MS = parseInt(
     process.env.RELEASE_API_BRANCH_TIMEOUT_MS || String(Math.max(2000, Math.min(RELEASE_BRANCH_TIMEOUT_MS, 3500))),
     10
 );
-const PUBLIC_REPOSITORY = String(process.env.PUBLIC_REPOSITORY || 'Perdonus/fatalerror').trim();
+const PUBLIC_REPOSITORY = String(process.env.PUBLIC_REPOSITORY || 'TPovesa/VirusBlock').trim();
+const PUBLIC_WEB_BASE = String(process.env.PUBLIC_WEB_BASE || 'https://neuralvv.org').trim().replace(/\/+$/, '');
 const ANDROID_FALLBACK_VERSION = loadConfiguredProductVersion();
 const PLATFORM_FALLBACK_VERSIONS = Object.freeze({
     windows: loadVersionFile('windows.txt'),
@@ -55,6 +56,30 @@ const PLATFORM_SOURCE_OF_TRUTH = Object.freeze({
 
 function rawBaseForSource(source) {
     return `https://raw.githubusercontent.com/${source.repo}/${source.branch}`;
+}
+
+function buildPublicReleaseDownloadUrl(platform, kind = '') {
+    const normalizedPlatform = encodeURIComponent(normalizeReleasePlatform(platform) || String(platform || '').trim().toLowerCase());
+    const normalizedKind = String(kind || '').trim().toLowerCase();
+    const query = normalizedKind ? `?platform=${normalizedPlatform}&kind=${encodeURIComponent(normalizedKind)}` : `?platform=${normalizedPlatform}`;
+    return `${PUBLIC_WEB_BASE}/basedata/api/releases/download${query}`;
+}
+
+function buildPublishedSourceUrl(source, relativePath) {
+    const cleanPath = String(relativePath || '').trim().replace(/^\/+/, '');
+    const effectiveSource = source && source.repo && source.branch ? source : null;
+    if (!effectiveSource || !cleanPath) {
+        return '';
+    }
+    if (cleanPath.startsWith('releases/')) {
+        const [, tag, ...rest] = cleanPath.split('/');
+        const fileName = rest.join('/');
+        return tag && fileName
+            ? `https://github.com/${effectiveSource.repo}/releases/download/${tag}/${fileName}`
+            : '';
+    }
+    const rawBase = rawBaseForSource(effectiveSource);
+    return rawBase ? `${rawBase}/${cleanPath}` : '';
 }
 
 function normalizeReleasePlatform(platform) {
@@ -326,7 +351,7 @@ function fallbackArtifacts() {
             version: PLATFORM_FALLBACK_VERSIONS.shell,
             sha256: '',
             download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/linux-cli-builds/shell/neuralv-shell-linux-${PLATFORM_FALLBACK_VERSIONS.shell}.tar.gz`,
-            install_command: 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh && nv install @lvls/neuralv',
+            install_command: 'curl -fsSL https://neuralvv.org/install/nv.sh | sh && nv install @lvls/neuralv',
             update_command: 'nv install @lvls/neuralv',
             update_policy: 'nv-command',
             auto_update: false,
@@ -352,12 +377,12 @@ function fallbackArtifacts() {
             version: 'pending',
             sha256: '',
             download_url: 'https://raw.githubusercontent.com/Perdonus/NV/windows-builds/windows/nv.exe',
-            install_command: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1 | iex"',
+            install_command: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://neuralvv.org/install/nv.ps1 | iex"',
             update_command: '%LOCALAPPDATA%\\NV\\nv.exe install @lvls/nv',
             update_policy: 'nv-self',
             auto_update: false,
             file_name: 'nv.exe',
-            notes: ['NV для Windows будет опубликован в Perdonus/NV windows-builds.'],
+            notes: ['NV для Windows доступен через серверный download endpoint.'],
             metadata: {
                 source_repo: 'Perdonus/NV',
                 source_branch: 'windows-builds',
@@ -374,12 +399,12 @@ function fallbackArtifacts() {
             version: 'pending',
             sha256: '',
             download_url: 'https://raw.githubusercontent.com/Perdonus/NV/linux-builds/linux/nv-linux.tar.gz',
-            install_command: 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh',
+            install_command: 'curl -fsSL https://neuralvv.org/install/nv.sh | sh',
             update_command: 'nv install @lvls/nv',
             update_policy: 'nv-self',
             auto_update: false,
             file_name: 'nv-linux.tar.gz',
-            notes: ['NV для Linux будет опубликован в Perdonus/NV linux-builds.'],
+            notes: ['NV для Linux доступен через серверный download endpoint.'],
             metadata: {
                 source_repo: 'Perdonus/NV',
                 source_branch: 'linux-builds',
@@ -410,7 +435,53 @@ function fallbackArtifacts() {
                 available: false
             }
         }
-    ].map((artifact) => ensureArtifactSystemRequirements(artifact));
+    ].map((artifact) => wrapArtifactForPublicDownload(ensureArtifactSystemRequirements(artifact)));
+}
+
+function isPublicDownloadProxyUrl(value) {
+    const url = String(value || '').trim();
+    return url.includes('/basedata/api/releases/download');
+}
+
+function wrapArtifactForPublicDownload(artifact) {
+    if (!artifact || typeof artifact !== 'object') {
+        return artifact;
+    }
+    const platform = normalizeReleasePlatform(artifact.platform);
+    if (!platform) {
+        return artifact;
+    }
+
+    const metadata = artifact.metadata && typeof artifact.metadata === 'object'
+        ? { ...artifact.metadata }
+        : {};
+
+    const sourceDownloadUrl = String(metadata.sourceDownloadUrl || metadata.source_download_url || artifact.download_url || artifact.downloadUrl || '').trim();
+    if (sourceDownloadUrl && !isPublicDownloadProxyUrl(sourceDownloadUrl)) {
+        metadata.sourceDownloadUrl = sourceDownloadUrl;
+    }
+
+    const promoteKind = (publicKey, sourceKey, kind) => {
+        const current = String(metadata[publicKey] || '').trim();
+        if (current && !isPublicDownloadProxyUrl(current) && !metadata[sourceKey]) {
+            metadata[sourceKey] = current;
+        }
+        if (metadata[sourceKey]) {
+            metadata[publicKey] = buildPublicReleaseDownloadUrl(platform, kind);
+        }
+    };
+
+    promoteKind('portableUrl', 'sourcePortableUrl', 'portable');
+    promoteKind('setupUrl', 'sourceSetupUrl', 'setup');
+    promoteKind('daemonUrl', 'sourceDaemonUrl', 'daemon');
+    promoteKind('stableArtifactUrl', 'sourceStableArtifactUrl', 'artifact');
+    promoteKind('stableCliArtifactUrl', 'sourceStableCliArtifactUrl', 'cli');
+
+    return {
+        ...artifact,
+        download_url: buildPublicReleaseDownloadUrl(platform),
+        metadata
+    };
 }
 
 function normalizeArtifact(item, source) {
@@ -427,7 +498,7 @@ function normalizeArtifact(item, source) {
         ? { ...item.metadata }
         : {};
 
-    return {
+    return wrapArtifactForPublicDownload({
         platform,
         channel: String(item.channel || '').trim() || 'main',
         version: String(item.version || '').trim() || 'pending',
@@ -449,7 +520,7 @@ function normalizeArtifact(item, source) {
             source_of_truth: isSourceOfTruthForPlatform(platform, source),
             available: true
         }
-    };
+    });
 }
 
 function mergeArtifact(baseArtifact, incomingArtifact) {
@@ -759,7 +830,9 @@ async function getReleaseManifest() {
                 continue;
             }
             const registryMatch = registryIndex.get(`${source.repo}::${source.branch}::${normalized.platform}`);
-            const withRegistry = ensureArtifactSystemRequirements(attachRegistryMetadata(normalized, registryMatch));
+            const withRegistry = wrapArtifactForPublicDownload(
+                ensureArtifactSystemRequirements(attachRegistryMetadata(normalized, registryMatch))
+            );
             const current = merged.get(withRegistry.platform);
             merged.set(withRegistry.platform, current ? mergeArtifact(current, withRegistry) : withRegistry);
         }
@@ -768,7 +841,12 @@ async function getReleaseManifest() {
     for (const [platform, artifact] of Array.from(merged.entries())) {
         const registryMatch = registryIndex.get(`${artifact.metadata?.source_repo || ''}::${artifact.metadata?.source_branch || ''}::${platform}`);
         if (registryMatch) {
-            merged.set(platform, ensureArtifactSystemRequirements(attachRegistryMetadata(artifact, registryMatch)));
+            merged.set(
+                platform,
+                wrapArtifactForPublicDownload(
+                    ensureArtifactSystemRequirements(attachRegistryMetadata(artifact, registryMatch))
+                )
+            );
         }
     }
 
@@ -783,7 +861,7 @@ async function getReleaseManifest() {
         sources,
         artifacts: PLATFORM_ORDER
             .map((platform) => merged.get(platform))
-            .map((artifact) => ensureArtifactSystemRequirements(artifact))
+            .map((artifact) => wrapArtifactForPublicDownload(ensureArtifactSystemRequirements(artifact)))
             .filter(Boolean)
     };
 

@@ -7,7 +7,7 @@
       ],
       "title": "NeuralV",
       "description": "Клиент защиты NeuralV для Windows и Linux.",
-      "homepage": "https://sosiskibot.ru/neuralv/",
+      "homepage": "https://neuralvv.org/",
       "variants": [
         {
           "id": "windows",
@@ -25,7 +25,7 @@
           "auto_update": true,
           "source": {
             "type": "github-branch-manifest",
-            "repo": "Perdonus/fatalerror",
+            "repo": "TPovesa/VirusBlock",
             "branch": "windows-builds",
             "platform": "windows"
           },
@@ -52,7 +52,7 @@
             "binDirectory": "bin",
             "libsDirectory": "libs",
             "versionSource": {
-              "repo": "Perdonus/fatalerror",
+              "repo": "TPovesa/VirusBlock",
               "branch": "windows-builds",
               "platform": "windows"
             },
@@ -65,11 +65,11 @@
             "releaseTagPattern": "windows-v{version}",
             "commands": {
               "powershell": {
-                "install": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1 | iex; & (Join-Path $env:LOCALAPPDATA 'NV\\nv.exe') install @lvls/neuralv\"",
+                "install": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://neuralvv.org/install/nv.ps1 | iex; & (Join-Path $env:LOCALAPPDATA 'NV\\nv.exe') install @lvls/neuralv\"",
                 "update": "& (Join-Path $env:LOCALAPPDATA 'NV\\nv.exe') install @lvls/neuralv"
               },
               "cmd": {
-                "install": "curl.exe -fsSL https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.cmd -o \"%TEMP%\\nv-install.cmd\" && cmd /c \"%TEMP%\\nv-install.cmd\" && \"%LOCALAPPDATA%\\NV\\nv.exe\" install @lvls/neuralv",
+                "install": "curl.exe -fsSL https://neuralvv.org/install/nv.cmd -o \"%TEMP%\\nv-install.cmd\" && cmd /c \"%TEMP%\\nv-install.cmd\" && \"%LOCALAPPDATA%\\NV\\nv.exe\" install @lvls/neuralv",
                 "update": "\"%LOCALAPPDATA%\\NV\\nv.exe\" install @lvls/neuralv"
               }
             }
@@ -92,7 +92,7 @@
           "auto_update": false,
           "source": {
             "type": "github-branch-manifest",
-            "repo": "Perdonus/fatalerror",
+            "repo": "TPovesa/VirusBlock",
             "branch": "linux-gui-builds",
             "platform": "linux"
           },
@@ -106,14 +106,14 @@
               "updater"
             ],
             "versionSource": {
-              "repo": "Perdonus/fatalerror",
+              "repo": "TPovesa/VirusBlock",
               "branch": "linux-gui-builds",
               "platform": "linux"
             },
             "relatedSources": [
               {
                 "role": "cli",
-                "repo": "Perdonus/fatalerror",
+                "repo": "TPovesa/VirusBlock",
                 "branch": "linux-cli-builds",
                 "platform": "shell"
               }
@@ -125,8 +125,8 @@
               "ubuntu": {
                 "packageType": "deb",
                 "repoCommands": [
-                  "curl -fsSL https://sosiskibot.ru/neuralv/repo/debian/neuralv.gpg | sudo gpg --dearmor -o /usr/share/keyrings/neuralv-archive-keyring.gpg",
-                  "echo \"deb [signed-by=/usr/share/keyrings/neuralv-archive-keyring.gpg] https://sosiskibot.ru/neuralv/repo/debian stable main\" | sudo tee /etc/apt/sources.list.d/neuralv.list >/dev/null",
+                  "curl -fsSL https://neuralvv.org/repo/debian/neuralv.gpg | sudo gpg --dearmor -o /usr/share/keyrings/neuralv-archive-keyring.gpg",
+                  "echo \"deb [signed-by=/usr/share/keyrings/neuralv-archive-keyring.gpg] https://neuralvv.org/repo/debian stable main\" | sudo tee /etc/apt/sources.list.d/neuralv.list >/dev/null",
                   "sudo apt update"
                 ],
                 "installCommands": [
@@ -140,14 +140,14 @@
               "fedora": {
                 "packageType": "rpm",
                 "repoCommands": [
-                  "sudo rpm --import https://sosiskibot.ru/neuralv/repo/rpm/RPM-GPG-KEY-neuralv",
+                  "sudo rpm --import https://neuralvv.org/repo/rpm/RPM-GPG-KEY-neuralv",
                   "sudo tee /etc/yum.repos.d/neuralv.repo >/dev/null <<'EOF'",
                   "[neuralv]",
                   "name=NeuralV",
-                  "baseurl=https://sosiskibot.ru/neuralv/repo/rpm",
+                  "baseurl=https://neuralvv.org/repo/rpm",
                   "enabled=1",
                   "gpgcheck=1",
-                  "gpgkey=https://sosiskibot.ru/neuralv/repo/rpm/RPM-GPG-KEY-neuralv",
+                  "gpgkey=https://neuralvv.org/repo/rpm/RPM-GPG-KEY-neuralv",
                   "EOF"
                 ],
                 "installCommands": [
@@ -161,7 +161,7 @@
                 "packageType": "pkg.tar.zst",
                 "repoCommands": [
                   "sudo install -d /etc/pacman.d",
-                  "echo \"[neuralv]\\nServer = https://sosiskibot.ru/neuralv/repo/arch/$arch\" | sudo tee /etc/pacman.d/neuralv-mirrorlist >/dev/null",
+                  "echo \"[neuralv]\\nServer = https://neuralvv.org/repo/arch/$arch\" | sudo tee /etc/pacman.d/neuralv-mirrorlist >/dev/null",
                   "if ! grep -q \"^\\[neuralv\\]\" /etc/pacman.conf; then printf \"\\n[neuralv]\\nInclude = /etc/pacman.d/neuralv-mirrorlist\\n\" | sudo tee -a /etc/pacman.conf >/dev/null; fi",
                   "sudo pacman -Sy"
                 ],
@@ -215,7 +215,7 @@
           "install_strategy": "unix-self-binary",
           "install_root": "$HOME/.local/bin",
           "binary_name": "nv",
-          "install_command": "curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh",
+          "install_command": "curl -fsSL https://neuralvv.org/install/nv.sh | sh",
           "update_command": "nv install @lvls/nv",
           "update_policy": "nv-self",
           "auto_update": false,
@@ -241,7 +241,7 @@
           "install_strategy": "windows-self-binary",
           "install_root": "%LOCALAPPDATA%/NV",
           "binary_name": "nv.exe",
-          "install_command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1 | iex\"",
+          "install_command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://neuralvv.org/install/nv.ps1 | iex\"",
           "update_command": "%LOCALAPPDATA%\\NV\\nv.exe install @lvls/nv",
           "update_policy": "nv-self",
           "auto_update": false,

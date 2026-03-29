@@ -11,6 +11,9 @@ const API = {
   publishRelease: (creator, name) => `${API_BASE}/packages/${encodeURIComponent(creator)}/${encodeURIComponent(name)}/releases`
 };
 
+const PUBLIC_WEB_BASE = 'https://neuralvv.org';
+const RELEASE_DOWNLOAD_ENDPOINT = `${PUBLIC_WEB_BASE}/basedata/api/releases/download`;
+
 const fallbackRegistry = {
   packages: [
     {
@@ -25,16 +28,16 @@ const fallbackRegistry = {
           label: 'Linux',
           os: 'linux',
           version: '1.3.9',
-          install_command: 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh',
-          download_url: 'https://github.com/Perdonus/NV/releases/download/nv-v1.3.9/nv-linux-1.3.9.tar.gz'
+          install_command: 'curl -fsSL https://neuralvv.org/install/nv.sh | sh',
+          download_url: 'https://neuralvv.org/basedata/api/releases/download?platform=nv-linux'
         },
         {
           id: 'nv-windows',
           label: 'Windows',
           os: 'windows',
           version: '1.3.9',
-          install_command: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1 | iex"',
-          download_url: 'https://github.com/Perdonus/NV/releases/download/nv-v1.3.9/nv-1.3.9.exe'
+          install_command: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://neuralvv.org/install/nv.ps1 | iex"',
+          download_url: 'https://neuralvv.org/basedata/api/releases/download?platform=nv-windows'
         }
       ]
     },
@@ -155,8 +158,62 @@ function escapeRegExp(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function normalizeVariantPlatform(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  switch (normalized) {
+    case 'linux-shell':
+    case 'linux_shell':
+    case 'linux-cli':
+    case 'cli':
+      return 'shell';
+    default:
+      return normalized;
+  }
+}
+
+function buildPublicReleaseDownloadUrl(platform, kind = '') {
+  const params = new URLSearchParams({ platform });
+  if (kind) {
+    params.set('kind', kind);
+  }
+  return `${RELEASE_DOWNLOAD_ENDPOINT}?${params.toString()}`;
+}
+
+function buildPublicInstallUrl(scriptName) {
+  return `${PUBLIC_WEB_BASE}/install/${scriptName}`;
+}
+
+function isPublicServerUrl(value) {
+  const raw = String(value || '').trim();
+  return raw.startsWith('/') || raw.startsWith(PUBLIC_WEB_BASE);
+}
+
+function normalizePublicInstallCommand(command) {
+  return String(command || '').trim()
+    .replace(
+      /https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[^"'\s|]+\/(?:install\/)?nv\.sh/gi,
+      buildPublicInstallUrl('nv.sh')
+    )
+    .replace(
+      /https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[^"'\s|]+\/(?:install\/)?nv\.ps1/gi,
+      buildPublicInstallUrl('nv.ps1')
+    )
+    .replace(
+      /https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[^"'\s|]+\/(?:install\/)?nv\.cmd/gi,
+      buildPublicInstallUrl('nv.cmd')
+    )
+    .replace(
+      /https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[^"'\s|]+\/install\/windows\.ps1/gi,
+      buildPublicInstallUrl('windows.ps1')
+    )
+    .replace(
+      /https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[^"'\s|]+\/install\/windows\.cmd/gi,
+      buildPublicInstallUrl('windows.cmd')
+    );
+}
+
 function normalizePrimaryInstallCommand(command, packageName) {
-  const raw = String(command || '').trim();
+  const raw = normalizePublicInstallCommand(command);
   const canonicalName = canonicalPackageName(packageName);
   if (!raw || !canonicalName) return raw;
 
@@ -180,6 +237,93 @@ function normalizePrimaryInstallCommand(command, packageName) {
     });
   }
 
+  return output;
+}
+
+function resolveManagedVariantPlatform(variant, packageName = '') {
+  const metadata = variant && typeof variant.metadata === 'object' ? variant.metadata : {};
+  const source = metadata.source && typeof metadata.source === 'object' ? metadata.source : {};
+  const canonicalName = canonicalPackageName(packageName);
+  const repo = String(source.repo || metadata.source_repo || '').trim().toLowerCase();
+  const managedRepo = repo === 'tpovesa/virusblock' || repo === 'perdonus/fatalerror' || repo === 'perdonus/nv';
+  const declaredPlatform = normalizeVariantPlatform(source.platform || metadata.artifactPlatform || metadata.artifact_platform || '');
+  const os = normalizeVariantPlatform(variant?.os || '');
+
+  if (canonicalName === '@lvls/nv') {
+    if (declaredPlatform === 'nv-windows' || os === 'windows') return 'nv-windows';
+    if (declaredPlatform === 'nv-linux' || os === 'linux') return 'nv-linux';
+  }
+
+  if (canonicalName === '@lvls/neuralv') {
+    if (declaredPlatform === 'windows' || os === 'windows') return 'windows';
+    if (declaredPlatform === 'linux' || os === 'linux') return 'linux';
+    if (declaredPlatform === 'shell') return 'shell';
+  }
+
+  if (!managedRepo) {
+    return '';
+  }
+
+  if (declaredPlatform === 'nv-windows' || declaredPlatform === 'nv-linux') {
+    return declaredPlatform;
+  }
+  if (declaredPlatform === 'windows' || declaredPlatform === 'linux' || declaredPlatform === 'shell') {
+    return declaredPlatform;
+  }
+
+  return '';
+}
+
+function publicVariantDownloadUrl(platform) {
+  switch (platform) {
+    case 'windows':
+      return buildPublicReleaseDownloadUrl('windows', 'portable');
+    case 'linux':
+      return buildPublicReleaseDownloadUrl('linux');
+    case 'shell':
+      return buildPublicReleaseDownloadUrl('shell');
+    case 'nv-windows':
+      return buildPublicReleaseDownloadUrl('nv-windows');
+    case 'nv-linux':
+      return buildPublicReleaseDownloadUrl('nv-linux');
+    default:
+      return '';
+  }
+}
+
+function normalizeVariantDownloadUrl(variant, packageName = '') {
+  const fallbackUrl = String(variant?.download_url || '').trim();
+  if (fallbackUrl && isPublicServerUrl(fallbackUrl)) {
+    return fallbackUrl;
+  }
+  return publicVariantDownloadUrl(resolveManagedVariantPlatform(variant, packageName)) || fallbackUrl;
+}
+
+function normalizeVariantMetadata(metadata, packageName = '') {
+  if (!metadata || typeof metadata !== 'object') {
+    return {};
+  }
+  const output = { ...metadata };
+  const commands = output.commands && typeof output.commands === 'object'
+    ? { ...output.commands }
+    : null;
+  if (commands) {
+    if (commands.powershell && typeof commands.powershell === 'object') {
+      commands.powershell = {
+        ...commands.powershell,
+        install: normalizePrimaryInstallCommand(commands.powershell.install || '', packageName),
+        update: normalizePrimaryInstallCommand(commands.powershell.update || '', packageName)
+      };
+    }
+    if (commands.cmd && typeof commands.cmd === 'object') {
+      commands.cmd = {
+        ...commands.cmd,
+        install: normalizePrimaryInstallCommand(commands.cmd.install || '', packageName),
+        update: normalizePrimaryInstallCommand(commands.cmd.update || '', packageName)
+      };
+    }
+    output.commands = commands;
+  }
   return output;
 }
 
@@ -305,14 +449,14 @@ function normalizeVariant(variant, packageName = '') {
     label: String(variant.label || platformLabel(variant.os)).trim(),
     os: String(variant.os || 'unknown').trim().toLowerCase(),
     version: String(variant.version || '').trim(),
-    downloadUrl: String(variant.download_url || '').trim(),
+    downloadUrl: normalizeVariantDownloadUrl(variant, packageName),
     installCommand: normalizePrimaryInstallCommand(String(
       variant.install_command ||
       variant.metadata?.commands?.powershell?.install ||
       variant.metadata?.commands?.cmd?.install ||
       ''
     ).trim(), packageName),
-    metadata: variant.metadata || {}
+    metadata: normalizeVariantMetadata(variant.metadata, packageName)
   };
 }
 
@@ -345,7 +489,10 @@ function normalizeCatalogPackage(pkg) {
     homepage: String(pkg.homepage || '').trim(),
     latestVersion: String(pkg.latest_version || '—').trim(),
     platforms,
-    installCommand: normalizePrimaryInstallCommand(String(pkg.install_command || `nv install ${identity.canonicalName}`).trim(), identity.canonicalName),
+    installCommand: normalizePrimaryInstallCommand(
+      normalizePublicInstallCommand(String(pkg.install_command || `nv install ${identity.canonicalName}`).trim()),
+      identity.canonicalName
+    ),
     source: String(pkg.source || '').trim()
   };
 }

@@ -1,5 +1,6 @@
 $ErrorActionPreference = 'Stop'
-$nvScript = 'https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1'
+$baseUrl = if ([string]::IsNullOrWhiteSpace($env:NEURALV_BASE_URL)) { 'https://neuralvv.org' } else { $env:NEURALV_BASE_URL.TrimEnd('/') }
+$nvScript = "$baseUrl/install/nv.ps1"
 $nvCmdWrapper = Join-Path $env:LOCALAPPDATA 'NV\nv.cmd'
 $nvExe = Join-Path $env:LOCALAPPDATA 'NV\nv.exe'
 Invoke-RestMethod $nvScript | Invoke-Expression

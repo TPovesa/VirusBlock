@@ -7,6 +7,7 @@ const PACKAGE_REGISTRY_CACHE_TTL_MS = parseInt(process.env.PACKAGE_REGISTRY_CACH
 const PACKAGE_REGISTRY_REMOTE_URL = String(
     process.env.PACKAGE_REGISTRY_REMOTE_URL || 'https://raw.githubusercontent.com/Perdonus/NV/main/registry/packages.json'
 ).trim();
+const PUBLIC_WEB_BASE = String(process.env.PUBLIC_WEB_BASE || 'https://neuralvv.org').trim().replace(/\/+$/, '');
 const NV_HUB_STORE_PATH = path.resolve(__dirname, '../data/nv-hub.json');
 
 let registryCache = null;
@@ -49,6 +50,26 @@ function normalizePlatform(value) {
         default:
             return normalized;
     }
+}
+
+function buildPublicReleaseDownloadUrl(platform) {
+    const normalized = normalizePlatform(platform);
+    return `${PUBLIC_WEB_BASE}/basedata/api/releases/download?platform=${encodeURIComponent(normalized)}`;
+}
+
+function shouldProxyInternalDownload(source) {
+    const repo = normalizeText(source?.repo);
+    return repo === 'tpovesa/virusblock' || repo === 'perdonus/fatalerror' || repo === 'perdonus/nv';
+}
+
+function publicArtifactDownloadUrl(artifact, source) {
+    if (!artifact) {
+        return '';
+    }
+    if (shouldProxyInternalDownload(source)) {
+        return buildPublicReleaseDownloadUrl(artifact.platform);
+    }
+    return String(artifact.download_url || '').trim();
 }
 
 function semverParts(raw) {
@@ -250,7 +271,7 @@ function canonicalizeNeuralVPackage(packageDef) {
         auto_update: typeof windowsVariant?.auto_update === 'boolean' ? windowsVariant.auto_update : true,
         source: normalizeSourceDefinition(windowsVariant?.source, 'gui') || {
             type: 'github-branch-manifest',
-            repo: 'Perdonus/fatalerror',
+            repo: 'TPovesa/VirusBlock',
             branch: 'windows-builds',
             platform: 'windows',
             role: 'gui'
@@ -277,12 +298,12 @@ function canonicalizeNeuralVPackage(packageDef) {
                 ...(windowsMetadata.commands || {}),
                 powershell: {
                     ...((windowsMetadata.commands && windowsMetadata.commands.powershell) || {}),
-                    install: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1 | iex; & (Join-Path $env:LOCALAPPDATA \'NV\\nv.exe\') install @lvls/neuralv"',
+                    install: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://neuralvv.org/install/nv.ps1 | iex; & (Join-Path $env:LOCALAPPDATA \'NV\\nv.exe\') install @lvls/neuralv"',
                     update: '& (Join-Path $env:LOCALAPPDATA \'NV\\nv.exe\') install @lvls/neuralv'
                 },
                 cmd: {
                     ...((windowsMetadata.commands && windowsMetadata.commands.cmd) || {}),
-                    install: 'curl.exe -fsSL https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.cmd -o "%TEMP%\\nv-install.cmd" && cmd /c "%TEMP%\\nv-install.cmd" && "%LOCALAPPDATA%\\NV\\nv.exe" install @lvls/neuralv',
+                    install: 'curl.exe -fsSL https://neuralvv.org/install/nv.cmd -o "%TEMP%\\nv-install.cmd" && cmd /c "%TEMP%\\nv-install.cmd" && "%LOCALAPPDATA%\\NV\\nv.exe" install @lvls/neuralv',
                     update: '"%LOCALAPPDATA%\\NV\\nv.exe" install @lvls/neuralv'
                 }
             }
@@ -293,7 +314,7 @@ function canonicalizeNeuralVPackage(packageDef) {
     const relatedSources = [];
     const primaryLinuxSource = normalizeSourceDefinition(linuxVariant?.source, 'gui') || {
         type: 'github-branch-manifest',
-        repo: 'Perdonus/fatalerror',
+        repo: 'TPovesa/VirusBlock',
         branch: 'linux-gui-builds',
         platform: 'linux',
         role: 'gui'
@@ -342,7 +363,7 @@ function canonicalizeNeuralVPackage(packageDef) {
         aliases: ensureAliases(packageDef, ['neuralv']),
         title: String(packageDef?.title || 'NeuralV').trim() || 'NeuralV',
         description: String(packageDef?.description || 'Клиент защиты NeuralV для Windows и Linux.').trim(),
-        homepage: String(packageDef?.homepage || 'https://sosiskibot.ru/neuralv/').trim(),
+        homepage: String(packageDef?.homepage || 'https://neuralvv.org/').trim(),
         variants: [windowsVariantRecord, linuxVariantRecord]
     };
 }
@@ -366,7 +387,7 @@ function canonicalizeNvPackage(packageDef) {
                 install_strategy: String(linuxVariant?.install_strategy || 'unix-self-binary').trim(),
                 install_root: String(linuxVariant?.install_root || '$HOME/.local/bin').trim(),
                 binary_name: String(linuxVariant?.binary_name || 'nv').trim(),
-                install_command: String(linuxVariant?.install_command || 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh').trim(),
+                install_command: String(linuxVariant?.install_command || 'curl -fsSL https://neuralvv.org/install/nv.sh | sh').trim(),
                 update_command: 'nv install @lvls/nv',
                 update_policy: String(linuxVariant?.update_policy || 'nv-self').trim() || 'nv-self',
                 auto_update: typeof linuxVariant?.auto_update === 'boolean' ? linuxVariant.auto_update : false,
@@ -391,7 +412,7 @@ function canonicalizeNvPackage(packageDef) {
                 install_strategy: String(windowsVariant?.install_strategy || 'windows-self-binary').trim(),
                 install_root: String(windowsVariant?.install_root || '%LOCALAPPDATA%/NV').trim(),
                 binary_name: String(windowsVariant?.binary_name || 'nv.exe').trim(),
-                install_command: String(windowsVariant?.install_command || 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1 | iex"').trim(),
+                install_command: String(windowsVariant?.install_command || 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://neuralvv.org/install/nv.ps1 | iex"').trim(),
                 update_command: '%LOCALAPPDATA%\\NV\\nv.exe install @lvls/nv',
                 update_policy: String(windowsVariant?.update_policy || 'nv-self').trim() || 'nv-self',
                 auto_update: typeof windowsVariant?.auto_update === 'boolean' ? windowsVariant.auto_update : false,
@@ -588,7 +609,7 @@ function buildComponentArtifacts(primarySource, primaryArtifact, relatedArtifact
             role: String(source?.role || 'primary').trim() || 'primary',
             platform: artifact.platform,
             version: artifact.version,
-            download_url: artifact.download_url,
+            download_url: publicArtifactDownloadUrl(artifact, source),
             file_name: artifact.file_name,
             sha256: artifact.sha256,
             channel: artifact.channel
@@ -623,7 +644,7 @@ function buildVariantRecord(packageDef, definition, primaryArtifact, primarySour
         version: primaryArtifact?.version || '',
         channel: primaryArtifact?.channel || 'main',
         file_name: primaryArtifact?.file_name || '',
-        download_url: primaryArtifact?.download_url || '',
+        download_url: publicArtifactDownloadUrl(primaryArtifact, primarySource),
         install_command: normalizePrimaryInstallCommand(
             String(definition.install_command || primaryArtifact?.install_command || '').trim(),
             packageDef.name
@@ -658,7 +679,7 @@ function buildVariantRecord(packageDef, definition, primaryArtifact, primarySour
                 role: entry.source.role,
                 platform: entry.artifact.platform,
                 version: entry.artifact.version,
-                download_url: entry.artifact.download_url,
+                download_url: publicArtifactDownloadUrl(entry.artifact, entry.source),
                 file_name: entry.artifact.file_name,
                 sha256: entry.artifact.sha256,
                 manifest_url: manifestUrl(entry.source)

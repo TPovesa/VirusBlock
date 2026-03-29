@@ -1,4 +1,6 @@
 const express = require('express');
+const path = require('path');
+const { Readable } = require('stream');
 const router = express.Router();
 const { getReleaseManifest } = require('../services/releaseManifestService');
 
@@ -31,6 +33,79 @@ function normalizePlatform(input) {
             return 'site';
         default:
             return value;
+    }
+}
+
+function normalizeKind(input) {
+    const value = String(input || '').trim().toLowerCase();
+    switch (value) {
+        case 'setup':
+        case 'portable':
+        case 'daemon':
+        case 'cli':
+        case 'artifact':
+            return value;
+        default:
+            return '';
+    }
+}
+
+function firstNonEmpty(...values) {
+    for (const value of values) {
+        const text = String(value || '').trim();
+        if (text) {
+            return text;
+        }
+    }
+    return '';
+}
+
+function isLocalProxyUrl(value) {
+    const url = String(value || '').trim();
+    return url.includes('/basedata/api/releases/download');
+}
+
+function resolveDownloadTarget(artifact, kind = '') {
+    const metadata = artifact?.metadata && typeof artifact.metadata === 'object'
+        ? artifact.metadata
+        : {};
+
+    const pick = (...candidates) => {
+        const selected = firstNonEmpty(...candidates);
+        return selected && !isLocalProxyUrl(selected) ? selected : '';
+    };
+
+    switch (kind) {
+        case 'setup':
+            return {
+                url: pick(metadata.sourceSetupUrl, metadata.setup_source_url),
+                fileName: firstNonEmpty(metadata.setupFileName, artifact?.metadata?.setupFileName, 'neuralv-setup.exe')
+            };
+        case 'portable':
+            return {
+                url: pick(metadata.sourcePortableUrl, metadata.portable_source_url, metadata.sourceDownloadUrl),
+                fileName: firstNonEmpty(metadata.portableFileName, artifact?.file_name, 'download.bin')
+            };
+        case 'daemon':
+            return {
+                url: pick(metadata.sourceDaemonUrl, metadata.daemon_source_url),
+                fileName: firstNonEmpty(metadata.daemonFileName, 'download.bin')
+            };
+        case 'cli':
+            return {
+                url: pick(metadata.sourceStableCliArtifactUrl, metadata.sourceCliArtifactUrl, metadata.stable_cli_source_url),
+                fileName: firstNonEmpty(metadata.cliFileName, 'download.bin')
+            };
+        case 'artifact':
+            return {
+                url: pick(metadata.sourceStableArtifactUrl, metadata.stable_artifact_source_url, metadata.sourceDownloadUrl),
+                fileName: firstNonEmpty(artifact?.file_name, 'download.bin')
+            };
+        default:
+            return {
+                url: pick(metadata.sourceDownloadUrl, metadata.source_download_url, artifact?.download_url),
+                fileName: firstNonEmpty(artifact?.file_name, 'download.bin')
+            };
     }
 }
 
@@ -76,6 +151,66 @@ router.get('/manifest', async (req, res) => {
     } catch (error) {
         console.error('Release manifest error:', error);
         return res.status(500).json({ error: 'Release manifest is unavailable' });
+    }
+});
+
+router.get('/download', async (req, res) => {
+    try {
+        const manifest = await getReleaseManifest();
+        const artifacts = Array.isArray(manifest.artifacts)
+            ? manifest.artifacts
+            : Object.values(manifest.artifacts || {});
+        const platform = normalizePlatform(req.query.platform);
+        const kind = normalizeKind(req.query.kind);
+
+        if (!platform) {
+            return res.status(400).json({ error: 'platform is required' });
+        }
+
+        const artifact = artifacts.find((item) => String(item?.platform || '').trim().toLowerCase() === platform);
+        if (!artifact) {
+            return res.status(404).json({ error: 'artifact not found' });
+        }
+
+        const target = resolveDownloadTarget(artifact, kind);
+        if (!target.url) {
+            return res.status(404).json({ error: 'download target unavailable' });
+        }
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60000);
+        let upstream;
+        try {
+            upstream = await fetch(target.url, {
+                method: 'GET',
+                redirect: 'follow',
+                signal: controller.signal,
+                headers: { 'User-Agent': 'NeuralVBackend/1.0' }
+            });
+        } finally {
+            clearTimeout(timeout);
+        }
+
+        if (!upstream.ok || !upstream.body) {
+            return res.status(502).json({ error: 'upstream download failed' });
+        }
+
+        const upstreamType = upstream.headers.get('content-type');
+        const upstreamLength = upstream.headers.get('content-length');
+        const upstreamDisposition = upstream.headers.get('content-disposition');
+        const finalFileName = target.fileName || path.basename(new URL(target.url).pathname) || 'download.bin';
+
+        res.set('Cache-Control', 'no-store, max-age=0');
+        res.set('Content-Type', upstreamType || 'application/octet-stream');
+        if (upstreamLength) {
+            res.set('Content-Length', upstreamLength);
+        }
+        res.set('Content-Disposition', upstreamDisposition || `attachment; filename="${finalFileName.replace(/"/g, '')}"`);
+
+        Readable.fromWeb(upstream.body).pipe(res);
+    } catch (error) {
+        console.error('Release download proxy error:', error);
+        return res.status(500).json({ error: 'download proxy failed' });
     }
 });
 

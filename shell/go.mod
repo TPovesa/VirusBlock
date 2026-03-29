@@ -1,4 +1,4 @@
-module github.com/perdonus/neuralv-shell
+module github.com/TPovesa/VirusBlock/shell
 
 go 1.22
 

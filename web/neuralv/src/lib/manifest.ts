@@ -3,6 +3,12 @@ export type ArtifactMetadata = Record<string, unknown> & {
   source_branch?: string;
   source_label?: string;
   daemonUrl?: string;
+  setupUrl?: string;
+  portableUrl?: string;
+  installScriptPs1?: string;
+  installScriptCmd?: string;
+  stableArtifactUrl?: string;
+  stableCliArtifactUrl?: string;
 };
 
 export type ReleaseArtifact = {
@@ -28,6 +34,9 @@ export type ReleaseManifest = {
   installCommand?: string;
   artifacts: ReleaseArtifact[];
 };
+
+const PUBLIC_WEB_BASE = 'https://neuralvv.org';
+const RELEASE_DOWNLOAD_ENDPOINT = `${PUBLIC_WEB_BASE}/basedata/api/releases/download`;
 
 function cleanText(value: unknown): string | null {
   if (typeof value === 'string') {
@@ -114,36 +123,155 @@ function readRequirementCandidate(value: unknown): string[] {
   return [];
 }
 
-function stableArtifactDownloadUrl(
+function normalizeArtifactPlatform(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  switch (normalized) {
+    case 'linux_shell':
+    case 'linux-shell':
+    case 'linux-cli':
+    case 'cli':
+      return 'shell';
+    case 'website':
+      return 'site';
+    default:
+      return normalized;
+  }
+}
+
+function buildPublicReleaseDownloadUrl(platform: string, kind?: string): string {
+  const params = new URLSearchParams({ platform });
+  if (kind) {
+    params.set('kind', kind);
+  }
+  return `${RELEASE_DOWNLOAD_ENDPOINT}?${params.toString()}`;
+}
+
+function buildPublicInstallUrl(scriptName: string): string {
+  return `${PUBLIC_WEB_BASE}/install/${scriptName}`;
+}
+
+function isPublicServerUrl(value: string): boolean {
+  return value.startsWith('/') || value.startsWith(PUBLIC_WEB_BASE);
+}
+
+function publicArtifactDownloadUrl(platform: string, kind = ''): string | undefined {
+  const normalizedPlatform = normalizeArtifactPlatform(platform);
+  switch (normalizedPlatform) {
+    case 'windows':
+      return buildPublicReleaseDownloadUrl('windows', kind || 'portable');
+    case 'linux':
+      return buildPublicReleaseDownloadUrl('linux', kind);
+    case 'shell':
+      return buildPublicReleaseDownloadUrl('shell', kind);
+    case 'nv-windows':
+      return buildPublicReleaseDownloadUrl('nv-windows', kind);
+    case 'nv-linux':
+      return buildPublicReleaseDownloadUrl('nv-linux', kind);
+    default:
+      return undefined;
+  }
+}
+
+function stableArtifactSupplementaryUrl(
   platform: string,
-  metadata: ArtifactMetadata | undefined,
+  kind: string,
   fallbackUrl: string | undefined
 ): string | undefined {
-  if (fallbackUrl && fallbackUrl.includes('/releases/download/')) {
-    return fallbackUrl;
+  const normalizedFallback = cleanText(fallbackUrl);
+  if (normalizedFallback && isPublicServerUrl(normalizedFallback)) {
+    return normalizedFallback;
   }
 
-  const branch = typeof metadata?.source_branch === 'string' ? metadata.source_branch : '';
-  if (!branch) {
-    return fallbackUrl;
+  const publicUrl = publicArtifactDownloadUrl(platform, kind);
+  if (publicUrl) {
+    return publicUrl;
   }
 
-  const base = `https://raw.githubusercontent.com/Perdonus/fatalerror/${branch}`;
-  const releaseTag = typeof metadata?.releaseTag === 'string' ? metadata.releaseTag : '';
-  switch (platform) {
-    case 'windows':
-      return releaseTag
-        ? `https://github.com/Perdonus/fatalerror/releases/download/${releaseTag}/neuralv-windows.zip`
-        : fallbackUrl;
-    case 'linux':
-      return `${base}/linux/neuralv-linux.tar.gz`;
-    case 'shell':
-      return `${base}/shell/neuralv-shell-linux.tar.gz`;
-    case 'android':
-      return `${base}/android/neuralv-android-release.apk`;
-    default:
-      return fallbackUrl;
+  return normalizedFallback ?? undefined;
+}
+
+function normalizePublicInstallCommand(command: string | undefined): string | undefined {
+  const raw = cleanText(command);
+  if (!raw) {
+    return undefined;
   }
+
+  return raw
+    .replace(
+      /https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[^"'\s|]+\/(?:install\/)?nv\.sh/gi,
+      buildPublicInstallUrl('nv.sh')
+    )
+    .replace(
+      /https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[^"'\s|]+\/(?:install\/)?nv\.ps1/gi,
+      buildPublicInstallUrl('nv.ps1')
+    )
+    .replace(
+      /https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[^"'\s|]+\/(?:install\/)?nv\.cmd/gi,
+      buildPublicInstallUrl('nv.cmd')
+    )
+    .replace(
+      /https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[^"'\s|]+\/install\/windows\.ps1/gi,
+      buildPublicInstallUrl('windows.ps1')
+    )
+    .replace(
+      /https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[^"'\s|]+\/install\/windows\.cmd/gi,
+      buildPublicInstallUrl('windows.cmd')
+    );
+}
+
+function normalizeArtifactMetadata(
+  platform: string,
+  metadata: ArtifactMetadata | undefined
+): ArtifactMetadata | undefined {
+  if (!metadata) {
+    return metadata;
+  }
+
+  const next = { ...metadata } as ArtifactMetadata;
+  if (platform === 'windows' || typeof next.setupUrl === 'string') {
+    next.setupUrl = stableArtifactSupplementaryUrl('windows', 'setup', cleanText(next.setupUrl) ?? undefined);
+  }
+  if (platform === 'windows' || typeof next.portableUrl === 'string') {
+    next.portableUrl = stableArtifactSupplementaryUrl('windows', 'portable', cleanText(next.portableUrl) ?? undefined);
+  }
+  if (platform === 'windows' || typeof next.installScriptPs1 === 'string') {
+    next.installScriptPs1 = buildPublicInstallUrl('windows.ps1');
+  }
+  if (platform === 'windows' || typeof next.installScriptCmd === 'string') {
+    next.installScriptCmd = buildPublicInstallUrl('windows.cmd');
+  }
+  if (platform === 'linux' || typeof next.stableArtifactUrl === 'string') {
+    next.stableArtifactUrl = stableArtifactSupplementaryUrl('linux', '', cleanText(next.stableArtifactUrl) ?? undefined);
+  }
+  if (platform === 'shell' || typeof next.stableArtifactUrl === 'string') {
+    next.stableArtifactUrl = stableArtifactSupplementaryUrl('shell', '', cleanText(next.stableArtifactUrl) ?? undefined);
+  }
+  if (platform === 'linux' || typeof next.stableCliArtifactUrl === 'string') {
+    next.stableCliArtifactUrl = stableArtifactSupplementaryUrl('shell', '', cleanText(next.stableCliArtifactUrl) ?? undefined);
+  }
+  if (platform === 'linux' || platform === 'shell' || typeof next.daemonUrl === 'string') {
+    next.daemonUrl = stableArtifactSupplementaryUrl('shell', 'daemon', cleanText(next.daemonUrl) ?? undefined);
+  }
+
+  return next;
+}
+
+function stableArtifactDownloadUrl(
+  platform: string,
+  _metadata: ArtifactMetadata | undefined,
+  fallbackUrl: string | undefined
+): string | undefined {
+  const normalizedFallback = cleanText(fallbackUrl);
+  if (normalizedFallback && isPublicServerUrl(normalizedFallback)) {
+    return normalizedFallback;
+  }
+
+  const publicUrl = publicArtifactDownloadUrl(platform);
+  if (publicUrl) {
+    return publicUrl;
+  }
+
+  return normalizedFallback ?? undefined;
 }
 
 export const fallbackManifest: ReleaseManifest = {
@@ -195,11 +323,11 @@ export async function fetchReleaseManifest(signal?: AbortSignal, platform?: stri
   const artifacts = rawArtifacts
     .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
     .map((item) => {
-      const platformRaw = String(item.platform ?? '').toLowerCase();
-      const platform = platformRaw === 'linux_shell' ? 'shell' : platformRaw === 'website' ? 'site' : platformRaw;
-      const metadata = item.metadata && typeof item.metadata === 'object'
+      const platform = normalizeArtifactPlatform(String(item.platform ?? ''));
+      const rawMetadata = item.metadata && typeof item.metadata === 'object'
         ? (item.metadata as ArtifactMetadata)
         : undefined;
+      const metadata = normalizeArtifactMetadata(platform, rawMetadata);
       const versionedDownloadUrl =
         typeof item.downloadUrl === 'string'
           ? item.downloadUrl
@@ -219,9 +347,11 @@ export async function fetchReleaseManifest(signal?: AbortSignal, platform?: stri
                 ? item.file_name
                 : (typeof item.artifact_name === 'string' ? item.artifact_name : undefined)),
         installCommand:
-          typeof item.installCommand === 'string'
-            ? item.installCommand
-            : (typeof item.install_command === 'string' ? item.install_command : undefined),
+          normalizePublicInstallCommand(
+            typeof item.installCommand === 'string'
+              ? item.installCommand
+              : (typeof item.install_command === 'string' ? item.install_command : undefined)
+          ),
         notes: Array.isArray(item.notes)
           ? item.notes.filter((note): note is string => typeof note === 'string')
           : undefined,
@@ -234,16 +364,40 @@ export async function fetchReleaseManifest(signal?: AbortSignal, platform?: stri
       } satisfies ReleaseArtifact;
     });
 
+  const manifestPlatform = typeof data.platform === 'string'
+    ? normalizeArtifactPlatform(data.platform)
+    : undefined;
+  const selectedArtifact = manifestPlatform
+    ? artifacts.find((artifact) => artifact.platform === manifestPlatform)
+    : undefined;
+
   return {
-    platform: typeof data.platform === 'string' ? data.platform : undefined,
+    platform: manifestPlatform,
     version: typeof data.version === 'string' ? data.version : undefined,
-    downloadUrl: typeof data.download_url === 'string' ? data.download_url : undefined,
-    setupUrl: typeof data.setupUrl === 'string' ? data.setupUrl : undefined,
-    portableUrl: typeof data.portableUrl === 'string' ? data.portableUrl : undefined,
+    downloadUrl:
+      stableArtifactDownloadUrl(
+        manifestPlatform ?? '',
+        selectedArtifact?.metadata,
+        typeof data.download_url === 'string' ? data.download_url : undefined
+      ) ?? selectedArtifact?.downloadUrl,
+    setupUrl:
+      stableArtifactSupplementaryUrl(
+        manifestPlatform ?? '',
+        'setup',
+        typeof data.setupUrl === 'string' ? data.setupUrl : undefined
+      ) ?? (typeof selectedArtifact?.metadata?.setupUrl === 'string' ? selectedArtifact.metadata.setupUrl : undefined),
+    portableUrl:
+      stableArtifactSupplementaryUrl(
+        manifestPlatform ?? '',
+        'portable',
+        typeof data.portableUrl === 'string' ? data.portableUrl : undefined
+      ) ?? (typeof selectedArtifact?.metadata?.portableUrl === 'string' ? selectedArtifact.metadata.portableUrl : undefined),
     installCommand:
-      typeof data.install_command === 'string'
-        ? data.install_command
-        : (typeof data.installCommand === 'string' ? data.installCommand : undefined),
+      normalizePublicInstallCommand(
+        typeof data.install_command === 'string'
+          ? data.install_command
+          : (typeof data.installCommand === 'string' ? data.installCommand : undefined)
+      ) ?? selectedArtifact?.installCommand,
     generatedAt:
       (typeof data.generatedAt === 'string' || typeof data.generatedAt === 'number')
         ? data.generatedAt

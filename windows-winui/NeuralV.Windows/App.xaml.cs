@@ -414,7 +414,7 @@ public partial class App : Application
         }
 
         return query.Count == 0
-            ? "https://sosiskibot.ru/neuralv/reset-password"
-            : $"https://sosiskibot.ru/neuralv/reset-password?{string.Join("&", query)}";
+            ? "https://neuralvv.org/reset-password"
+            : $"https://neuralvv.org/reset-password?{string.Join("&", query)}";
     }
 }

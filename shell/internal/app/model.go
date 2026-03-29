@@ -13,9 +13,9 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/perdonus/neuralv-shell/internal/api"
-	"github.com/perdonus/neuralv-shell/internal/logging"
-	"github.com/perdonus/neuralv-shell/internal/session"
+	"github.com/TPovesa/VirusBlock/shell/internal/api"
+	"github.com/TPovesa/VirusBlock/shell/internal/logging"
+	"github.com/TPovesa/VirusBlock/shell/internal/session"
 )
 
 type screen int

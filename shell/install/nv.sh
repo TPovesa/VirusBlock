@@ -1,3 +1,3 @@
 #!/usr/bin/env sh
 set -eu
-exec sh -c 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/main/install/nv.sh | sh'
+exec sh -c 'curl -fsSL https://neuralvv.org/install/nv.sh | sh'
