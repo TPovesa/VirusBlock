@@ -18,6 +18,16 @@ function normalizeSourceRepo(repo) {
     return normalizeText(value) === 'perdonus/fatalerror' ? 'TPovesa/VirusBlock' : value;
 }
 
+function normalizeHomepageUrl(value, fallback) {
+    const text = String(value || '').trim();
+    if (!text) {
+        return fallback;
+    }
+    return text
+        .replace(/^https?:\/\/sosiskibot\.ru\/neuralv\/?$/i, fallback.replace(/\/+$/, '') + '/')
+        .replace(/^https?:\/\/sosiskibot\.ru\/neuralv\/nv\/?$/i, 'https://neuralvv.org/nv/');
+}
+
 function loadLocalRegistryConfig() {
     const content = fs.readFileSync(PACKAGE_REGISTRY_PATH, 'utf8');
     const parsed = JSON.parse(content);
@@ -368,7 +378,7 @@ function canonicalizeNeuralVPackage(packageDef) {
         aliases: ensureAliases(packageDef, ['neuralv']),
         title: String(packageDef?.title || 'NeuralV').trim() || 'NeuralV',
         description: String(packageDef?.description || 'Клиент защиты NeuralV для Windows и Linux.').trim(),
-        homepage: String(packageDef?.homepage || 'https://neuralvv.org/').trim(),
+        homepage: normalizeHomepageUrl(packageDef?.homepage, 'https://neuralvv.org/'),
         variants: [windowsVariantRecord, linuxVariantRecord]
     };
 }
@@ -382,7 +392,7 @@ function canonicalizeNvPackage(packageDef) {
         aliases: ensureAliases(packageDef, ['nv']),
         title: String(packageDef?.title || 'NV').trim() || 'NV',
         description: String(packageDef?.description || 'Пакетный менеджер NeuralV.').trim(),
-        homepage: String(packageDef?.homepage || 'https://neuralvv.org/nv/').trim(),
+        homepage: normalizeHomepageUrl(packageDef?.homepage, 'https://neuralvv.org/nv/'),
         variants: [
             {
                 id: String(linuxVariant?.id || 'nv-linux').trim() || 'nv-linux',
