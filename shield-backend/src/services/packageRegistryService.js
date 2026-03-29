@@ -13,6 +13,11 @@ const NV_HUB_STORE_PATH = path.resolve(__dirname, '../data/nv-hub.json');
 let registryCache = null;
 let registryCacheExpiresAt = 0;
 
+function normalizeSourceRepo(repo) {
+    const value = String(repo || '').trim();
+    return normalizeText(value) === 'perdonus/fatalerror' ? 'TPovesa/VirusBlock' : value;
+}
+
 function loadLocalRegistryConfig() {
     const content = fs.readFileSync(PACKAGE_REGISTRY_PATH, 'utf8');
     const parsed = JSON.parse(content);
@@ -89,7 +94,7 @@ function compareSemver(left, right) {
 }
 
 function manifestUrl(source) {
-    return `https://raw.githubusercontent.com/${source.repo}/${source.branch}/manifest.json`;
+    return `https://raw.githubusercontent.com/${normalizeSourceRepo(source.repo)}/${source.branch}/manifest.json`;
 }
 
 async function fetchJson(url) {
@@ -215,7 +220,7 @@ function normalizeSourceDefinition(source, role = 'primary') {
     if (!source || typeof source !== 'object') {
         return null;
     }
-    const repo = String(source.repo || '').trim();
+    const repo = normalizeSourceRepo(source.repo);
     const branch = String(source.branch || '').trim();
     const platform = normalizePlatform(source.platform);
     if (!repo || !branch || !platform) {
@@ -508,19 +513,24 @@ function normalizeArtifact(item) {
     if (!item || typeof item !== 'object') return null;
     const platform = normalizePlatform(item.platform || item.platform_id || item.id);
     if (!platform) return null;
+    const rewriteLegacyRepo = (value) => String(value || '')
+        .replace(/github\.com\/Perdonus\/fatalerror/gi, 'github.com/TPovesa/VirusBlock')
+        .replace(/raw\.githubusercontent\.com\/Perdonus\/fatalerror/gi, 'raw.githubusercontent.com/TPovesa/VirusBlock');
     return {
         platform,
         channel: String(item.channel || '').trim() || 'main',
         version: String(item.version || '').trim() || 'pending',
         sha256: String(item.sha256 || '').trim(),
-        download_url: String(item.download_url || item.downloadUrl || '').trim(),
+        download_url: rewriteLegacyRepo(String(item.download_url || item.downloadUrl || '').trim()),
         install_command: String(item.install_command || item.installCommand || '').trim(),
         update_command: String(item.update_command || item.updateCommand || '').trim(),
         update_policy: String(item.update_policy || item.updatePolicy || '').trim(),
         auto_update: typeof item.auto_update === 'boolean' ? item.auto_update : undefined,
         file_name: String(item.file_name || item.fileName || '').trim(),
         notes: Array.isArray(item.notes) ? item.notes.map((entry) => String(entry).trim()).filter(Boolean) : [],
-        metadata: item.metadata && typeof item.metadata === 'object' ? { ...item.metadata } : {}
+        metadata: item.metadata && typeof item.metadata === 'object'
+            ? JSON.parse(rewriteLegacyRepo(JSON.stringify(item.metadata)))
+            : {}
     };
 }
 

@@ -54,8 +54,13 @@ const PLATFORM_SOURCE_OF_TRUTH = Object.freeze({
     site: { repo: PUBLIC_REPOSITORY, branch: 'site-builds' }
 });
 
+function normalizeSourceRepo(repo) {
+    const value = String(repo || '').trim();
+    return value.toLowerCase() === 'perdonus/fatalerror' ? PUBLIC_REPOSITORY : value;
+}
+
 function rawBaseForSource(source) {
-    return `https://raw.githubusercontent.com/${source.repo}/${source.branch}`;
+    return `https://raw.githubusercontent.com/${normalizeSourceRepo(source.repo)}/${source.branch}`;
 }
 
 function buildPublicReleaseDownloadUrl(platform, kind = '') {
@@ -110,7 +115,7 @@ function branchManifestUrl(source, { bust = false } = {}) {
 }
 
 function branchManifestApiUrl(source) {
-    return `https://api.github.com/repos/${source.repo}/contents/manifest.json?ref=${encodeURIComponent(source.branch)}`;
+    return `https://api.github.com/repos/${normalizeSourceRepo(source.repo)}/contents/manifest.json?ref=${encodeURIComponent(source.branch)}`;
 }
 
 function getPlatformSourceOfTruth(platform) {
@@ -121,7 +126,7 @@ function sourceMatches(left, right) {
     if (!left || !right) {
         return false;
     }
-    return String(left.repo || '').trim() === String(right.repo || '').trim()
+    return String(normalizeSourceRepo(left.repo) || '').trim() === String(normalizeSourceRepo(right.repo) || '').trim()
         && String(left.branch || '').trim() === String(right.branch || '').trim();
 }
 
@@ -227,7 +232,7 @@ function buildBranchSources(registryPackages) {
     );
 
     for (const mapping of listPackageVariantSourceMappings(registryPackages)) {
-        const repo = String(mapping?.source?.repo || '').trim();
+        const repo = normalizeSourceRepo(mapping?.source?.repo || '');
         const branch = String(mapping?.source?.branch || '').trim();
         const platform = normalizeReleasePlatform(mapping?.source?.platform);
         if (!repo || !branch || !platform) {
@@ -514,7 +519,7 @@ function normalizeArtifact(item, source) {
             : [],
         metadata: {
             ...metadata,
-            source_repo: metadata.source_repo || source.repo,
+            source_repo: normalizeSourceRepo(metadata.source_repo || source.repo),
             source_branch: metadata.source_branch || source.branch,
             source_label: metadata.source_label || source.label,
             source_of_truth: isSourceOfTruthForPlatform(platform, source),
@@ -703,7 +708,7 @@ function attachRegistryMetadata(artifact, registryMatch) {
     const autoUpdate = typeof variantDef.auto_update === 'boolean'
         ? variantDef.auto_update
         : (typeof artifact.auto_update === 'boolean' ? artifact.auto_update : updatePolicy === 'startup-auto');
-    const sourceRepo = String(source?.repo || variantDef?.source?.repo || artifact?.metadata?.source_repo || '').trim();
+    const sourceRepo = normalizeSourceRepo(source?.repo || variantDef?.source?.repo || artifact?.metadata?.source_repo || '');
     const sourceBranch = String(source?.branch || variantDef?.source?.branch || artifact?.metadata?.source_branch || '').trim();
     const resolvePathTemplate = (relativePath) => String(relativePath || '')
         .trim()

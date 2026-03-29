@@ -1,8 +1,10 @@
 const express = require('express');
+const { spawn } = require('child_process');
 const path = require('path');
 const { Readable } = require('stream');
 const router = express.Router();
 const { getReleaseManifest } = require('../services/releaseManifestService');
+const REPO_ROOT = path.resolve(__dirname, '../../..');
 
 function normalizePlatform(input) {
     const value = String(input || '').trim().toLowerCase();
@@ -63,6 +65,82 @@ function firstNonEmpty(...values) {
 function isLocalProxyUrl(value) {
     const url = String(value || '').trim();
     return url.includes('/basedata/api/releases/download');
+}
+
+function normalizeRepoName(value) {
+    const repo = String(value || '').trim();
+    return repo.toLowerCase() === 'perdonus/fatalerror' ? 'TPovesa/VirusBlock' : repo;
+}
+
+function parseInternalRawUrl(value) {
+    const url = String(value || '').trim();
+    const matched = url.match(/^https:\/\/raw\.githubusercontent\.com\/([^/]+\/[^/]+)\/([^/]+)\/(.+)$/i);
+    if (!matched) {
+        return null;
+    }
+
+    const repo = normalizeRepoName(matched[1]);
+    if (repo !== 'TPovesa/VirusBlock') {
+        return null;
+    }
+
+    return {
+        repo,
+        branch: matched[2],
+        filePath: matched[3].replace(/^\/+/, '')
+    };
+}
+
+function contentTypeForFileName(fileName) {
+    const lower = String(fileName || '').toLowerCase();
+    if (lower.endsWith('.apk')) return 'application/vnd.android.package-archive';
+    if (lower.endsWith('.zip')) return 'application/zip';
+    if (lower.endsWith('.tar.gz') || lower.endsWith('.tgz')) return 'application/gzip';
+    if (lower.endsWith('.exe')) return 'application/vnd.microsoft.portable-executable';
+    return 'application/octet-stream';
+}
+
+function gitRefForBranch(branch) {
+    return `origin/${String(branch || '').trim()}`;
+}
+
+function streamGitBlob(branch, filePath, res, fileName) {
+    return new Promise((resolve, reject) => {
+        const rev = `${gitRefForBranch(branch)}:${filePath}`;
+        const sizeProc = spawn('git', ['cat-file', '-s', rev], { cwd: REPO_ROOT });
+        let sizeOutput = '';
+        let stderr = '';
+
+        sizeProc.stdout.on('data', (chunk) => { sizeOutput += chunk.toString(); });
+        sizeProc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+        sizeProc.on('error', reject);
+        sizeProc.on('close', (sizeCode) => {
+            if (sizeCode !== 0) {
+                reject(new Error(stderr || `git cat-file failed for ${rev}`));
+                return;
+            }
+
+            const blobProc = spawn('git', ['show', rev], { cwd: REPO_ROOT });
+            blobProc.on('error', reject);
+            blobProc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+            blobProc.on('close', (blobCode) => {
+                if (blobCode !== 0) {
+                    reject(new Error(stderr || `git show failed for ${rev}`));
+                    return;
+                }
+                resolve();
+            });
+
+            res.set('Cache-Control', 'no-store, max-age=0');
+            res.set('Content-Type', contentTypeForFileName(fileName));
+            const size = parseInt(sizeOutput.trim(), 10);
+            if (Number.isFinite(size) && size >= 0) {
+                res.set('Content-Length', String(size));
+            }
+            res.set('Content-Disposition', `attachment; filename="${String(fileName || path.basename(filePath)).replace(/"/g, '')}"`);
+            blobProc.stdout.pipe(res);
+        });
+    });
 }
 
 function resolveDownloadTarget(artifact, kind = '') {
@@ -175,6 +253,12 @@ router.get('/download', async (req, res) => {
         const target = resolveDownloadTarget(artifact, kind);
         if (!target.url) {
             return res.status(404).json({ error: 'download target unavailable' });
+        }
+
+        const internalRaw = parseInternalRawUrl(target.url);
+        if (internalRaw) {
+            await streamGitBlob(internalRaw.branch, internalRaw.filePath, res, target.fileName);
+            return;
         }
 
         const controller = new AbortController();
