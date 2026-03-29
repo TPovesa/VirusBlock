@@ -54,9 +54,41 @@ const PLATFORM_SOURCE_OF_TRUTH = Object.freeze({
     site: { repo: PUBLIC_REPOSITORY, branch: 'site-builds' }
 });
 
+function semverParts(raw) {
+    const matched = String(raw || '').trim().match(/^(\d+)\.(\d+)\.(\d+)$/);
+    return matched ? matched.slice(1).map((value) => Number(value)) : null;
+}
+
+function compareSemver(left, right) {
+    const a = semverParts(left);
+    const b = semverParts(right);
+    if (!a || !b) {
+        return 0;
+    }
+    for (let index = 0; index < 3; index += 1) {
+        if (a[index] !== b[index]) {
+            return a[index] > b[index] ? 1 : -1;
+        }
+    }
+    return 0;
+}
+
 function normalizeSourceRepo(repo) {
     const value = String(repo || '').trim();
     return value.toLowerCase() === 'perdonus/fatalerror' ? PUBLIC_REPOSITORY : value;
+}
+
+function rewriteLegacyInternalUrls(value) {
+    return String(value || '')
+        .replace(/github\.com\/Perdonus\/fatalerror/gi, `github.com/${PUBLIC_REPOSITORY}`)
+        .replace(/raw\.githubusercontent\.com\/Perdonus\/fatalerror/gi, `raw.githubusercontent.com/${PUBLIC_REPOSITORY}`);
+}
+
+function rewriteLegacyInternalObject(value) {
+    if (!value || typeof value !== 'object') {
+        return value;
+    }
+    return JSON.parse(rewriteLegacyInternalUrls(JSON.stringify(value)));
 }
 
 function rawBaseForSource(source) {
@@ -80,7 +112,7 @@ function buildPublishedSourceUrl(source, relativePath) {
         const [, tag, ...rest] = cleanPath.split('/');
         const fileName = rest.join('/');
         return tag && fileName
-            ? `https://github.com/${effectiveSource.repo}/releases/download/${tag}/${fileName}`
+            ? `https://github.com/${normalizeSourceRepo(effectiveSource.repo)}/releases/download/${tag}/${fileName}`
             : '';
     }
     const rawBase = rawBaseForSource(effectiveSource);
@@ -291,7 +323,7 @@ function fallbackArtifacts() {
             channel: 'beta',
             version: PLATFORM_FALLBACK_VERSIONS.windows,
             sha256: '',
-            download_url: `https://github.com/${PUBLIC_REPOSITORY}/releases/download/windows-v${PLATFORM_FALLBACK_VERSIONS.windows}/neuralv-windows.zip`,
+            download_url: buildPublicReleaseDownloadUrl('windows'),
             install_command: 'winget install --id NeuralV.NeuralV -e',
             update_command: '%LOCALAPPDATA%\\NV\\nv.exe install @lvls/neuralv',
             update_policy: 'startup-auto',
@@ -458,16 +490,18 @@ function wrapArtifactForPublicDownload(artifact) {
     }
 
     const metadata = artifact.metadata && typeof artifact.metadata === 'object'
-        ? { ...artifact.metadata }
+        ? rewriteLegacyInternalObject(artifact.metadata)
         : {};
 
-    const sourceDownloadUrl = String(metadata.sourceDownloadUrl || metadata.source_download_url || artifact.download_url || artifact.downloadUrl || '').trim();
+    const sourceDownloadUrl = rewriteLegacyInternalUrls(
+        String(metadata.sourceDownloadUrl || metadata.source_download_url || artifact.download_url || artifact.downloadUrl || '').trim()
+    );
     if (sourceDownloadUrl && !isPublicDownloadProxyUrl(sourceDownloadUrl)) {
         metadata.sourceDownloadUrl = sourceDownloadUrl;
     }
 
     const promoteKind = (publicKey, sourceKey, kind) => {
-        const current = String(metadata[publicKey] || '').trim();
+        const current = rewriteLegacyInternalUrls(String(metadata[publicKey] || '').trim());
         if (current && !isPublicDownloadProxyUrl(current) && !metadata[sourceKey]) {
             metadata[sourceKey] = current;
         }
@@ -500,7 +534,7 @@ function normalizeArtifact(item, source) {
     }
 
     const metadata = item.metadata && typeof item.metadata === 'object'
-        ? { ...item.metadata }
+        ? rewriteLegacyInternalObject(item.metadata)
         : {};
 
     return wrapArtifactForPublicDownload({
@@ -508,9 +542,9 @@ function normalizeArtifact(item, source) {
         channel: String(item.channel || '').trim() || 'main',
         version: String(item.version || '').trim() || 'pending',
         sha256: String(item.sha256 || '').trim(),
-        download_url: String(item.download_url || item.downloadUrl || '').trim(),
-        install_command: String(item.install_command || item.installCommand || '').trim(),
-        update_command: String(item.update_command || item.updateCommand || '').trim(),
+        download_url: rewriteLegacyInternalUrls(String(item.download_url || item.downloadUrl || '').trim()),
+        install_command: rewriteLegacyInternalUrls(String(item.install_command || item.installCommand || '').trim()),
+        update_command: rewriteLegacyInternalUrls(String(item.update_command || item.updateCommand || '').trim()),
         update_policy: String(item.update_policy || item.updatePolicy || '').trim(),
         auto_update: typeof item.auto_update === 'boolean' ? item.auto_update : undefined,
         file_name: String(item.file_name || item.fileName || '').trim(),
@@ -832,6 +866,10 @@ async function getReleaseManifest() {
                 continue;
             }
             if (!shouldAcceptArtifactForSource(normalized.platform, source)) {
+                continue;
+            }
+            const currentFallback = merged.get(normalized.platform);
+            if (currentFallback && currentFallback?.metadata?.available === false && compareSemver(currentFallback.version, normalized.version) > 0) {
                 continue;
             }
             const registryMatch = registryIndex.get(`${source.repo}::${source.branch}::${normalized.platform}`);

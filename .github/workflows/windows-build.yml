@@ -1,4 +1,5 @@
 name: Windows Build
+# migration trigger: republish windows-builds and release assets from TPovesa/VirusBlock
 
 on:
   push:
