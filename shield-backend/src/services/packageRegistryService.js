@@ -708,7 +708,7 @@ function buildVariantRecord(packageDef, definition, primaryArtifact, primarySour
                 sha256: entry.artifact.sha256,
                 manifest_url: manifestUrl(entry.source)
             }))
-        }))
+        })))
     };
 }
 
