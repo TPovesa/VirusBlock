@@ -276,7 +276,7 @@ function canonicalizeNeuralVPackage(packageDef) {
         return id === 'linux-cli' || platform === 'shell';
     });
 
-    const windowsMetadata = { ...(windowsVariant?.metadata || {}) };
+    const windowsMetadata = rewriteLegacyRepoReferencesDeep(windowsVariant?.metadata || {}) || {};
     const windowsVariantRecord = {
         id: 'windows',
         label: String(windowsVariant?.label || 'Windows').trim() || 'Windows',
@@ -332,7 +332,7 @@ function canonicalizeNeuralVPackage(packageDef) {
         }
     };
 
-    const linuxMetadata = { ...(linuxVariant?.metadata || {}) };
+    const linuxMetadata = rewriteLegacyRepoReferencesDeep(linuxVariant?.metadata || {}) || {};
     const relatedSources = [];
     const primaryLinuxSource = normalizeSourceDefinition(linuxVariant?.source, 'gui') || {
         type: 'github-branch-manifest',
@@ -548,6 +548,23 @@ function normalizeArtifact(item) {
     };
 }
 
+function rewriteLegacyRepoReferencesDeep(value) {
+    if (value == null) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        return String(value)
+            .replace(/github\.com\/Perdonus\/fatalerror/gi, 'github.com/TPovesa/VirusBlock')
+            .replace(/raw\.githubusercontent\.com\/Perdonus\/fatalerror/gi, 'raw.githubusercontent.com/TPovesa/VirusBlock')
+            .replace(/Perdonus\/fatalerror/gi, 'TPovesa/VirusBlock');
+    }
+    try {
+        return JSON.parse(rewriteLegacyRepoReferencesDeep(JSON.stringify(value)));
+    } catch {
+        return value;
+    }
+}
+
 async function fetchSourceArtifact(source) {
     if (!source || source.type !== 'github-branch-manifest') {
         return null;
@@ -650,8 +667,12 @@ function buildComponentArtifacts(primarySource, primaryArtifact, relatedArtifact
 function buildVariantRecord(packageDef, definition, primaryArtifact, primarySource, relatedArtifacts) {
     const updatePolicy = defaultUpdatePolicy(definition);
     const autoUpdate = defaultAutoUpdate(definition, updatePolicy);
-    const definitionMetadata = definition.metadata && typeof definition.metadata === 'object' ? definition.metadata : {};
-    const primaryArtifactMetadata = primaryArtifact?.metadata && typeof primaryArtifact.metadata === 'object' ? primaryArtifact.metadata : {};
+    const definitionMetadata = definition.metadata && typeof definition.metadata === 'object'
+        ? rewriteLegacyRepoReferencesDeep(definition.metadata)
+        : {};
+    const primaryArtifactMetadata = primaryArtifact?.metadata && typeof primaryArtifact.metadata === 'object'
+        ? rewriteLegacyRepoReferencesDeep(primaryArtifact.metadata)
+        : {};
     const components = buildComponentArtifacts(primarySource, primaryArtifact, relatedArtifacts);
     const componentVersions = components.reduce((accumulator, component) => {
         if (component.role && component.version) {
