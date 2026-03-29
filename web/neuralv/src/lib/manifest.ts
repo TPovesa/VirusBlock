@@ -159,6 +159,8 @@ function publicArtifactDownloadUrl(platform: string, kind = ''): string | undefi
   switch (normalizedPlatform) {
     case 'windows':
       return buildPublicReleaseDownloadUrl('windows', kind || 'portable');
+    case 'android':
+      return buildPublicReleaseDownloadUrl('android', kind);
     case 'linux':
       return buildPublicReleaseDownloadUrl('linux', kind);
     case 'shell':
@@ -240,10 +242,10 @@ function normalizeArtifactMetadata(
   if (platform === 'windows' || typeof next.installScriptCmd === 'string') {
     next.installScriptCmd = buildPublicInstallUrl('windows.cmd');
   }
-  if (platform === 'linux' || typeof next.stableArtifactUrl === 'string') {
+  if (platform === 'linux') {
     next.stableArtifactUrl = stableArtifactSupplementaryUrl('linux', '', cleanText(next.stableArtifactUrl) ?? undefined);
   }
-  if (platform === 'shell' || typeof next.stableArtifactUrl === 'string') {
+  if (platform === 'shell') {
     next.stableArtifactUrl = stableArtifactSupplementaryUrl('shell', '', cleanText(next.stableArtifactUrl) ?? undefined);
   }
   if (platform === 'linux' || typeof next.stableCliArtifactUrl === 'string') {
