@@ -1,0 +1,2770 @@
+"""
+🧠 NeuralV — MD3-панель проверки для ExteraGram/AyuGram
+Команда: .nv — ответом на файл запускает проверку.
+"""
+
+import hashlib
+import io
+import json
+import ast
+import os
+import re
+import threading
+import time
+import traceback
+import tokenize
+from typing import Any, Dict, List, Optional
+
+import requests
+
+from java import dynamic_proxy
+from java.lang import Runnable
+from java.util import ArrayList
+
+from base_plugin import BasePlugin, HookResult, HookStrategy, MenuItemData, MenuItemType, MethodHook
+from hook_utils import find_class
+from client_utils import get_file_loader, get_last_fragment, run_on_queue, send_message
+from android_utils import OnClickListener, run_on_ui_thread, log
+from ui.alert import AlertDialogBuilder
+from ui.bulletin import BulletinHelper
+
+from android.app import Activity, Dialog
+from android.content import ClipData, Context, Intent
+from android.graphics import Color
+from android.graphics.drawable import ColorDrawable, GradientDrawable
+from android.net import Uri
+from android.util import TypedValue
+from android.view import Gravity, MotionEvent, View, ViewGroup
+from android.widget import FrameLayout, LinearLayout, ScrollView, TextView
+from org.telegram.messenger import AndroidUtilities, ApplicationLoader, FileLoader, MessageObject
+from org.telegram.ui.ActionBar import AlertDialog, Theme
+from com.exteragram.messenger.plugins import PluginsController
+
+__id__ = "NeuralV"
+__name__ = "NeuralV"
+__description__ = """🧠 NeuralV — проверка плагинов и модулей через локальный анализ и серверный второй разбор.
+
+• .nv — ответом на файл запускает проверку
+• Через меню NeuralV можно выбрать файл или проверить все установленные плагины
+
+neuralvv.org"""
+__author__ = "@NeuralV_chnl"
+__version__ = "3.1"
+__min_version__ = "11.12.1"
+__icon__ = "neuralvstickers/0"
+
+NV_CMD = ".nv"
+AI_REVIEW_URL = "https://neuralvv.org/basedata/api/ai/plugin-review/summary"
+AI_TIMEOUT = 45
+CACHE_TTL = 3600
+MAX_FINDINGS = 6
+MAX_FRAGMENTS = 4
+MAX_BATCH_RESULTS = 18
+FILE_PICK_REQUEST_CODE = 24871
+HISTORY_LIMIT = 40
+
+VERDICT_ICONS = {
+    "Безопасно": "✅",
+    "Осторожно": "⚠️",
+    "Опасно": "🚫",
+}
+SEVERITY_RANK = {"Низко": 0, "Средне": 1, "Высоко": 2, "Критично": 3}
+
+TYPE_SIGNATURES = {
+    "extera": {
+        "label": "плагин ExteraGram",
+        "patterns": [
+            r"from\s+base_plugin\s+import\s+BasePlugin",
+            r"class\s+\w+\(BasePlugin\)",
+            r"\bHookResult\b",
+            r"\bHookStrategy\b",
+            r"__min_version__\s*=",
+            r"def\s+on_send_message_hook\s*\(",
+            r"from\s+ui\.settings\s+import",
+        ],
+    },
+    "hikka": {
+        "label": "модуль Hikka/Heroku",
+        "patterns": [
+            r"from\s+\.\.\s+import\s+loader\s*,\s*utils",
+            r"@loader\.tds",
+            r"class\s+\w+\(loader\.Module\)",
+            r"loader\.ModuleConfig",
+            r"loader\.ConfigValue",
+            r"@loader\.command",
+            r"utils\.answer\(",
+        ],
+    },
+}
+
+RULES = [
+    {
+        "id": "reverse_shell",
+        "severity": "Критично",
+        "score": 8,
+        "title": "Есть признаки обратной оболочки",
+        "summary": "сеть сочетается с запуском командной оболочки или subprocess",
+        "patterns": [r"socket\.socket", r"subprocess\.(Popen|run|call)", r"/bin/sh", r"cmd\.exe", r"powershell"],
+        "min_hits": 2,
+    },
+    {
+        "id": "runtime_exec",
+        "severity": "Высоко",
+        "score": 4,
+        "title": "Есть динамическое выполнение кода",
+        "summary": "файл использует exec, eval, compile или динамический import",
+        "patterns": [r"\bexec\s*\(", r"\beval\s*\(", r"\bcompile\s*\(", r"\b__import__\s*\("],
+    },
+    {
+        "id": "shell_exec",
+        "severity": "Высоко",
+        "score": 4,
+        "title": "Есть запуск системных команд",
+        "summary": "код вызывает subprocess или os.system",
+        "patterns": [
+            r"os\.system\s*\(",
+            r"subprocess\.(Popen|run|call|check_output|check_call)\s*\(",
+            r"popen\s*\(",
+            r"shell\s*=\s*True",
+            r"asyncio\.create_subprocess",
+        ],
+    },
+    {
+        "id": "obfuscation",
+        "severity": "Средне",
+        "score": 3,
+        "title": "Есть признаки обфускации",
+        "summary": "внутри есть base64, marshal, zlib или похожая маскировка",
+        "patterns": [
+            r"base64\.(b64decode|urlsafe_b64decode|b85decode)",
+            r"marshal\.(loads|dumps)",
+            r"zlib\.(decompress|compress)",
+            r"bytes\.fromhex\s*\(",
+            r"codecs\.decode\s*\(",
+        ],
+    },
+    {
+        "id": "network",
+        "severity": "Низко",
+        "score": 1,
+        "title": "Есть сетевой слой",
+        "summary": "код делает HTTP-запросы или работает с сокетами",
+        "patterns": [
+            r"requests\.(get|post|request|Session)",
+            r"httpx\.(Client|AsyncClient|get|post|request)",
+            r"urllib\.request",
+            r"aiohttp\.",
+            r"socket\.",
+            r"websockets?\.",
+        ],
+    },
+    {
+        "id": "remote_download",
+        "severity": "Средне",
+        "score": 2,
+        "title": "Есть загрузка данных извне",
+        "summary": "код скачивает внешний контент во время работы",
+        "patterns": [
+            r"download_media\s*\(",
+            r"requests\.get\s*\(",
+            r"httpx\.(get|request)\s*\(",
+            r"urllib\.request\.urlopen",
+        ],
+    },
+    {
+        "id": "secret_access",
+        "severity": "Средне",
+        "score": 2,
+        "title": "Есть доступ к токенам или секретам",
+        "summary": "файл читает токены, сессии, ключи или чувствительные переменные",
+        "patterns": [
+            r"os\.getenv\s*\(",
+            r"os\.environ",
+            r"session(_string)?",
+            r"api[_-]?key",
+            r"Authorization",
+            r"bot[_-]?token",
+            r"access[_-]?token",
+        ],
+    },
+    {
+        "id": "sensitive_send",
+        "severity": "Средне",
+        "score": 2,
+        "title": "Есть отправка чувствительных данных",
+        "summary": "код умеет отправлять файлы, сообщения или логи наружу",
+        "patterns": [
+            r"send_file\s*\(",
+            r"send_document\s*\(",
+            r"client\.send_file\s*\(",
+            r"requests\.post\s*\(",
+            r"httpx\.post\s*\(",
+        ],
+    },
+    {
+        "id": "destructive_fs",
+        "severity": "Высоко",
+        "score": 4,
+        "title": "Есть опасные действия с файлами",
+        "summary": "файл умеет удалять, обходить или массово менять содержимое файловой системы",
+        "patterns": [
+            r"os\.remove\s*\(",
+            r"os\.unlink\s*\(",
+            r"shutil\.rmtree\s*\(",
+            r"Path\([^\n]+\)\.unlink\s*\(",
+            r"os\.walk\s*\(",
+            r"glob\.glob\s*\(",
+            r"chmod\s*\(",
+        ],
+    },
+    {
+        "id": "persistence",
+        "severity": "Высоко",
+        "score": 4,
+        "title": "Есть признаки закрепления",
+        "summary": "в коде встречаются автозагрузка, cron, startup или похожие механики",
+        "patterns": [
+            r"winreg\.",
+            r"CurrentVersion\\Run",
+            r"startup",
+            r"schtasks",
+            r"crontab",
+            r"systemd",
+            r"autorun",
+        ],
+    },
+    {
+        "id": "surveillance",
+        "severity": "Высоко",
+        "score": 4,
+        "title": "Есть признаки слежения",
+        "summary": "код работает со скриншотами, клавиатурой, мышью или буфером обмена",
+        "patterns": [
+            r"pyautogui\.",
+            r"ImageGrab\.",
+            r"pynput\.",
+            r"keyboard\.",
+            r"mouse\.",
+            r"pyperclip\.",
+            r"screenshot",
+        ],
+    },
+    {
+        "id": "elevation",
+        "severity": "Высоко",
+        "score": 5,
+        "title": "Есть попытки повышения привилегий",
+        "summary": "код использует runas, ctypes shell calls или проверки админ-прав",
+        "patterns": [r"ShellExecuteW", r"runas", r"IsUserAnAdmin", r"ctypes\.windll", r"sudo\s", r"pkexec"],
+    },
+]
+
+COMBOS = [
+    {
+        "id": "obfuscated_exec",
+        "requires": ["runtime_exec", "obfuscation"],
+        "severity": "Критично",
+        "score": 6,
+        "title": "Есть скрытая исполняемая нагрузка",
+        "summary": "обфускация сочетается с exec/eval",
+    },
+    {
+        "id": "network_exec",
+        "requires": ["runtime_exec", "network"],
+        "severity": "Критично",
+        "score": 6,
+        "title": "Сеть связана с исполнением кода",
+        "summary": "после сетевого получения код может исполняться на лету",
+    },
+    {
+        "id": "exfiltration_chain",
+        "requires": ["network", "secret_access", "sensitive_send"],
+        "severity": "Высоко",
+        "score": 5,
+        "title": "Есть признаки выноса данных",
+        "summary": "секреты читаются и рядом же могут отправляться наружу",
+    },
+]
+
+
+class RunnableFactory(dynamic_proxy(Runnable)):
+    def __init__(self, fn):
+        super().__init__()
+        self.fn = fn
+
+    def run(self):
+        try:
+            self.fn()
+        except Exception as error:
+            log(f"[NeuralV] Runnable error: {error}")
+
+
+class ActivityResultHook(MethodHook):
+    def __init__(self, plugin_instance):
+        super().__init__()
+        self.plugin = plugin_instance
+
+    def before_hooked_method(self, param):
+        try:
+            request_code = param.args[0]
+            if request_code != FILE_PICK_REQUEST_CODE:
+                return
+            param.setResult(None)
+            result_code = param.args[1]
+            data = param.args[2]
+            if result_code == Activity.RESULT_OK and data is not None and data.getData() is not None:
+                uri_string = data.getData().toString()
+                run_on_queue(lambda: self.plugin._handle_file_uri(uri_string))
+        finally:
+            if self.plugin._activity_hook:
+                try:
+                    self.plugin._activity_hook.unhook()
+                except Exception:
+                    pass
+                self.plugin._activity_hook = None
+
+
+def _safe_snippet(line: str, limit: int = 120) -> str:
+    compact = re.sub(r"\s+", " ", (line or "").strip())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 1].rstrip() + "…"
+
+
+def _is_probably_binary(raw: bytes) -> bool:
+    if not raw:
+        return False
+    sample = raw[:4096]
+    if b"\x00" in sample:
+        return True
+    bad_controls = 0
+    for byte in sample:
+        if byte in (9, 10, 13):
+            continue
+        if byte < 32:
+            bad_controls += 1
+    if sample and bad_controls / float(len(sample)) > 0.08:
+        return True
+    decoded = raw.decode("utf-8", errors="ignore")
+    return not decoded.strip() and bool(raw.strip(b"\r\n\t "))
+
+
+def _decode_text(raw: bytes) -> str:
+    return raw.decode("utf-8", errors="ignore").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _strip_strings_and_comments(code: str) -> str:
+    try:
+        source = str(code or "")
+        lines = source.splitlines(True)
+        tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
+        for tok in tokens:
+            tok_type = tok.type
+            if tok_type not in (tokenize.STRING, tokenize.COMMENT):
+                continue
+            (start_line, start_col) = tok.start
+            (end_line, end_col) = tok.end
+            for line_index in range(start_line - 1, end_line):
+                if line_index < 0 or line_index >= len(lines):
+                    continue
+                raw_line = lines[line_index]
+                left = start_col if line_index == start_line - 1 else 0
+                right = end_col if line_index == end_line - 1 else len(raw_line)
+                if left >= right:
+                    continue
+                segment = raw_line[left:right]
+                replacement = "".join("\n" if ch == "\n" else " " for ch in segment)
+                lines[line_index] = raw_line[:left] + replacement + raw_line[right:]
+        return "".join(lines)
+    except Exception:
+        return str(code or "")
+
+
+def _extract_plugin_identity(filename: str, code: str) -> Dict[str, str]:
+    source = str(code or "")
+    result = {
+        "display_name": "",
+        "display_version": "",
+    }
+
+    def _normalize_literal(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, (str, int, float)):
+            return str(value).strip()
+        if isinstance(value, (list, tuple)):
+            parts = [str(part).strip() for part in value if str(part).strip()]
+            return ".".join(parts)
+        if isinstance(value, dict):
+            name_value = value.get("name")
+            if isinstance(name_value, str):
+                return name_value.strip()
+        return ""
+
+    def _module_assignments(module: Any) -> Dict[str, Any]:
+        values = {}
+        for node in getattr(module, "body", []):
+            try:
+                if isinstance(node, ast.Assign):
+                    value = ast.literal_eval(node.value)
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            values[target.id] = value
+                elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
+                    values[node.target.id] = ast.literal_eval(node.value)
+            except Exception:
+                continue
+        return values
+
+    def _extract_class_name(module: Any) -> str:
+        for node in getattr(module, "body", []):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            for base in node.bases:
+                base_repr = ""
+                if isinstance(base, ast.Name):
+                    base_repr = base.id
+                elif isinstance(base, ast.Attribute):
+                    base_repr = base.attr
+                if base_repr in ("BasePlugin", "Module"):
+                    return str(node.name or "").strip()
+        return ""
+
+    try:
+        module = ast.parse(source)
+        values = _module_assignments(module)
+        for key in ("__name__", "name"):
+            value = _normalize_literal(values.get(key))
+            if value:
+                result["display_name"] = value
+                break
+        for key in ("__version__", "version", "VERSION", "version_info"):
+            value = _normalize_literal(values.get(key))
+            if value:
+                result["display_version"] = value
+                break
+        if not result["display_name"]:
+            strings_value = values.get("strings") or values.get("all_strings")
+            name_value = _normalize_literal(strings_value)
+            if name_value:
+                result["display_name"] = name_value
+        if not result["display_name"]:
+            result["display_name"] = _extract_class_name(module)
+    except Exception:
+        pass
+
+    if not result["display_name"]:
+        class_match = re.search(r'(?m)^class\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((?:BasePlugin|loader\.Module)\)', source)
+        if class_match:
+            result["display_name"] = class_match.group(1).strip()
+
+    if not result["display_name"]:
+        result["display_name"] = os.path.splitext(os.path.basename(filename or "Плагин"))[0]
+
+    return result
+
+
+def _build_share_report_text(result: dict, report_text: str) -> str:
+    display_name = str(result.get("display_name") or result.get("filename") or "Плагин").strip()
+    display_version = str(result.get("display_version") or "").strip()
+    verdict = str(result.get("verdict") or "Результат").strip()
+    lines = [
+        "NeuralV",
+        f"Плагин: {display_name}",
+    ]
+    if display_version:
+        lines.append(f"Версия: {display_version}")
+    lines.append(f"Вердикт: {verdict}")
+    body = str(report_text or "").strip()
+    if body:
+        lines.extend(["", body])
+    return "\n".join(lines).strip()
+
+
+def _looks_like_framework_plugin(filename: str, code: str, identity: Optional[Dict[str, str]] = None) -> bool:
+    name_bits = [str(filename or ""), str((identity or {}).get("display_name") or "")]
+    name_text = " ".join(name_bits).lower()
+    if any(token in name_text for token in ["lib", "library", "framework", "sdk", "toolkit", "host", "core"]):
+        return True
+    source = str(code or "")
+    hints = 0
+    for token in ["class ", "def ", "BottomSheet", "PluginsController", "FileProvider", "Intent.", "loadClass", "install", "reload", "helper"]:
+        if token.lower() in source.lower():
+            hints += 1
+    return hints >= 5
+
+
+def _declared_family(filename: str) -> str:
+    lower = (filename or "").lower()
+    if lower.endswith(".plugin"):
+        return "extera"
+    if lower.endswith(".py"):
+        return "python"
+    return "unknown"
+
+
+def _detect_family(code: str) -> dict:
+    scores = {}
+    reasons = {}
+    for family, config in TYPE_SIGNATURES.items():
+        score = 0
+        matched = []
+        for pattern in config["patterns"]:
+            if re.search(pattern, code, re.IGNORECASE | re.MULTILINE):
+                score += 1
+                matched.append(pattern)
+        scores[family] = score
+        reasons[family] = matched
+
+    extera_score = scores.get("extera", 0)
+    hikka_score = scores.get("hikka", 0)
+    if extera_score == 0 and hikka_score == 0:
+        return {"family": "generic", "label": "обычный Python-скрипт", "reasons": []}
+    if extera_score >= hikka_score:
+        return {"family": "extera", "label": TYPE_SIGNATURES["extera"]["label"], "reasons": reasons["extera"]}
+    return {"family": "hikka", "label": TYPE_SIGNATURES["hikka"]["label"], "reasons": reasons["hikka"]}
+
+
+def _collect_hits(exec_lines, raw_lines, patterns, min_hits=1):
+    hits = []
+    seen = set()
+    for idx, exec_line in enumerate(exec_lines, 1):
+        for pattern in patterns:
+            if re.search(pattern, exec_line, re.IGNORECASE):
+                key = (idx, pattern)
+                if key in seen:
+                    continue
+                seen.add(key)
+                snippet = _safe_snippet(raw_lines[idx - 1] if idx - 1 < len(raw_lines) else exec_line)
+                if not snippet:
+                    continue
+                hits.append({"line": idx, "snippet": snippet})
+                break
+        if len(hits) >= max(min_hits, 3):
+            break
+    return hits
+
+
+def _sorted_findings(findings):
+    return sorted(findings, key=lambda item: (item["score"], SEVERITY_RANK[item["severity"]]), reverse=True)
+
+
+
+def _looks_like_framework_local(filename: str, code: str, detected_family: str) -> bool:
+    source = str(code or "")
+    lowered = f"{filename or ''}\n{source[:12000]}".lower()
+    name_hits = 0
+    for token in ["mandrelib", "library", "framework", "toolkit", "sdk", "helper", "host"]:
+        if token in lowered:
+            name_hits += 1
+    subsystem_hits = 0
+    for token in [
+        "class ", "def ", "bottomsheet", "pluginscontroller", "fileprovider", "intent.", "requests.get",
+        "zipfile", "shutil", "loadclass", "dex", "install", "reload", "helper", "storage", "ui.", "hook"
+    ]:
+        if token in lowered:
+            subsystem_hits += 1
+    if detected_family == "extera" and name_hits >= 1 and subsystem_hits >= 6:
+        return True
+    if name_hits >= 2 and subsystem_hits >= 5:
+        return True
+    return False
+
+
+def _looks_like_security_tool_local(filename: str, code: str, detected_family: str) -> bool:
+    source = str(code or "")
+    lowered = f"{filename or ''}\n{source[:14000]}".lower()
+    name_hits = 0
+    for token in ["neuralv", "antivirus", "scanner", "scan", "review", "analysis", "audit", "verdict"]:
+        if token in lowered:
+            name_hits += 1
+    subsystem_hits = 0
+    for token in ["analyze_code", "findings", "local verdict", "ai_review_url", "plugin-review", "history", "report", "summary", "signature", "rule", "bulletinhelper"]:
+        if token in lowered:
+            subsystem_hits += 1
+    return detected_family == "extera" and name_hits >= 2 and subsystem_hits >= 4
+
+
+def _downgrade_library_findings(findings: list) -> list:
+    softened = []
+    library_ids = {
+        "network",
+        "sensitive_send",
+        "destructive_fs",
+        "surveillance",
+        "elevation",
+        "secret_access",
+        "runtime_exec",
+        "remote_download",
+        "reverse_shell",
+        "network_exec",
+        "exfiltration_chain",
+    }
+    for finding in findings:
+        item = dict(finding)
+        if item.get("id") in library_ids:
+            penalty = 3 if item.get("id") in {"reverse_shell", "network_exec", "exfiltration_chain"} else 2
+            item["score"] = max(1, int(item.get("score") or 1) - penalty)
+            if item.get("severity") == "Критично":
+                item["severity"] = "Средне"
+            elif item.get("severity") == "Высоко":
+                item["severity"] = "Низко" if item.get("id") in {"remote_download", "runtime_exec"} else "Средне"
+        softened.append(item)
+    return softened
+
+
+def _has_confirmed_tooling_malicious_chain(hard_ids: set) -> bool:
+    if "obfuscated_exec" in hard_ids:
+        return True
+    if "persistence" in hard_ids and ("network_exec" in hard_ids or "exfiltration_chain" in hard_ids):
+        return True
+    if "reverse_shell" in hard_ids and "obfuscation" in hard_ids:
+        return True
+    return False
+
+def analyze_code(filename: str, code: str) -> dict:
+    code = (code or "").replace("\r\n", "\n").replace("\r", "\n")
+    raw_lines = code.split("\n")
+    executable_code = _strip_strings_and_comments(code)
+    exec_lines = executable_code.split("\n")
+    family_info = _detect_family(code)
+    declared = _declared_family(filename)
+    detected = family_info["family"]
+    mismatch = (declared == "extera" and detected != "extera") or (declared == "python" and detected == "extera")
+
+    findings = []
+    triggered_ids = set()
+    for rule in RULES:
+        hits = _collect_hits(exec_lines, raw_lines, rule["patterns"], rule.get("min_hits", 1))
+        if len(hits) >= rule.get("min_hits", 1):
+            triggered_ids.add(rule["id"])
+            findings.append({
+                "id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "score": rule["score"],
+                "summary": rule["summary"],
+                "hits": hits,
+            })
+
+    for combo in COMBOS:
+        if all(req in triggered_ids for req in combo["requires"]):
+            findings.append({
+                "id": combo["id"],
+                "title": combo["title"],
+                "severity": combo["severity"],
+                "score": combo["score"],
+                "summary": combo["summary"],
+                "hits": [],
+            })
+
+    framework_library = _looks_like_framework_local(filename, code, detected)
+    security_tool = _looks_like_security_tool_local(filename, code, detected)
+    if framework_library or security_tool:
+        findings = _downgrade_library_findings(findings)
+    findings = _sorted_findings(findings)
+    score = sum(item["score"] for item in findings)
+    if mismatch:
+        score += 2
+    if framework_library:
+        combo_ids = {item.get("id") for item in findings if item.get("id") in {"obfuscated_exec", "network_exec", "exfiltration_chain"}}
+        if not combo_ids:
+            score = max(0, score - 8)
+        else:
+            score = max(0, score - 3)
+    if security_tool:
+        score = max(0, score - 4)
+
+    hard_ids = {item.get("id") for item in findings}
+    library_only_ids = {
+        "reverse_shell",
+        "network_exec",
+        "exfiltration_chain",
+        "runtime_exec",
+        "remote_download",
+        "destructive_fs",
+        "secret_access",
+        "sensitive_send",
+        "network",
+        "elevation",
+        "surveillance",
+    }
+    confirmed_chain = _has_confirmed_tooling_malicious_chain(hard_ids)
+    if (framework_library or security_tool) and hard_ids and hard_ids.issubset(library_only_ids):
+        score = min(score, 7 if security_tool else 9)
+    if security_tool and "obfuscated_exec" not in hard_ids and "obfuscation" not in hard_ids:
+        score = min(score, 4)
+    if (framework_library or security_tool) and not confirmed_chain:
+        score = min(score, 4)
+
+    if score >= 13:
+        verdict = "Опасно"
+    elif score >= 5:
+        verdict = "Осторожно"
+    else:
+        verdict = "Безопасно"
+
+    fragments = []
+    seen_fragments = set()
+    for finding in findings:
+        for hit in finding.get("hits", []):
+            key = (hit["line"], hit["snippet"])
+            if key in seen_fragments:
+                continue
+            seen_fragments.add(key)
+            fragments.append(hit)
+            if len(fragments) >= MAX_FRAGMENTS:
+                break
+        if len(fragments) >= MAX_FRAGMENTS:
+            break
+
+    return {
+        "filename": filename,
+        "detected_family": detected,
+        "detected_label": family_info["label"],
+        "declared_family": declared,
+        "mismatch": mismatch,
+        "findings": findings,
+        "fragments": fragments,
+        "verdict": verdict,
+        "icon": VERDICT_ICONS[verdict],
+        "score": score,
+        "exec_scope_only": True,
+        "framework_library": framework_library,
+        "security_tool": security_tool,
+    }
+
+
+class NeuralVPlugin(BasePlugin):
+    def __init__(self):
+        super().__init__()
+        self.analysis_cache: Dict[str, Dict[str, Any]] = {}
+        self.analysis_history: List[Dict[str, Any]] = []
+        self.runtime_contexts: Dict[str, Dict[str, Any]] = {}
+        self._activity_hook = None
+        self._drawer_menu_item = None
+        self._loading_dialog = None
+        self._loading_builder = None
+        self._loading_active = False
+        self._loading_thread = None
+        self._loading_label = ""
+        self._loading_current_progress = 0.0
+        self._loading_target_progress = 0.0
+        self._loading_percent_view = None
+        self._loading_status_view = None
+        self._loading_progress_fill = None
+        self._loading_progress_gap = None
+        self._loading_progress_track = None
+        self._sheet_dialog = None
+        self._last_report_text = ""
+        self._last_report_peer = None
+
+    def on_plugin_load(self):
+        self.analysis_history = self._load_history()
+        self.add_on_send_message_hook()
+        self._ensure_drawer_item()
+        self.add_menu_item(MenuItemData(
+            menu_type=MenuItemType.MESSAGE_CONTEXT_MENU,
+            text="NeuralV",
+            icon="msg_search",
+            on_click=self._on_context_check,
+        ))
+        log("[NeuralV] loaded v3.1")
+
+    def on_plugin_unload(self):
+        self.analysis_cache.clear()
+        self.runtime_contexts.clear()
+        self._save_history()
+        self._dismiss_loading_dialog()
+        if self._activity_hook:
+            try:
+                self._activity_hook.unhook()
+            except Exception:
+                pass
+            self._activity_hook = None
+        log("[NeuralV] unloaded")
+
+    def _ensure_drawer_item(self):
+        if self._drawer_menu_item is not None:
+            return
+        try:
+            self._drawer_menu_item = self.add_menu_item(MenuItemData(
+                menu_type=MenuItemType.DRAWER_MENU,
+                text="NeuralV",
+                icon="msg_settings_ny",
+                on_click=lambda ctx: self._open_main_menu(),
+            ))
+        except Exception as error:
+            log(f"[NeuralV] drawer item error: {error}")
+
+    def _dialog_context(self):
+        fragment = get_last_fragment()
+        return fragment.getParentActivity() if fragment else None
+
+    def _history_path(self) -> str:
+        try:
+            base = ApplicationLoader.applicationContext.getFilesDir().getAbsolutePath()
+        except Exception:
+            base = "/data/local/tmp"
+        return os.path.join(base, "neuralv_history.json")
+
+    def _load_history(self) -> List[Dict[str, Any]]:
+        path = self._history_path()
+        try:
+            if not os.path.isfile(path):
+                return []
+            with open(path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            if not isinstance(payload, list):
+                return []
+            items = []
+            for item in payload[:HISTORY_LIMIT]:
+                if not isinstance(item, dict):
+                    continue
+                items.append(item)
+            return items
+        except Exception as error:
+            log(f"[NeuralV] load history failed: {error}")
+            return []
+
+    def _save_history(self):
+        path = self._history_path()
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(self.analysis_history[:HISTORY_LIMIT], handle, ensure_ascii=False)
+        except Exception as error:
+            log(f"[NeuralV] save history failed: {error}")
+
+    def _with_alpha(self, color: int, alpha: int) -> int:
+        value = (max(0, min(255, alpha)) << 24) | (int(color) & 0x00FFFFFF)
+        value &= 0xFFFFFFFF
+        if value >= 0x80000000:
+            value -= 0x100000000
+        return int(value)
+
+    def _sheet_surface_color(self) -> int:
+        try:
+            return int(Theme.getColor(Theme.key_windowBackgroundWhite))
+        except Exception:
+            return int(Color.parseColor("#111318"))
+
+    def _sheet_text_color(self) -> int:
+        try:
+            return int(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
+        except Exception:
+            return int(Color.WHITE)
+
+    def _sheet_muted_color(self) -> int:
+        try:
+            return int(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2))
+        except Exception:
+            return int(Color.parseColor("#98A1B3"))
+
+    def _sheet_accent_color(self) -> int:
+        try:
+            key = getattr(
+                Theme,
+                "key_windowBackgroundWhiteBlueText",
+                getattr(Theme, "key_windowBackgroundWhiteBlueText4", Theme.key_actionBarTabLine),
+            )
+            return int(Theme.getColor(key))
+        except Exception:
+            return int(Color.parseColor("#88A7FF"))
+
+    def _sheet_danger_color(self) -> int:
+        try:
+            key = getattr(Theme, "key_text_RedRegular", Theme.key_windowBackgroundWhiteBlackText)
+            return int(Theme.getColor(key))
+        except Exception:
+            return int(Color.parseColor("#FF6F7D"))
+
+    def _sheet_divider_color(self) -> int:
+        try:
+            return int(Theme.getColor(Theme.key_divider))
+        except Exception:
+            return int(Color.parseColor("#2A2F39"))
+
+    def _sheet_button_palette(self, filled: bool = False, danger: bool = False):
+        accent = self._sheet_danger_color() if danger else self._sheet_accent_color()
+        divider = self._sheet_divider_color()
+        surface = self._sheet_surface_color()
+        text = self._sheet_text_color()
+        if filled:
+            return (
+                self._with_alpha(accent, 0x26),
+                self._with_alpha(accent, 0x9A),
+                accent,
+            )
+        return (
+            self._with_alpha(surface, 0x00),
+            self._with_alpha(divider, 0xB0),
+            accent if danger else text,
+        )
+
+    def _sheet_card_background(self, radius_dp: int = 28):
+        bg = GradientDrawable()
+        bg.setCornerRadius(float(AndroidUtilities.dp(radius_dp)))
+        bg.setColor(int(self._with_alpha(self._sheet_surface_color(), 0xF2)))
+        bg.setStroke(int(AndroidUtilities.dp(1)), int(self._with_alpha(self._sheet_divider_color(), 0xB0)))
+        return bg
+
+    def _create_sheet_button(self, context, label: str, on_click, icon: str = "", filled: bool = False, danger: bool = False):
+        button = TextView(context)
+        button.setText(f"{icon}  {label}".strip())
+        button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16)
+        button.setGravity(Gravity.CENTER)
+        button.setPadding(
+            int(AndroidUtilities.dp(10)),
+            int(AndroidUtilities.dp(12)),
+            int(AndroidUtilities.dp(10)),
+            int(AndroidUtilities.dp(12)),
+        )
+        fill, stroke, text_color = self._sheet_button_palette(filled=filled, danger=danger)
+        bg = GradientDrawable()
+        bg.setCornerRadius(float(AndroidUtilities.dp(18)))
+        bg.setColor(int(fill))
+        bg.setStroke(int(AndroidUtilities.dp(1)), int(stroke))
+        button.setBackground(bg)
+        button.setTextColor(int(text_color))
+        button.setOnClickListener(OnClickListener(lambda _v: on_click()))
+        return button
+
+    def _create_sheet_row(self, context, title: str, subtitle: str = "", icon: str = "", on_click=None, danger: bool = False):
+        row = LinearLayout(context)
+        row.setOrientation(LinearLayout.VERTICAL)
+        row.setPadding(
+            int(AndroidUtilities.dp(14)),
+            int(AndroidUtilities.dp(12)),
+            int(AndroidUtilities.dp(14)),
+            int(AndroidUtilities.dp(12)),
+        )
+        bg = GradientDrawable()
+        bg.setCornerRadius(float(AndroidUtilities.dp(20)))
+        fill, stroke, _ = self._sheet_button_palette(filled=False, danger=danger)
+        bg.setColor(int(self._with_alpha(self._sheet_surface_color(), 0x00)))
+        bg.setStroke(int(AndroidUtilities.dp(1)), int(stroke))
+        row.setBackground(bg)
+
+        title_view = TextView(context)
+        title_view.setText(f"{icon}  {title}".strip())
+        title_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16)
+        title_view.setTextColor(int(self._sheet_danger_color() if danger else self._sheet_text_color()))
+        row.addView(title_view)
+
+        if subtitle:
+            subtitle_view = TextView(context)
+            subtitle_view.setText(subtitle)
+            subtitle_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13)
+            subtitle_view.setTextColor(int(self._sheet_muted_color()))
+            subtitle_view.setPadding(0, int(AndroidUtilities.dp(6)), 0, 0)
+            row.addView(subtitle_view)
+
+        if on_click is not None:
+            row.setOnClickListener(OnClickListener(lambda _v: on_click()))
+        return row
+
+    def _sheet_body_height_dp(self, body_text: str, max_body_height_dp: int) -> int:
+        text = str(body_text or "")
+        estimated_lines = max(text.count("\n") + 1, (len(text) // 36) + 1)
+        estimated_dp = 82 + (estimated_lines * 16)
+        return int(max(180, min(max_body_height_dp, estimated_dp)))
+
+    def _sheet_rows_height_dp(self, rows_count: int, max_rows_height_dp: int = 430) -> int:
+        estimated_dp = 28 + (max(0, int(rows_count)) * 78)
+        return int(max(170, min(max_rows_height_dp, estimated_dp)))
+
+    def _dismiss_sheet_dialog(self):
+        def action():
+            try:
+                if self._sheet_dialog is not None and hasattr(self._sheet_dialog, "dismiss"):
+                    self._sheet_dialog.dismiss()
+            except Exception:
+                pass
+            self._sheet_dialog = None
+        run_on_ui_thread(action)
+
+    def _show_sheet_dialog(
+        self,
+        title: str,
+        subtitle: str = "",
+        body_text: str = "",
+        rows: Optional[List[Dict[str, Any]]] = None,
+        actions: Optional[List[Dict[str, Any]]] = None,
+        max_body_height_dp: int = 280,
+    ):
+        context = self._dialog_context()
+        if context is None:
+            return None
+        root = LinearLayout(context)
+        root.setOrientation(LinearLayout.VERTICAL)
+        root.setPadding(
+            int(AndroidUtilities.dp(10)),
+            int(AndroidUtilities.dp(22)),
+            int(AndroidUtilities.dp(10)),
+            int(AndroidUtilities.dp(0)),
+        )
+        root.setBackgroundColor(Color.TRANSPARENT)
+
+        card = LinearLayout(context)
+        card.setOrientation(LinearLayout.VERTICAL)
+        card.setBackground(self._sheet_card_background())
+        card_lp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        )
+        card_lp.setMargins(
+            int(AndroidUtilities.dp(18)),
+            0,
+            int(AndroidUtilities.dp(18)),
+            0,
+        )
+        root.addView(card, card_lp)
+
+        drag_zone = LinearLayout(context)
+        drag_zone.setOrientation(LinearLayout.VERTICAL)
+        drag_zone.setPadding(0, 0, 0, 0)
+        card.addView(
+            drag_zone,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+
+        handle = View(context)
+        handle_bg = GradientDrawable()
+        handle_bg.setCornerRadius(float(AndroidUtilities.dp(3)))
+        handle_bg.setColor(int(self._with_alpha(self._sheet_muted_color(), 0xD2)))
+        handle.setBackground(handle_bg)
+        handle_lp = LinearLayout.LayoutParams(int(AndroidUtilities.dp(48)), int(AndroidUtilities.dp(5)))
+        handle_lp.gravity = Gravity.CENTER_HORIZONTAL
+        handle_lp.setMargins(0, int(AndroidUtilities.dp(10)), 0, int(AndroidUtilities.dp(14)))
+        drag_zone.addView(handle, handle_lp)
+
+        title_view = TextView(context)
+        title_view.setText(title)
+        title_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 21)
+        title_view.setTextColor(int(self._sheet_text_color()))
+        title_view.setPadding(int(AndroidUtilities.dp(18)), 0, int(AndroidUtilities.dp(18)), 0)
+        drag_zone.addView(title_view)
+
+        if subtitle:
+            subtitle_view = TextView(context)
+            subtitle_view.setText(subtitle)
+            subtitle_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13)
+            subtitle_view.setTextColor(int(self._sheet_muted_color()))
+            subtitle_view.setPadding(
+                int(AndroidUtilities.dp(18)),
+                int(AndroidUtilities.dp(8)),
+                int(AndroidUtilities.dp(18)),
+                0,
+            )
+            drag_zone.addView(subtitle_view)
+
+        if body_text:
+            scroll = ScrollView(context)
+            try:
+                scroll.setBackgroundColor(Color.TRANSPARENT)
+            except Exception:
+                pass
+            body_view = TextView(context)
+            try:
+                body_view.setBackgroundColor(Color.TRANSPARENT)
+            except Exception:
+                pass
+            body_view.setText(body_text)
+            body_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
+            body_view.setLineSpacing(float(AndroidUtilities.dp(4)), 1.05)
+            body_view.setTextColor(int(self._sheet_text_color()))
+            body_view.setPadding(
+                int(AndroidUtilities.dp(16)),
+                int(AndroidUtilities.dp(14)),
+                int(AndroidUtilities.dp(16)),
+                int(AndroidUtilities.dp(6)),
+            )
+            scroll.addView(body_view)
+            estimated_body_dp = self._sheet_body_height_dp(body_text, max_body_height_dp)
+            body_lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                int(AndroidUtilities.dp(estimated_body_dp)),
+            )
+            body_lp.setMargins(0, int(AndroidUtilities.dp(10)), 0, 0)
+            try:
+                scroll.setVerticalScrollBarEnabled(True)
+                scroll.setScrollbarFadingEnabled(False)
+                scroll.setScrollBarStyle(View.SCROLLBARS_INSIDE_INSET)
+            except Exception:
+                pass
+            card.addView(scroll, body_lp)
+
+        rows_host = None
+        rows_container = None
+        if rows:
+            rows_host = ScrollView(context)
+            try:
+                rows_host.setBackgroundColor(Color.TRANSPARENT)
+                rows_host.setVerticalScrollBarEnabled(True)
+                rows_host.setScrollbarFadingEnabled(False)
+                rows_host.setScrollBarStyle(View.SCROLLBARS_INSIDE_INSET)
+            except Exception:
+                pass
+            rows_container = LinearLayout(context)
+            rows_container.setOrientation(LinearLayout.VERTICAL)
+            rows_host.addView(
+                rows_container,
+                FrameLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+            try:
+                rows_host.setFillViewport(True)
+            except Exception:
+                pass
+            rows_height_dp = self._sheet_rows_height_dp(len(rows))
+            rows_lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                int(AndroidUtilities.dp(rows_height_dp)),
+            )
+            rows_lp.setMargins(0, int(AndroidUtilities.dp(8)), 0, 0)
+            card.addView(rows_host, rows_lp)
+
+        for row in rows or []:
+            def _row_click(handler=row.get("on_click")):
+                if holder[0] is not None:
+                    try:
+                        holder[0].dismiss()
+                    except Exception:
+                        pass
+                    if self._sheet_dialog == holder[0]:
+                        self._sheet_dialog = None
+                if callable(handler):
+                    handler()
+            row_view = self._create_sheet_row(
+                context,
+                str(row.get("title") or ""),
+                str(row.get("subtitle") or ""),
+                str(row.get("icon") or ""),
+                on_click=_row_click,
+                danger=bool(row.get("danger")),
+            )
+            row_lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            row_lp.setMargins(
+                int(AndroidUtilities.dp(14)),
+                int(AndroidUtilities.dp(10)),
+                int(AndroidUtilities.dp(14)),
+                0,
+            )
+            (rows_container or card).addView(row_view, row_lp)
+
+        holder = [None]
+
+        if actions:
+            actions_wrap = LinearLayout(context)
+            actions_wrap.setOrientation(LinearLayout.VERTICAL)
+            actions_lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            actions_lp.setMargins(
+                int(AndroidUtilities.dp(4)),
+                int(AndroidUtilities.dp(12)),
+                int(AndroidUtilities.dp(4)),
+                int(AndroidUtilities.dp(10)),
+            )
+            index = 0
+            while index < len(actions):
+                action = actions[index]
+
+                def _click(handler=action.get("on_click"), close_first=bool(action.get("close_first"))):
+                    if close_first and holder[0] is not None:
+                        try:
+                            holder[0].dismiss()
+                        except Exception:
+                            pass
+                        if self._sheet_dialog == holder[0]:
+                            self._sheet_dialog = None
+                    if callable(handler):
+                        handler()
+
+                if action.get("compact_row"):
+                    compact_row = LinearLayout(context)
+                    compact_row.setOrientation(LinearLayout.HORIZONTAL)
+                    row_lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    )
+                    row_lp.setMargins(int(AndroidUtilities.dp(14)), 0, int(AndroidUtilities.dp(14)), int(AndroidUtilities.dp(10)))
+                    while index < len(actions) and actions[index].get("compact_row"):
+                        compact_action = actions[index]
+
+                        def _compact_click(handler=compact_action.get("on_click"), close_first=bool(compact_action.get("close_first"))):
+                            if close_first and holder[0] is not None:
+                                try:
+                                    holder[0].dismiss()
+                                except Exception:
+                                    pass
+                                if self._sheet_dialog == holder[0]:
+                                    self._sheet_dialog = None
+                            if callable(handler):
+                                handler()
+
+                        button = self._create_sheet_button(
+                            context,
+                            str(compact_action.get("label") or ""),
+                            _compact_click,
+                            icon=str(compact_action.get("icon") or ""),
+                            filled=bool(compact_action.get("filled")),
+                            danger=bool(compact_action.get("danger")),
+                        )
+                        button_lp = LinearLayout.LayoutParams(
+                            0,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            1.0,
+                        )
+                        left_margin = int(AndroidUtilities.dp(4)) if compact_row.getChildCount() else 0
+                        button_lp.setMargins(left_margin, 0, 0, 0)
+                        compact_row.addView(button, button_lp)
+                        index += 1
+                    actions_wrap.addView(compact_row, row_lp)
+                    continue
+
+                button = self._create_sheet_button(
+                    context,
+                    str(action.get("label") or ""),
+                    _click,
+                    icon=str(action.get("icon") or ""),
+                    filled=bool(action.get("filled")),
+                    danger=bool(action.get("danger")),
+                )
+                button_lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                )
+                button_lp.setMargins(int(AndroidUtilities.dp(14)), 0, int(AndroidUtilities.dp(14)), int(AndroidUtilities.dp(10)))
+                actions_wrap.addView(button, button_lp)
+                index += 1
+            card.addView(actions_wrap, actions_lp)
+
+        try:
+            dialog = Dialog(context)
+            holder[0] = dialog
+            self._sheet_dialog = dialog
+            try:
+                dialog.setCancelable(True)
+                dialog.setCanceledOnTouchOutside(True)
+            except Exception:
+                pass
+            dialog.setContentView(root)
+            dialog.show()
+            window = dialog.getWindow()
+            if window is not None:
+                window.setGravity(Gravity.BOTTOM)
+                try:
+                    window.setDimAmount(0.58)
+                except Exception as dim_error:
+                    log(f"[NeuralV] sheet window dim setup failed: {dim_error}")
+                try:
+                    window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                    decor = window.getDecorView()
+                    if decor is not None:
+                        decor.setPadding(0, 0, 0, 0)
+                        decor.setBackgroundColor(Color.TRANSPARENT)
+                    self._clear_sheet_parent_backgrounds(root)
+                    log("[NeuralV] custom sheet window background set to transparent")
+                except Exception as bg_error:
+                    log(f"[NeuralV] custom sheet window background setup failed: {bg_error}")
+                try:
+                    window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                except Exception as layout_error:
+                    log(f"[NeuralV] custom sheet layout setup failed: {layout_error}")
+        except Exception as error:
+            log(f"[NeuralV] show custom sheet dialog failed: {error}\n{traceback.format_exc()}")
+            return None
+        log("[NeuralV] custom sheet dialog shown, binding swipe close")
+        self._bind_sheet_swipe_close(drag_zone, card, holder)
+        return dialog
+
+    def _clear_sheet_parent_backgrounds(self, view):
+        try:
+            current = view
+            depth = 0
+            while current is not None and depth < 6:
+                try:
+                    current.setBackgroundColor(Color.TRANSPARENT)
+                except Exception:
+                    try:
+                        current.setBackground(ColorDrawable(Color.TRANSPARENT))
+                    except Exception:
+                        pass
+                try:
+                    current.setPadding(0, 0, 0, 0)
+                except Exception:
+                    pass
+                try:
+                    log(f"[NeuralV] cleared sheet background layer depth={depth} class={current.getClass().getName()}")
+                except Exception:
+                    log(f"[NeuralV] cleared sheet background layer depth={depth}")
+                try:
+                    parent = current.getParent()
+                except Exception:
+                    parent = None
+                if parent is None or parent == current or not hasattr(parent, 'setBackgroundColor') and not hasattr(parent, 'setBackground'):
+                    break
+                current = parent
+                depth += 1
+        except Exception as error:
+            log(f"[NeuralV] clear sheet parent backgrounds failed: {error}\n{traceback.format_exc()}")
+
+    def _bind_sheet_swipe_close(self, handle, motion_view, holder):
+        try:
+            if handle is None or motion_view is None:
+                log("[NeuralV] bind sheet swipe skipped: missing handle or motion view")
+                return
+            iface = find_class("android.view.View$OnTouchListener")
+            if iface is None:
+                log("[NeuralV] bind sheet swipe skipped: OnTouchListener class missing")
+                return
+            Proxy = dynamic_proxy(iface)
+            state = {"active": False, "drag": False, "y0": 0.0}
+
+            class _Swipe(Proxy):
+                def onTouch(self, _v, event):
+                    try:
+                        action = int(event.getActionMasked())
+                        if action == MotionEvent.ACTION_DOWN:
+                            state["active"] = True
+                            state["drag"] = False
+                            state["y0"] = float(event.getRawY())
+                            log(f"[NeuralV] sheet swipe down start y={state['y0']}")
+                            return True
+                        if action == MotionEvent.ACTION_MOVE and state.get("active"):
+                            dy = float(event.getRawY()) - float(state.get("y0", 0.0))
+                            if dy > float(AndroidUtilities.dp(6.0)) or bool(state.get("drag")):
+                                state["drag"] = True
+                                motion_view.setTranslationY(
+                                    min(float(AndroidUtilities.dp(260.0)), max(0.0, dy))
+                                )
+                                try:
+                                    motion_view.setAlpha(max(0.78, 1.0 - (max(0.0, dy) / float(AndroidUtilities.dp(700.0)))))
+                                except Exception:
+                                    pass
+                                return True
+                            return False
+                        if action in (MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL):
+                            dy = float(event.getRawY()) - float(state.get("y0", 0.0))
+                            drag = bool(state.get("drag"))
+                            state["active"] = False
+                            state["drag"] = False
+                            log(f"[NeuralV] sheet swipe release dy={dy} drag={drag}")
+                            if drag and dy >= float(AndroidUtilities.dp(34.0)):
+                                log("[NeuralV] sheet swipe dismiss threshold reached")
+                                try:
+                                    target_y = max(float(AndroidUtilities.dp(180.0)), max(0.0, dy) + float(AndroidUtilities.dp(120.0)))
+                                    motion_view.animate().translationY(target_y).alpha(0.0).setDuration(210).start()
+                                    if holder[0] is not None:
+                                        run_on_ui_thread(lambda: holder[0].dismiss(), 215)
+                                except Exception as dismiss_error:
+                                    log(f"[NeuralV] sheet swipe animated dismiss failed: {dismiss_error}")
+                                    try:
+                                        if holder[0] is not None:
+                                            holder[0].dismiss()
+                                    except Exception:
+                                        pass
+                                return True
+                            try:
+                                motion_view.animate().translationY(0.0).alpha(1.0).setDuration(190).start()
+                            except Exception as reset_error:
+                                log(f"[NeuralV] sheet swipe reset animation failed: {reset_error}")
+                                try:
+                                    motion_view.setTranslationY(0.0)
+                                    motion_view.setAlpha(1.0)
+                                except Exception:
+                                    pass
+                            return drag
+                    except Exception as touch_error:
+                        log(f"[NeuralV] sheet swipe touch failed: {touch_error}\n{traceback.format_exc()}")
+                        return False
+                    return False
+
+            handle.setOnTouchListener(_Swipe())
+            log("[NeuralV] sheet swipe listener bound")
+        except Exception as error:
+            log(f"[NeuralV] bind sheet swipe failed: {error}\n{traceback.format_exc()}")
+
+    def _get_max_bytes(self) -> int:
+        return 10 * 1024 * 1024
+
+    def _get_current_dialog_id(self) -> Optional[int]:
+        try:
+            fragment = get_last_fragment()
+            if fragment and hasattr(fragment, "getDialogId"):
+                value = fragment.getDialogId()
+                return int(value)
+        except Exception:
+            return None
+        return None
+
+    def _send_payload(self, payload: Dict[str, Any]) -> bool:
+        try:
+            log(f"[NeuralV] send payload -> peer={payload.get('peer')} reply={payload.get('replyToMsg')}")
+            result = send_message(payload)
+            if result is False:
+                log("[NeuralV] send payload returned False")
+                return False
+            return True
+        except Exception as error:
+            log(f"[NeuralV] send payload failed: {error}\n{traceback.format_exc()}")
+            return False
+
+    def _show_error(self, text: str):
+        run_on_ui_thread(lambda: BulletinHelper.show_error(text))
+
+    def _show_success(self, text: str):
+        run_on_ui_thread(lambda: BulletinHelper.show_success(text))
+
+    def _show_info(self, text: str):
+        run_on_ui_thread(lambda: BulletinHelper.show_info(text))
+
+    def _open_share_modal(self, report: str, reason: str = ""):
+        report_text = str(report or "").strip()
+        log(
+            f"[NeuralV] open share modal requested: reason={reason or 'n/a'}, "
+            f"report_len={len(report_text)}"
+        )
+        if not report_text:
+            log("[NeuralV] share modal aborted: empty report")
+            self._show_error("NeuralV: отчёт пустой, нечего пересылать.")
+            return
+
+        def action():
+            fragment = get_last_fragment()
+            activity = fragment.getParentActivity() if fragment else None
+            if not activity:
+                log("[NeuralV] share modal failed: no activity")
+                BulletinHelper.show_error("NeuralV: не удалось открыть окно пересылки.")
+                return
+            try:
+                intent = Intent(Intent.ACTION_SEND)
+                intent.setType("text/plain")
+                intent.putExtra(Intent.EXTRA_SUBJECT, "NeuralV report")
+                intent.putExtra(Intent.EXTRA_TEXT, report_text)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+                package_name = None
+                try:
+                    package_name = activity.getPackageName()
+                except Exception:
+                    package_name = None
+
+                if package_name:
+                    try:
+                        direct_intent = Intent(intent)
+                        direct_intent.setPackage(package_name)
+                        activity.startActivity(direct_intent)
+                        log(f"[NeuralV] opened direct Telegram share modal: package={package_name}")
+                        BulletinHelper.show_info("NeuralV: выберите чат и отправьте отчёт вручную.")
+                        return
+                    except Exception as direct_error:
+                        log(f"[NeuralV] direct share modal failed for package={package_name}: {direct_error}")
+
+                chooser = Intent.createChooser(intent, "Отправить отчёт")
+                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                activity.startActivity(chooser)
+                log("[NeuralV] opened chooser share modal fallback")
+                BulletinHelper.show_info("NeuralV: выберите чат и отправьте отчёт вручную.")
+            except Exception as error:
+                log(f"[NeuralV] share modal failed: {error}\n{traceback.format_exc()}")
+                BulletinHelper.show_error("NeuralV: не удалось открыть окно пересылки.")
+
+        run_on_ui_thread(action)
+
+    def _start_loading_dialog(self, title: str, phases: Optional[List[str]] = None):
+        self._dismiss_loading_dialog()
+        phases = phases or [
+            "Собираю структуру…",
+            "Сверяю сигнатуры…",
+            "Подключаю второй анализ…",
+            "Собираю итог…",
+        ]
+        self._loading_label = str(phases[0] if phases else "Подготавливаю проверку…")
+        self._loading_current_progress = 2.0
+        self._loading_target_progress = 6.0
+
+        def action():
+            fragment = get_last_fragment()
+            activity = fragment.getParentActivity() if fragment else None
+            if not activity:
+                return
+            dialog = Dialog(activity)
+            try:
+                dialog.setCancelable(False)
+                dialog.setCanceledOnTouchOutside(False)
+            except Exception:
+                pass
+
+            root = LinearLayout(activity)
+            root.setOrientation(LinearLayout.VERTICAL)
+            root.setPadding(
+                int(AndroidUtilities.dp(18)),
+                int(AndroidUtilities.dp(18)),
+                int(AndroidUtilities.dp(18)),
+                int(AndroidUtilities.dp(18)),
+            )
+            root.setBackgroundColor(Color.TRANSPARENT)
+
+            card = LinearLayout(activity)
+            card.setOrientation(LinearLayout.VERTICAL)
+            card.setPadding(
+                int(AndroidUtilities.dp(18)),
+                int(AndroidUtilities.dp(18)),
+                int(AndroidUtilities.dp(18)),
+                int(AndroidUtilities.dp(18)),
+            )
+            card.setBackground(self._sheet_card_background())
+            card_lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            card_lp.setMargins(
+                int(AndroidUtilities.dp(20)),
+                0,
+                int(AndroidUtilities.dp(20)),
+                0,
+            )
+            root.addView(card, card_lp)
+
+            title_row = LinearLayout(activity)
+            title_row.setOrientation(LinearLayout.HORIZONTAL)
+            card.addView(
+                title_row,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+
+            title_view = TextView(activity)
+            title_view.setText(title)
+            title_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 19)
+            title_view.setTextColor(int(self._sheet_text_color()))
+            title_row.addView(
+                title_view,
+                LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1.0,
+                ),
+            )
+
+            percent_view = TextView(activity)
+            percent_view.setText("2%")
+            percent_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16)
+            percent_view.setTextColor(int(self._sheet_accent_color()))
+            percent_lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            percent_lp.setMargins(int(AndroidUtilities.dp(10)), 0, 0, 0)
+            title_row.addView(percent_view, percent_lp)
+
+            status_view = TextView(activity)
+            status_view.setText(self._loading_label)
+            status_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
+            status_view.setTextColor(int(self._sheet_text_color()))
+            status_lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            status_lp.setMargins(0, int(AndroidUtilities.dp(10)), 0, 0)
+            card.addView(status_view, status_lp)
+
+            track = FrameLayout(activity)
+            track_bg = GradientDrawable()
+            track_bg.setCornerRadius(float(AndroidUtilities.dp(999)))
+            track_bg.setColor(int(self._with_alpha(self._sheet_muted_color(), 0x32)))
+            track.setBackground(track_bg)
+            track_lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                int(AndroidUtilities.dp(12)),
+            )
+            track_lp.setMargins(0, int(AndroidUtilities.dp(12)), 0, 0)
+            card.addView(track, track_lp)
+
+            fill_view = View(activity)
+            fill_bg = GradientDrawable()
+            fill_bg.setCornerRadius(float(AndroidUtilities.dp(999)))
+            fill_bg.setColor(int(self._sheet_accent_color()))
+            fill_view.setBackground(fill_bg)
+            fill_lp = FrameLayout.LayoutParams(
+                int(AndroidUtilities.dp(18)),
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            )
+            track.addView(fill_view, fill_lp)
+            gap_view = None
+
+            dialog.setContentView(root)
+            self._loading_dialog = dialog
+            self._loading_builder = None
+            self._loading_percent_view = percent_view
+            self._loading_status_view = status_view
+            self._loading_progress_fill = fill_view
+            self._loading_progress_gap = gap_view
+            self._loading_progress_track = track
+            self._loading_active = True
+            try:
+                dialog.show()
+                window = dialog.getWindow()
+                if window is not None:
+                    window.setGravity(Gravity.CENTER)
+                    window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                    try:
+                        decor = window.getDecorView()
+                        if decor is not None:
+                            decor.setPadding(0, 0, 0, 0)
+                    except Exception:
+                        pass
+                    try:
+                        window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    except Exception:
+                        pass
+                    try:
+                        window.setDimAmount(0.58)
+                    except Exception:
+                        pass
+                log("[NeuralV] loading dialog shown")
+            except Exception as error:
+                log(f"[NeuralV] loading dialog show failed: {error}")
+            self._refresh_loading_ui()
+
+        run_on_ui_thread(action)
+
+        def animator():
+            while self._loading_active:
+                time.sleep(0.08)
+                if not self._loading_active:
+                    break
+                if self._loading_current_progress < self._loading_target_progress:
+                    delta = max(0.8, min(3.2, (self._loading_target_progress - self._loading_current_progress) * 0.35))
+                    self._loading_current_progress = min(self._loading_target_progress, self._loading_current_progress + delta)
+                run_on_ui_thread(self._refresh_loading_ui)
+
+        self._loading_thread = threading.Thread(target=animator, daemon=True)
+        self._loading_thread.start()
+
+    def _set_loading_stage(self, progress: int, label: str):
+        self._loading_target_progress = float(max(0, min(100, progress)))
+        self._loading_label = str(label or self._loading_label or "Подготавливаю проверку…")
+        log(f"[NeuralV] loading stage -> {int(self._loading_target_progress)}% :: {self._loading_label}")
+
+    def _complete_loading_stage(self, label: str = "Готовлю итог…"):
+        self._set_loading_stage(100, label)
+        time.sleep(0.18)
+
+    def _refresh_loading_ui(self):
+        progress = max(0, min(100, int(round(self._loading_current_progress))))
+        label = self._loading_label or "Подготавливаю проверку…"
+        try:
+            if self._loading_percent_view is not None:
+                self._loading_percent_view.setText(f"{progress}%")
+            if self._loading_status_view is not None:
+                self._loading_status_view.setText(label)
+            if self._loading_progress_fill is not None and self._loading_progress_track is not None:
+                track_width = 0
+                try:
+                    track_width = int(self._loading_progress_track.getWidth())
+                except Exception:
+                    track_width = 0
+                if track_width <= 0:
+                    try:
+                        track_width = int(AndroidUtilities.dp(220))
+                    except Exception:
+                        track_width = 220
+                fill_width = max(int(AndroidUtilities.dp(18)), int((max(2, progress) / 100.0) * track_width))
+                fill_lp = self._loading_progress_fill.getLayoutParams()
+                fill_lp.width = fill_width
+                self._loading_progress_fill.setLayoutParams(fill_lp)
+        except Exception:
+            pass
+
+    def _dismiss_loading_dialog(self):
+        self._loading_active = False
+        self._loading_label = ""
+        self._loading_current_progress = 0.0
+        self._loading_target_progress = 0.0
+        def action():
+            try:
+                if self._loading_dialog and hasattr(self._loading_dialog, "dismiss"):
+                    self._loading_dialog.dismiss()
+            except Exception:
+                pass
+            self._loading_dialog = None
+            self._loading_builder = None
+            self._loading_percent_view = None
+            self._loading_status_view = None
+            self._loading_progress_fill = None
+            self._loading_progress_gap = None
+            self._loading_progress_track = None
+        run_on_ui_thread(action)
+
+    def _open_main_menu(self):
+        def action():
+            self._show_sheet_dialog(
+                "NeuralV",
+                rows=[
+                    {
+                        "title": "Проверить файл с устройства",
+                        "icon": "📂",
+                        "on_click": self._launch_file_picker,
+                    },
+                    {
+                        "title": "Проверить все установленные плагины",
+                        "icon": "🧩",
+                        "on_click": lambda: run_on_queue(self._scan_installed_plugins_task),
+                    },
+                    {
+                        "title": "Прошлые проверки",
+                        "icon": "🕘",
+                        "on_click": self._show_history_sheet,
+                    },
+                ],
+                actions=[
+                    {"label": "Закрыть", "icon": "✕", "close_first": True},
+                ],
+                max_body_height_dp=1,
+            )
+        run_on_ui_thread(action)
+
+    def _copy_to_clipboard(self, text: str):
+        try:
+            clipboard = ApplicationLoader.applicationContext.getSystemService(Context.CLIPBOARD_SERVICE)
+            if clipboard is None:
+                raise RuntimeError("clipboard unavailable")
+            clipboard.setPrimaryClip(ClipData.newPlainText("NeuralV", str(text or "")))
+            self._show_success("NeuralV: текст скопирован.")
+        except Exception as error:
+            log(f"[NeuralV] clipboard copy failed: {error}")
+            self._show_error("NeuralV: не удалось скопировать текст.")
+
+    def _render_result_body(self, result: dict) -> str:
+        return str(result.get("report") or "").strip()
+
+    def _ensure_runtime_context(self, result: dict) -> Optional[Dict[str, Any]]:
+        context = self.runtime_contexts.get(str(result.get("id") or ""))
+        if context:
+            return context
+        source_meta = result.get("source_meta") or {}
+        plugin_path = str(source_meta.get("plugin_path") or "").strip()
+        filename = str(result.get("filename") or "")
+        if plugin_path and os.path.isfile(plugin_path):
+            try:
+                with open(plugin_path, "rb") as handle:
+                    raw = handle.read(self._get_max_bytes() + 1)
+                if len(raw) > self._get_max_bytes() or _is_probably_binary(raw):
+                    return None
+                code = _decode_text(raw)
+                analysis = analyze_code(filename or os.path.basename(plugin_path), code)
+                context = {
+                    "filename": filename or os.path.basename(plugin_path),
+                    "code": code,
+                    "analysis": analysis,
+                    "source_meta": dict(source_meta),
+                }
+                self.runtime_contexts[str(result.get("id") or "")] = context
+                return context
+            except Exception as error:
+                log(f"[NeuralV] ensure runtime context failed: {error}")
+        return None
+
+    def _show_history_sheet(self):
+        if not self.analysis_history:
+            self._show_history_empty_sheet()
+            return
+
+        def action():
+            rows = []
+            for entry in self.analysis_history[:HISTORY_LIMIT]:
+                timestamp = int(entry.get("ts") or 0)
+                when = time.strftime("%d.%m %H:%M", time.localtime(timestamp)) if timestamp else "сейчас"
+                rows.append({
+                    "title": f"{entry.get('icon', '🧠')} {entry.get('filename', 'Проверка')}",
+                    "subtitle": f"{entry.get('verdict', 'Неизвестно')} • {when}",
+                    "icon": "",
+                    "on_click": lambda item=dict(entry): self._show_result_dialog(
+                        str(item.get("filename") or "NeuralV"),
+                        {
+                            "id": item.get("id"),
+                            "verdict": item.get("verdict"),
+                            "icon": item.get("icon"),
+                            "report": item.get("report"),
+                            "summary": item.get("summary"),
+                            "bullets": list(item.get("bullets") or []),
+                            "display_name": item.get("display_name"),
+                            "display_version": item.get("display_version"),
+                            "source_meta": dict(item.get("source_meta") or {}),
+                            "can_disable": bool((item.get("source_meta") or {}).get("plugin_id")),
+                        },
+                        self._get_current_dialog_id(),
+                        None,
+                        from_history=True,
+                    ),
+                })
+            self._show_sheet_dialog(
+                "История проверок",
+                rows=rows,
+                actions=[
+                    {"label": "Очистить историю", "danger": True, "close_first": True, "on_click": self._confirm_clear_history},
+                    {"label": "Назад", "close_first": True},
+                ],
+                max_body_height_dp=1,
+            )
+        run_on_ui_thread(action)
+
+    def _show_history_empty_sheet(self):
+        def action():
+            self._show_sheet_dialog(
+                "История проверок",
+                body_text="История пока пустая. Новые результаты появятся здесь после первой проверки.",
+                actions=[
+                    {"label": "Назад", "close_first": True},
+                ],
+                max_body_height_dp=220,
+            )
+        run_on_ui_thread(action)
+
+    def _confirm_clear_history(self):
+        def action():
+            context = self._dialog_context()
+            if context is None:
+                return
+            builder = AlertDialogBuilder(context)
+            builder.set_title("Очистить историю")
+            builder.set_message("NeuralV удалит все сохранённые результаты проверок. Продолжить?")
+            builder.set_positive_button("Очистить", lambda d, w: (d.dismiss(), self._clear_history()))
+            builder.set_negative_button("Отмена", lambda d, w: d.dismiss())
+            builder.show()
+        run_on_ui_thread(action)
+
+    def _clear_history(self):
+        self.analysis_history = []
+        self.runtime_contexts.clear()
+        self._save_history()
+        self._dismiss_sheet_dialog()
+        self._show_success("NeuralV: история очищена.")
+        self._show_history_empty_sheet()
+
+    def _request_full_report_task(self, result: dict, peer_id: Optional[int], reply_to: Any = None):
+        context = self._ensure_runtime_context(result)
+        if not context:
+            self._show_error("NeuralV: не удалось восстановить данные для полного отчёта.")
+            return
+        self._start_loading_dialog("NeuralV", [
+            "Собираю полный контекст…",
+            "Проверяю спорные места…",
+            "Формирую человеческий отчёт…",
+            "Готовлю действия…",
+        ])
+        try:
+            self._set_loading_stage(12, "Поднимаю сохранённый контекст…")
+            ai_result = self._request_ai_review(
+                context["filename"],
+                context["code"],
+                context["analysis"],
+                mode="full",
+            )
+            self._set_loading_stage(78, "Собираю полный отчёт…")
+            full_report = str(ai_result.get("full_report") or ai_result.get("summary") or "").strip()
+            if not full_report:
+                full_report = self._build_local_fallback_summary(context["analysis"])
+            self._complete_loading_stage("Открываю полный отчёт…")
+            self._show_full_report_dialog(result, full_report, peer_id, reply_to)
+        except Exception as error:
+            log(f"[NeuralV] full report failed: {error}\n{traceback.format_exc()}")
+            self._show_error("NeuralV: не удалось собрать полный отчёт.")
+        finally:
+            self._dismiss_loading_dialog()
+
+    def _try_set_plugin_enabled(self, plugin_id: str, enabled: bool) -> bool:
+        controller = PluginsController.getInstance()
+        plugin = None
+        try:
+            plugin = controller.plugins.get(plugin_id)
+        except Exception:
+            plugin = None
+        if plugin is not None:
+            for method_name in ("setEnabled",):
+                try:
+                    getattr(plugin, method_name)(bool(enabled))
+                    return True
+                except Exception:
+                    pass
+        boolean_type = find_class("java.lang.Boolean").TYPE
+        string_class = find_class("java.lang.String")
+        attempts = [
+            ("setPluginEnabled", (string_class, boolean_type), [plugin_id, bool(enabled)]),
+            ("togglePlugin", (string_class, boolean_type), [plugin_id, bool(enabled)]),
+            ("enablePlugin", (string_class,), [plugin_id]) if enabled else ("disablePlugin", (string_class,), [plugin_id]),
+        ]
+        for method_name, signature, args in attempts:
+            try:
+                method = controller.getClass().getDeclaredMethod(method_name, *signature)
+                method.setAccessible(True)
+                method.invoke(controller, *args)
+                return True
+            except Exception:
+                continue
+        return False
+
+    def _confirm_disable_plugin(self, result: dict):
+        source_meta = result.get("source_meta") or {}
+        plugin_id = str(source_meta.get("plugin_id") or "").strip()
+        plugin_name = str(source_meta.get("plugin_name") or result.get("filename") or "плагин").strip()
+        if not plugin_id:
+            self._show_error("NeuralV: этот результат не связан с установленным плагином.")
+            return
+
+        def action():
+            context = self._dialog_context()
+            if context is None:
+                return
+            builder = AlertDialogBuilder(context)
+            builder.set_title("Отключить плагин")
+            builder.set_message(f"NeuralV отключит {plugin_name} без удаления. Продолжить?")
+            builder.set_positive_button("Отключить", lambda d, w: (d.dismiss(), run_on_queue(lambda: self._disable_plugin_task(plugin_id, plugin_name))))
+            builder.set_negative_button("Отмена", lambda d, w: d.dismiss())
+            builder.show()
+        run_on_ui_thread(action)
+
+    def _disable_plugin_task(self, plugin_id: str, plugin_name: str):
+        try:
+            if self._try_set_plugin_enabled(plugin_id, False):
+                self._show_success(f"NeuralV: {plugin_name} отключён.")
+            else:
+                self._show_error("NeuralV: не удалось отключить плагин автоматически.")
+        except Exception as error:
+            log(f"[NeuralV] disable plugin failed: {error}\n{traceback.format_exc()}")
+            self._show_error("NeuralV: не удалось отключить плагин.")
+
+    def _show_full_report_dialog(self, result: dict, report_text: str, peer_id: Optional[int], reply_to: Any = None, from_history: bool = False):
+        def action():
+            share_text = _build_share_report_text(result, report_text)
+            source_name = str(result.get("filename") or result.get("display_name") or "Плагин")
+            actions = [
+                {
+                    "label": "Скопировать",
+                    "compact_row": True,
+                    "on_click": lambda: self._copy_to_clipboard(share_text),
+                },
+                {
+                    "label": "Отправить",
+                    "compact_row": True,
+                    "filled": True,
+                    "close_first": True,
+                    "on_click": lambda: self._send_report_to_chat(peer_id, reply_to, share_text),
+                },
+            ]
+            if result.get("can_disable"):
+                actions.append({
+                    "label": "Отключить плагин",
+                    "icon": "⏸",
+                    "danger": True,
+                    "on_click": lambda: self._confirm_disable_plugin(result),
+                })
+            actions.append({
+                "label": "Назад",
+                "close_first": True,
+                "on_click": lambda: self._show_result_dialog(source_name, result, peer_id, reply_to, from_history=from_history),
+            })
+            self._show_sheet_dialog(
+                f"{result.get('icon', '🧠')} Полный отчёт",
+                str(result.get("filename") or "NeuralV"),
+                body_text=report_text,
+                actions=actions,
+                max_body_height_dp=760,
+            )
+        run_on_ui_thread(action)
+
+    def _show_batch_results_sheet(self, results: List[Dict[str, Any]]):
+        rows = []
+        for item in results:
+            rows.append({
+                "title": f"{item.get('icon', '🧠')} {item.get('filename', 'Плагин')}",
+                "subtitle": f"{item.get('verdict', 'Неизвестно')} • {item.get('summary', '')[:100]}",
+                "on_click": lambda entry=item: self._show_result_dialog(
+                    entry.get("filename"),
+                    entry,
+                    self._get_current_dialog_id(),
+                    None,
+                ),
+            })
+        self._show_sheet_dialog(
+            "Полная проверка",
+            "Откройте конкретный результат, если нужно подробное объяснение или действия по плагину.",
+            rows=rows,
+            actions=[
+                {"label": "Закрыть", "icon": "✕", "close_first": True},
+            ],
+            max_body_height_dp=1,
+        )
+
+    def _launch_file_picker(self):
+        try:
+            fragment = get_last_fragment()
+            activity = fragment.getParentActivity() if fragment else None
+            if not activity:
+                self._show_error("NeuralV: не удалось получить текущий экран.")
+                return
+            if self._activity_hook:
+                try:
+                    self._activity_hook.unhook()
+                except Exception:
+                    pass
+            method = activity.getClass().getDeclaredMethod(
+                "onActivityResult",
+                find_class("java.lang.Integer").TYPE,
+                find_class("java.lang.Integer").TYPE,
+                Intent,
+            )
+            self._activity_hook = self.hook_method(method, ActivityResultHook(self))
+            intent = Intent(Intent.ACTION_GET_CONTENT)
+            intent.setType("*/*")
+            intent.addCategory(Intent.CATEGORY_OPENABLE)
+            activity.startActivityForResult(Intent.createChooser(intent, "Выберите файл для проверки"), FILE_PICK_REQUEST_CODE)
+        except Exception as error:
+            log(f"[NeuralV] file picker error: {error}\n{traceback.format_exc()}")
+            self._show_error("NeuralV: не удалось открыть выбор файла.")
+
+    def _handle_file_uri(self, uri_string: str):
+        try:
+            uri = find_class("android.net.Uri").parse(uri_string)
+            content_resolver = ApplicationLoader.applicationContext.getContentResolver()
+            file_name = f"picked_{int(time.time())}.txt"
+            cursor = content_resolver.query(uri, None, None, None, None)
+            if cursor is not None:
+                try:
+                    if cursor.moveToFirst():
+                        idx = cursor.getColumnIndex("_display_name")
+                        if idx != -1:
+                            file_name = cursor.getString(idx) or file_name
+                finally:
+                    cursor.close()
+            input_stream = content_resolver.openInputStream(uri)
+            if not input_stream:
+                self._show_error("NeuralV: не удалось открыть выбранный файл.")
+                return
+            raw_chunks = bytearray()
+            buffer = bytearray(4096)
+            while True:
+                read = input_stream.read(buffer)
+                if read == -1:
+                    break
+                raw_chunks.extend(buffer[:read])
+                if len(raw_chunks) > self._get_max_bytes():
+                    self._show_error("NeuralV: файл слишком большой для проверки.")
+                    return
+            raw = bytes(raw_chunks)
+            if _is_probably_binary(raw):
+                self._show_error("NeuralV: нужен текстовый файл с кодом.")
+                return
+            code_content = _decode_text(raw)
+            if not code_content.strip():
+                self._show_error("NeuralV: в файле нет текста для проверки.")
+                return
+            self._analyze_text_task(file_name, code_content, self._get_current_dialog_id())
+        except Exception as error:
+            log(f"[NeuralV] file uri error: {error}\n{traceback.format_exc()}")
+            self._show_error("NeuralV: не удалось прочитать выбранный файл.")
+
+    def _build_local_summary(self, analysis: dict) -> str:
+        parts = [
+            f"Тип: {analysis['detected_label']}",
+            f"Локальный вердикт: {analysis['verdict']}",
+            f"Счёт риска: {analysis['score']}",
+        ]
+        if analysis.get("framework_library"):
+            parts.append("Файл похож на общую библиотеку или framework")
+        if analysis.get("security_tool"):
+            parts.append("Файл похож на служебный инструмент проверки или анализа")
+        if analysis["mismatch"]:
+            parts.append("Есть несовпадение между именем файла и реальной структурой")
+        if analysis["findings"]:
+            titles = "; ".join(item["title"] for item in analysis["findings"][:4])
+            parts.append(f"Главные сигналы: {titles}")
+        else:
+            parts.append("Явных опасных сигнатур нет")
+        return ". ".join(parts) + "."
+
+    def _local_reason_bullets(self, analysis: dict, limit: int = 4) -> List[str]:
+        items: List[str] = []
+        if analysis.get("framework_library") or analysis.get("security_tool"):
+            items.append("Файл похож на общую библиотеку, framework или служебный инструмент.")
+            if analysis.get("findings"):
+                items.append("Внутри есть сетевые, файловые и служебные helper-слои, которые в таком типе плагинов сами по себе не означают вредоносность.")
+            if analysis.get("mismatch"):
+                items.append("Имя файла не совпадает с тем, как он устроен внутри.")
+            return items[:limit]
+        if analysis.get("mismatch"):
+            items.append("Имя файла не совпадает с тем, как он устроен внутри.")
+        for finding in analysis.get("findings", []):
+            text = str(finding.get("summary") or finding.get("title") or "").strip()
+            if not text:
+                continue
+            text = text[0].upper() + text[1:] if text else text
+            if text.endswith("."):
+                text = text[:-1]
+            items.append(text)
+            if len(items) >= limit:
+                break
+        return items
+
+    def _dedupe_bullets(self, ai_bullets: List[str], local_bullets: List[str], limit: int = 5) -> List[str]:
+        results: List[str] = []
+        seen = set()
+        for source in (ai_bullets or []) + (local_bullets or []):
+            item = str(source or "").strip()
+            if not item:
+                continue
+            key = re.sub(r"[^а-яa-z0-9]+", " ", item.lower()).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            results.append(item)
+            if len(results) >= limit:
+                break
+        return results
+
+    def _build_local_fallback_summary(self, analysis: dict) -> str:
+        if analysis["verdict"] == "Безопасно":
+            return "Локальный слой не увидел цепочку, которая выглядела бы как вредоносное поведение."
+        if analysis.get("framework_library") or analysis.get("security_tool"):
+            return "Файл содержит служебные сетевые, файловые или системные подсистемы, поэтому ему нужен спокойный контекстный разбор, а не жёсткий alarmist-вердикт."
+        if analysis["verdict"] == "Осторожно":
+            return "Файл выглядит спорно: в нём есть поведение, которое требует ручной проверки перед запуском."
+        return "Файл показывает опасную цепочку поведения. Запускать его без ручной проверки и изоляции не стоит."
+
+    def _build_benign_tooling_summary(self, analysis: dict, final_verdict: str = "Безопасно") -> str:
+        if analysis.get("security_tool"):
+            if final_verdict == "Осторожно":
+                return "Это служебный модуль проверки. Внутри есть спорные технические возможности, но сами по себе они ещё не подтверждают вредоносное поведение."
+            return "Это служебный модуль проверки. Локальный разбор не показал скрытого запуска, кражи данных или другой вредоносной цепочки."
+        if final_verdict == "Осторожно":
+            return "Файл похож на общую библиотеку или framework для плагинов. Внутри есть спорные технические возможности, но сами по себе они ещё не делают его вредоносным."
+        return "Файл похож на общую библиотеку или framework для плагинов. Явной вредоносной цепочки в нём не видно."
+
+    def _build_benign_tooling_bullets(self, analysis: dict, final_verdict: str = "Безопасно") -> List[str]:
+        items: List[str] = []
+        if analysis.get("security_tool"):
+            items.append("Внутри есть сетевые и файловые подсистемы, что нормально для модуля проверки и отчётов.")
+            items.append("Скрытый запуск, кража данных или закрепление в системе не подтверждены.")
+            if final_verdict == "Осторожно":
+                items.append("Имеет смысл смотреть на конкретные интеграции и то, какие данные модуль реально отправляет.")
+            else:
+                items.append("Поведение похоже на заявленную задачу: анализ, сводка и отправка результата.")
+        else:
+            items.append("Внутри есть служебные сетевые, файловые и системные helper-слои, типичные для общей библиотеки.")
+            items.append("Сама по себе такая библиотека ещё не означает вредоносность без конкретного сценария злоупотребления.")
+            if final_verdict == "Осторожно":
+                items.append("Главный вопрос здесь не в библиотеке отдельно, а в том, как её использует конкретный плагин.")
+            else:
+                items.append("Явная вредоносная цепочка не подтверждена.")
+        if analysis.get("mismatch"):
+            items.append("Имя файла не совпадает с тем, как он устроен внутри.")
+        return items[:4]
+
+    def _build_ai_analysis_text(self, filename: str, code: str, analysis: dict) -> str:
+        lines = [
+            f"Файл: {filename}",
+            f"Тип: {analysis['detected_label']}",
+            f"Локальный вердикт: {analysis['verdict']}",
+            f"Счёт риска: {analysis['score']}",
+            f"Несовпадение формата: {'да' if analysis['mismatch'] else 'нет'}",
+            f"Сигналы собраны только по исполняемому коду: {'да' if analysis.get('exec_scope_only') else 'нет'}",
+            "",
+            "Локальные сигналы:",
+        ]
+        if analysis["findings"]:
+            for finding in analysis["findings"][:MAX_FINDINGS]:
+                lines.append(f"- [{finding['severity']}] {finding['title']}: {finding['summary']}")
+        else:
+            lines.append("- Явных красных флагов локальный слой не нашёл.")
+        if analysis["fragments"]:
+            lines.extend(["", "Исполняемые фрагменты:"])
+            for fragment in analysis["fragments"][:MAX_FRAGMENTS]:
+                lines.append(f"- {fragment['snippet']}")
+        return "\n".join(lines)
+
+    def _to_api_finding(self, finding: dict) -> dict:
+        return {
+            "severity": finding["severity"],
+            "title": finding["title"],
+            "summary": finding["summary"],
+            "line": finding["hits"][0]["line"] if finding.get("hits") else None,
+            "snippets": [item["snippet"] for item in finding.get("hits", [])[:2]],
+        }
+
+    def _request_ai_review(self, filename: str, code: str, analysis: dict, mode: str = "summary") -> dict:
+        identity = _extract_plugin_identity(filename, code)
+        payload = {
+            "mode": mode,
+            "summary": self._build_local_summary(analysis),
+            "analysis": self._build_ai_analysis_text(filename, code, analysis),
+            "findings": [self._to_api_finding(item) for item in analysis["findings"][:MAX_FINDINGS]],
+            "file": {
+                "filename": filename,
+                "declared_type": analysis["declared_family"],
+                "detected_type": analysis["detected_family"],
+                "display_name": identity.get("display_name") or "",
+                "display_version": identity.get("display_version") or "",
+            },
+            "meta": {
+                "plugin_surface": "exteragram",
+                "local_verdict": analysis["verdict"],
+                "local_score": analysis["score"],
+                "mismatch": analysis["mismatch"],
+                "exec_scope_only": analysis.get("exec_scope_only"),
+                "library_candidate": bool(analysis.get("framework_library")) or _looks_like_framework_plugin(filename, code, identity),
+                "security_tool_candidate": bool(analysis.get("security_tool")),
+            },
+        }
+        try:
+            response = requests.post(AI_REVIEW_URL, json=payload, timeout=AI_TIMEOUT)
+            if not response.ok:
+                return {
+                    "success": False,
+                    "summary": "Серверный разбор сейчас недоступен. Показан только локальный результат.",
+                    "bullets": [],
+                    "verdict_suggestion": "review",
+                    "full_report": "",
+                }
+            data = response.json()
+            if not data.get("success"):
+                return {
+                    "success": False,
+                    "summary": str(data.get("error") or "Серверный разбор сейчас недоступен."),
+                    "bullets": [],
+                    "verdict_suggestion": "review",
+                    "full_report": "",
+                }
+            return data
+        except Exception as error:
+            log(f"[NeuralV] AI review failed: {error}")
+            return {
+                "success": False,
+                "summary": "Серверный разбор сейчас недоступен. Показан только локальный результат.",
+                "bullets": [],
+                "verdict_suggestion": "review",
+                "full_report": "",
+            }
+
+    def _merge_verdicts(self, local_verdict: str, ai_suggestion: str, analysis: Optional[dict] = None) -> str:
+        order = {"Безопасно": 0, "Осторожно": 1, "Опасно": 2}
+        ai_map = {"clean": "Безопасно", "review": "Осторожно", "block": "Опасно"}
+        ai_verdict = ai_map.get(str(ai_suggestion or "").strip().lower(), local_verdict)
+        if analysis and (analysis.get("framework_library") or analysis.get("security_tool")):
+            confirmed_chain = _has_confirmed_tooling_malicious_chain({item.get("id") for item in (analysis.get("findings") or [])})
+            if ai_verdict == "Безопасно" and local_verdict == "Осторожно":
+                return "Безопасно"
+            if ai_verdict == "Осторожно" and local_verdict == "Безопасно" and not confirmed_chain:
+                return "Безопасно"
+            if ai_verdict == "Опасно" and not confirmed_chain:
+                return "Осторожно" if local_verdict == "Осторожно" else "Безопасно"
+        return local_verdict if order[local_verdict] >= order[ai_verdict] else ai_verdict
+
+    def _sanitize_ai_review(self, ai_result: dict, analysis: dict) -> dict:
+        result = dict(ai_result or {})
+        if not (analysis.get("framework_library") or analysis.get("security_tool")):
+            return result
+        confirmed_chain = _has_confirmed_tooling_malicious_chain({item.get("id") for item in (analysis.get("findings") or [])})
+        if confirmed_chain:
+            return result
+        target_verdict = "Осторожно" if analysis.get("verdict") == "Осторожно" else "Безопасно"
+        result["summary"] = self._build_benign_tooling_summary(analysis, target_verdict)
+        result["bullets"] = self._build_benign_tooling_bullets(analysis, target_verdict)
+        suggestion = str(result.get("verdict_suggestion") or "").strip().lower()
+        if suggestion == "block":
+            result["verdict_suggestion"] = "review"
+        return result
+
+    def _compose_report(self, filename: str, analysis: dict, ai_result: dict) -> dict:
+        ai_result = self._sanitize_ai_review(ai_result, analysis)
+        final_verdict = self._merge_verdicts(analysis["verdict"], ai_result.get("verdict_suggestion"), analysis)
+        if (analysis.get("framework_library") or analysis.get("security_tool")) and not _has_confirmed_tooling_malicious_chain({item.get("id") for item in (analysis.get("findings") or [])}):
+            ai_summary = self._build_benign_tooling_summary(analysis, final_verdict)
+            merged_bullets = self._build_benign_tooling_bullets(analysis, final_verdict)
+        else:
+            ai_summary = str(ai_result.get("summary") or "").strip()
+            ai_bullets = [str(item).strip() for item in (ai_result.get("bullets") or []) if str(item).strip()]
+            local_bullets = self._local_reason_bullets(analysis)
+            merged_bullets = self._dedupe_bullets(ai_bullets, local_bullets)
+        final_icon = VERDICT_ICONS[final_verdict]
+
+        lines = [ai_summary or self._build_local_fallback_summary(analysis)]
+        if merged_bullets:
+            lines.append("")
+            for item in merged_bullets:
+                lines.append(f"- {item}")
+        return {
+            "verdict": final_verdict,
+            "icon": final_icon,
+            "report": "\n".join(lines).strip(),
+            "summary": ai_summary or self._build_local_fallback_summary(analysis),
+            "bullets": merged_bullets,
+            "local_verdict": analysis["verdict"],
+        }
+
+    def _clone_result(self, result: dict) -> dict:
+        return {
+            "verdict": result.get("verdict"),
+            "icon": result.get("icon"),
+            "report": str(result.get("report") or ""),
+            "summary": str(result.get("summary") or ""),
+            "bullets": list(result.get("bullets") or []),
+            "local_verdict": result.get("local_verdict"),
+            "display_name": str(result.get("display_name") or ""),
+            "display_version": str(result.get("display_version") or ""),
+        }
+
+    def _list_installed_plugin_sources(self) -> List[Dict[str, Any]]:
+        items = []
+        try:
+            controller = PluginsController.getInstance()
+            plugins_map = controller.plugins
+            keys = plugins_map.keySet().toArray()
+            for key in keys:
+                plugin = plugins_map.get(key)
+                if plugin is None:
+                    continue
+                plugin_id = str(plugin.getId())
+                plugin_name = str(plugin.getName() or plugin_id)
+                plugin_path = str(controller.getPluginPath(plugin_id) or "")
+                enabled = False
+                try:
+                    enabled = bool(plugin.isEnabled())
+                except Exception:
+                    enabled = False
+                items.append({
+                    "plugin_id": plugin_id,
+                    "plugin_name": plugin_name,
+                    "plugin_path": plugin_path,
+                    "enabled": enabled,
+                })
+        except Exception as error:
+            log(f"[NeuralV] list installed plugins failed: {error}")
+        return items
+
+    def _resolve_installed_plugin_source(self, file_path: str = "", filename: str = "") -> Dict[str, Any]:
+        normalized_path = os.path.abspath(file_path) if file_path else ""
+        base_name = os.path.basename(filename or file_path or "")
+        for item in self._list_installed_plugin_sources():
+            plugin_path = str(item.get("plugin_path") or "")
+            if normalized_path and plugin_path and os.path.abspath(plugin_path) == normalized_path:
+                return dict(item)
+            if base_name and os.path.basename(plugin_path or "") == base_name:
+                return dict(item)
+        return {}
+
+    def _register_result(
+        self,
+        filename: str,
+        code_content: str,
+        analysis: dict,
+        result_template: dict,
+        source_meta: Optional[Dict[str, Any]] = None,
+    ) -> dict:
+        entry_id = hashlib.sha1(f"{time.time()}::{filename}::{code_content[:240]}".encode("utf-8", "ignore")).hexdigest()[:16]
+        identity = _extract_plugin_identity(filename, code_content)
+        result = self._clone_result(result_template)
+        result["id"] = entry_id
+        result["filename"] = filename
+        result["source_meta"] = dict(source_meta or {})
+        result["can_disable"] = bool(result["source_meta"].get("plugin_id"))
+        if source_meta and source_meta.get("plugin_name") and not identity.get("display_name"):
+            identity["display_name"] = str(source_meta.get("plugin_name"))
+        result["display_name"] = identity.get("display_name") or os.path.basename(filename or "Плагин")
+        result["display_version"] = identity.get("display_version") or ""
+        self.runtime_contexts[entry_id] = {
+            "filename": filename,
+            "code": code_content,
+            "analysis": analysis,
+            "source_meta": dict(source_meta or {}),
+        }
+        history_entry = {
+            "id": entry_id,
+            "ts": int(time.time()),
+            "filename": filename,
+            "verdict": result["verdict"],
+            "icon": result["icon"],
+            "report": result["report"],
+            "summary": result["summary"],
+            "bullets": list(result.get("bullets") or []),
+            "display_name": result.get("display_name"),
+            "display_version": result.get("display_version"),
+            "source_meta": dict(source_meta or {}),
+        }
+        self.analysis_history = [history_entry] + [item for item in self.analysis_history if item.get("id") != entry_id]
+        self.analysis_history = self.analysis_history[:HISTORY_LIMIT]
+        self._save_history()
+        return result
+
+    def _cache_key(self, filename: str, code: str) -> str:
+        return hashlib.sha256(f"{filename}\n{code}".encode("utf-8", "ignore")).hexdigest()
+
+    def _analyze_text_task(
+        self,
+        filename: str,
+        code_content: str,
+        peer_id: Optional[int],
+        reply_to: Any = None,
+        source_meta: Optional[Dict[str, Any]] = None,
+    ):
+        self._start_loading_dialog("NeuralV", [
+            "Собираю структуру…",
+            "Сверяю сигнатуры…",
+            "Подключаю второй анализ…",
+            "Готовлю итог…",
+        ])
+        try:
+            self._set_loading_stage(8, "Разбираю файл и тип кода…")
+            cache_key = self._cache_key(filename, code_content)
+            cached = self.analysis_cache.get(cache_key)
+            if cached and (time.time() - cached.get("ts", 0)) < CACHE_TTL:
+                self._set_loading_stage(34, "Поднимаю сохранённый результат…")
+                analysis = cached.get("analysis")
+                result_template = self._clone_result(cached["result"])
+            else:
+                self._set_loading_stage(20, "Проверяю локальные сигнатуры…")
+                analysis = analyze_code(filename, code_content)
+                self._set_loading_stage(48, "Локальная проверка завершена…")
+                ai_result = self._request_ai_review(filename, code_content, analysis, mode="summary")
+                self._set_loading_stage(82, "Собираю итоговый отчёт…")
+                result_template = self._compose_report(filename, analysis, ai_result)
+                self.analysis_cache[cache_key] = {
+                    "ts": time.time(),
+                    "analysis": analysis,
+                    "result": self._clone_result(result_template),
+                }
+            self._set_loading_stage(94, "Подготавливаю окно результата…")
+            result = self._register_result(filename, code_content, analysis, result_template, source_meta)
+            self._complete_loading_stage("Открываю результат…")
+            self._show_result_dialog(filename, result, peer_id, reply_to)
+        except Exception as error:
+            log(f"[NeuralV] analyze text task failed: {error}\n{traceback.format_exc()}")
+            self._show_error("NeuralV: не удалось завершить проверку.")
+        finally:
+            self._dismiss_loading_dialog()
+
+    def _show_result_dialog(self, filename: str, result: dict, peer_id: Optional[int], reply_to: Any = None, from_history: bool = False):
+        self._last_report_text = result["report"]
+        self._last_report_peer = peer_id
+        log(
+            f"[NeuralV] show result dialog: filename={filename}, verdict={result.get('verdict')}, "
+            f"peer_id={peer_id}, has_reply={bool(reply_to)}, report_len={len(str(result.get('report') or ''))}"
+        )
+
+        def action():
+            share_text = _build_share_report_text(result, result["report"])
+            if not self._dialog_context():
+                log("[NeuralV] result dialog activity missing, sending report directly")
+                self._send_report_to_chat(peer_id, reply_to, share_text)
+                return
+            display_name = str(result.get("display_name") or filename or "Плагин").strip()
+            display_version = str(result.get("display_version") or "").strip()
+            subtitle = display_name
+            if display_version:
+                subtitle = f"{display_name}\n{display_version}"
+            actions = [
+                {
+                    "label": "Скопировать",
+                    "compact_row": True,
+                    "on_click": lambda: self._copy_to_clipboard(share_text),
+                },
+            ]
+            if from_history:
+                actions.append({
+                    "label": "Назад",
+                    "compact_row": True,
+                    "close_first": True,
+                })
+            else:
+                actions.append({
+                    "label": "Отправить",
+                    "compact_row": True,
+                    "filled": True,
+                    "close_first": True,
+                    "on_click": lambda: self._send_report_to_chat(peer_id, reply_to, share_text),
+                })
+            self._show_sheet_dialog(
+                f"{result['icon']} {result['verdict']}",
+                subtitle,
+                body_text=self._render_result_body(result),
+                actions=actions,
+                max_body_height_dp=680,
+            )
+            if result["verdict"] == "Опасно":
+                BulletinHelper.show_error(f"{result['icon']} {result['verdict']}")
+            elif result["verdict"] == "Осторожно":
+                BulletinHelper.show_info(f"{result['icon']} {result['verdict']}")
+            else:
+                BulletinHelper.show_success(f"{result['icon']} {result['verdict']}")
+        run_on_ui_thread(action)
+
+    def _send_report_to_chat(self, peer_id: Optional[int], reply_to: Any, report: str):
+        current_dialog = self._get_current_dialog_id()
+        target_peer = peer_id or current_dialog
+        log(
+            f"[NeuralV] send report requested: peer_id={peer_id}, current_dialog={current_dialog}, "
+            f"target={target_peer}, has_reply={bool(reply_to)}, report_len={len(str(report or ''))}"
+        )
+        if not target_peer:
+            log("[NeuralV] target chat not found, opening share modal")
+            self._open_share_modal(report, "target_chat_missing")
+            return
+        blocks = []
+        current = ""
+        for line in report.splitlines():
+            candidate = line if not current else current + "\n" + line
+            if len(candidate) <= 3500:
+                current = candidate
+            else:
+                if current:
+                    blocks.append(current)
+                current = line
+        if current:
+            blocks.append(current)
+        prepared_blocks = blocks or [report]
+        log(f"[NeuralV] send report prepared: target={target_peer}, blocks={len(prepared_blocks)}")
+        sent_any = False
+        for index, block in enumerate(prepared_blocks):
+            payload = {"peer": target_peer, "message": block}
+            if index == 0 and reply_to:
+                payload["replyToMsg"] = reply_to
+            if self._send_payload(payload):
+                sent_any = True
+                log(f"[NeuralV] send report chunk sent: index={index + 1}/{len(prepared_blocks)}, len={len(block)}")
+            else:
+                log(f"[NeuralV] send report chunk failed at index={index}, opening share modal fallback")
+                self._open_share_modal(report, f"send_chunk_failed_{index}")
+                return
+        if sent_any:
+            log(f"[NeuralV] send report completed: target={target_peer}, blocks={len(prepared_blocks)}")
+            self._show_success("NeuralV: отчёт отправлен в чат.")
+        else:
+            log("[NeuralV] no chunks were sent, opening share modal fallback")
+            self._open_share_modal(report, "no_chunks_sent")
+
+    def _scan_installed_plugins_task(self):
+        self._start_loading_dialog("NeuralV", [
+            "Ищу установленные плагины…",
+            "Проверяю структуру…",
+            "Добираю спорные случаи…",
+            "Собираю сводку…",
+        ])
+        try:
+            self._set_loading_stage(8, "Собираю список установленных плагинов…")
+            plugins = self._list_installed_plugin_sources()
+            results = []
+            selected = plugins[:MAX_BATCH_RESULTS]
+            total = max(1, len(selected))
+            for index, plugin in enumerate(selected):
+                try:
+                    plugin_path = str(plugin.get("plugin_path") or "")
+                    if not plugin_path or not os.path.isfile(plugin_path):
+                        continue
+                    plugin_name = str(plugin.get("plugin_name") or os.path.basename(plugin_path) or "плагин")
+                    local_progress = 14 + int((index / total) * 56)
+                    self._set_loading_stage(local_progress, f"Проверяю {plugin_name}…")
+                    with open(plugin_path, "rb") as handle:
+                        raw = handle.read(self._get_max_bytes() + 1)
+                    if len(raw) > self._get_max_bytes() or _is_probably_binary(raw):
+                        continue
+                    code = _decode_text(raw)
+                    if not code.strip():
+                        continue
+                    local = analyze_code(os.path.basename(plugin_path), code)
+                    self._set_loading_stage(min(84, local_progress + 14), f"Локальный разбор готов: {plugin_name}")
+                    if local["verdict"] == "Безопасно" and local["score"] < 4:
+                        template = {
+                            "verdict": local["verdict"],
+                            "icon": local["icon"],
+                            "report": "Файл выглядит спокойно. Явных спорных сигналов локальный слой не увидел.",
+                            "summary": "Явных спорных сигналов нет.",
+                            "bullets": [],
+                            "local_verdict": local["verdict"],
+                        }
+                    else:
+                        self._set_loading_stage(min(90, local_progress + 22), f"Подключаю второй анализ: {plugin_name}")
+                        ai_result = self._request_ai_review(os.path.basename(plugin_path), code, local, mode="summary")
+                        template = self._compose_report(os.path.basename(plugin_path), local, ai_result)
+                    final = self._register_result(os.path.basename(plugin_path), code, local, template, plugin)
+                    results.append(final)
+                except Exception as error:
+                    log(f"[NeuralV] batch plugin scan failed: {error}")
+            if not results:
+                self._show_error("NeuralV: не удалось собрать список установленных плагинов.")
+                return
+            order = {"Безопасно": 0, "Осторожно": 1, "Опасно": 2}
+            results.sort(key=lambda item: order[item["verdict"]], reverse=True)
+            self._complete_loading_stage("Собираю общую сводку…")
+            self._show_batch_results_sheet(results)
+        except Exception as error:
+            log(f"[NeuralV] scan installed plugins failed: {error}\n{traceback.format_exc()}")
+            self._show_error("NeuralV: не удалось завершить пакетную проверку.")
+        finally:
+            self._dismiss_loading_dialog()
+
+    def _normalize_path_candidate(self, value: Any) -> str:
+        if value is None:
+            return ""
+        try:
+            if hasattr(value, "getAbsolutePath"):
+                value = value.getAbsolutePath()
+            elif hasattr(value, "toString"):
+                value = value.toString()
+        except Exception:
+            pass
+        try:
+            path = str(value).strip()
+        except Exception:
+            return ""
+        if not path or path.lower() == "null":
+            return ""
+        return path
+
+    def _collect_document_paths(self, document: Any, reply_msg: Any = None) -> List[str]:
+        candidates: List[str] = []
+        seen = set()
+
+        def add(value: Any):
+            path = self._normalize_path_candidate(value)
+            if not path or path in seen:
+                return
+            if os.path.isabs(path) or os.path.exists(path):
+                seen.add(path)
+                candidates.append(path)
+
+        try:
+            loader = get_file_loader()
+        except Exception:
+            loader = None
+        if loader is not None:
+            for force in (True, False):
+                try:
+                    add(loader.getPathToAttach(document, force))
+                except Exception:
+                    pass
+        for attr in ("path", "localPath", "attachPath", "filePath", "local_path", "file_path"):
+            try:
+                add(getattr(document, attr, None))
+            except Exception:
+                pass
+        if reply_msg is not None:
+            for holder in (reply_msg, getattr(reply_msg, "messageOwner", None)):
+                if holder is None:
+                    continue
+                for attr in ("attachPath", "path", "localPath", "filePath", "local_path", "file_path"):
+                    try:
+                        add(getattr(holder, attr, None))
+                    except Exception:
+                        pass
+        return candidates
+
+    def _pick_ready_document_path(self, document: Any, reply_msg: Any = None, timeout_sec: int = 30) -> str:
+        loader = get_file_loader()
+        def find_ready():
+            for path in self._collect_document_paths(document, reply_msg):
+                try:
+                    if os.path.isfile(path) and os.path.getsize(path) > 0:
+                        return path
+                except Exception:
+                    continue
+            return ""
+        path = find_ready()
+        if path:
+            return path
+        try:
+            loader.loadFile(document, "neuralv", FileLoader.PRIORITY_HIGH, 1)
+        except Exception:
+            pass
+        for _ in range(timeout_sec):
+            path = find_ready()
+            if path:
+                return path
+            time.sleep(1)
+        raise RuntimeError("NeuralV: не удалось загрузить файл.")
+
+    def _analyze_file_task(self, params: Any, document: Any, reply_msg: Any = None):
+        try:
+            filename = getattr(document, "file_name_fixed", None) or f"file_{int(time.time())}.txt"
+            path = self._pick_ready_document_path(document, reply_msg)
+            with open(path, "rb") as fh:
+                raw = fh.read()
+            if len(raw) > self._get_max_bytes():
+                self._show_error("NeuralV: файл слишком большой для проверки.")
+                return
+            if _is_probably_binary(raw):
+                self._show_error("NeuralV: нужен текстовый файл с кодом.")
+                return
+            content = _decode_text(raw)
+            if not content.strip():
+                self._show_error("NeuralV: в файле нет текста для проверки.")
+                return
+            peer_id = getattr(params, "peer", None)
+            reply_to = getattr(params, "replyToMsg", None)
+            source_meta = self._resolve_installed_plugin_source(path, filename)
+            self._analyze_text_task(filename, content, peer_id, reply_to, source_meta=source_meta)
+        except Exception as error:
+            log(f"[NeuralV] analyze file task failed: {error}\n{traceback.format_exc()}")
+            self._show_error("NeuralV: не удалось завершить проверку.")
+
+    def _on_context_check(self, context: Dict[str, Any]):
+        try:
+            message_obj = context.get("message")
+            if not message_obj:
+                self._show_error("NeuralV: не удалось получить сообщение для проверки.")
+                return
+            if hasattr(message_obj, "messageOwner") and MessageObject.getDocument(message_obj.messageOwner):
+                document = MessageObject.getDocument(message_obj.messageOwner)
+                params = type("Ctx", (), {})()
+                params.peer = self._get_current_dialog_id()
+                params.replyToMsg = getattr(message_obj, "messageOwner", None)
+                run_on_queue(lambda: self._analyze_file_task(params, document, message_obj))
+                return
+            text = getattr(getattr(message_obj, "messageOwner", None), "message", None)
+            if text:
+                run_on_queue(lambda: self._analyze_text_task(f"snippet_{int(time.time())}.txt", text, self._get_current_dialog_id(), getattr(message_obj, "messageOwner", None)))
+                return
+            self._show_error("NeuralV: в этом сообщении нечего проверять.")
+        except Exception as error:
+            log(f"[NeuralV] context check error: {error}\n{traceback.format_exc()}")
+            self._show_error("NeuralV: не удалось подготовить сообщение к проверке.")
+
+    def on_send_message_hook(self, account, params):
+        if not hasattr(params, "message") or not isinstance(params.message, str):
+            return HookResult()
+        msg = params.message.strip()
+        if not msg.lower().startswith(NV_CMD):
+            return HookResult()
+        args = msg[len(NV_CMD):].strip().lower()
+        if args == "all":
+            run_on_queue(self._scan_installed_plugins_task)
+            return HookResult(strategy=HookStrategy.CANCEL)
+        reply_msg = getattr(params, "replyToMsg", None)
+        if not reply_msg:
+            run_on_queue(lambda: self._open_main_menu())
+            return HookResult(strategy=HookStrategy.CANCEL)
+        try:
+            document = MessageObject.getDocument(reply_msg.messageOwner)
+        except Exception:
+            document = None
+        if document is not None:
+            run_on_queue(lambda: self._analyze_file_task(params, document, reply_msg))
+            return HookResult(strategy=HookStrategy.CANCEL)
+        text = getattr(getattr(reply_msg, "messageOwner", None), "message", None)
+        if text:
+            run_on_queue(lambda: self._analyze_text_task(f"snippet_{int(time.time())}.txt", text, getattr(params, "peer", None), reply_msg.messageOwner))
+            return HookResult(strategy=HookStrategy.CANCEL)
+        self._show_error("NeuralV: ответьте на текст или текстовый файл.")
+        return HookResult(strategy=HookStrategy.CANCEL)

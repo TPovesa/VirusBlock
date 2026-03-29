@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NV</title>
+    <meta
+      name="description"
+      content="NV — пакетный менеджер для Windows и Linux. Через него можно ставить и обновлять пакеты по схеме @creator/package."
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/nv/app.css" />
+  </head>
+  <body data-page="home">
+    <div class="nv-shell">
+      <header class="topbar">
+        <a class="brand" href="/nv/">
+          <span class="brand-mark">NV</span>
+          <span class="brand-copy">Менеджер пакетов</span>
+        </a>
+        <nav class="topnav" aria-label="NV navigation">
+          <a class="is-active" href="/nv/">Главная</a>
+          <a href="/nv/downloads/">Скачать</a>
+          <a href="/nv/packages/">Пакеты</a>
+          <a href="/nv/profile/">Профиль</a>
+        </nav>
+        <div id="auth-slot" class="auth-slot"></div>
+      </header>
+
+      <main class="page-stack">
+        <section class="hero-grid">
+          <article class="hero-card hero-card-main">
+            <p class="eyebrow">Windows · Linux · каталог</p>
+            <h1>NV</h1>
+            <p class="hero-text">Ставит и обновляет пакеты по короткой схеме <code>@creator/package</code>.</p>
+            <div class="hero-actions">
+              <a class="primary-button" href="/nv/downloads/">Скачать</a>
+              <a class="ghost-button" href="/nv/packages/">Каталог</a>
+            </div>
+          </article>
+
+          <article class="hero-card hero-card-console">
+            <div class="console-head">
+              <span></span><span></span><span></span>
+            </div>
+            <pre id="home-command-preview">nv install @lvls/neuralv
+nv install @lvls/nv
+nv install @creator/package</pre>
+          </article>
+        </section>
+
+        <section class="section-shell">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Как использовать</p>
+                <h2>Быстрый старт</h2>
+              </div>
+            <a class="ghost-button ghost-button-compact" href="/nv/downloads/">Открыть загрузки</a>
+          </div>
+          <div class="mini-grid">
+            <article class="mini-card">
+              <h3>Поставить NV</h3>
+              <p>Поставь менеджер и сразу проверь его через <code>nv -v</code>.</p>
+            </article>
+            <article class="mini-card">
+              <h3>Поставить пакет</h3>
+              <p>Для NeuralV основная команда выглядит так: <code>nv install @lvls/neuralv</code>.</p>
+            </article>
+            <article class="mini-card">
+              <h3>Опубликовать своё</h3>
+              <p>Зайди в профиль автора и выложи релиз.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section-shell">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Каталог</p>
+              <h2>Пакеты в каталоге</h2>
+            </div>
+            <a class="ghost-button ghost-button-compact" href="/nv/packages/">Все пакеты</a>
+          </div>
+          <div class="package-grid" id="featured-packages" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/nv/app.js"></script>
+  </body>
+</html>

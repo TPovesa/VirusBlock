@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NV Packages</title>
+    <meta name="description" content="Каталог пакетов NV с creator slug и фильтрами по платформам." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/nv/app.css" />
+  </head>
+  <body data-page="packages">
+    <div class="nv-shell">
+      <header class="topbar">
+        <a class="brand" href="/nv/">
+          <span class="brand-mark">NV</span>
+          <span class="brand-copy">Менеджер пакетов</span>
+        </a>
+        <nav class="topnav" aria-label="NV navigation">
+          <a href="/nv/">Главная</a>
+          <a href="/nv/downloads/">Скачать</a>
+          <a class="is-active" href="/nv/packages/">Пакеты</a>
+          <a href="/nv/profile/">Профиль</a>
+        </nav>
+        <div id="auth-slot" class="auth-slot"></div>
+      </header>
+
+      <main class="page-stack">
+        <section class="section-shell section-shell-tight">
+          <p class="eyebrow">Каталог</p>
+          <h1 class="section-title">Пакеты NV</h1>
+          <p class="section-copy">Пакеты с фильтрами по платформам и быстрым поиском.</p>
+        </section>
+
+        <section class="section-shell">
+          <div class="catalog-toolbar">
+            <div class="filter-tabs" role="tablist" aria-label="Фильтр каталога">
+              <button class="filter-button is-active" type="button" data-filter="all">Все</button>
+              <button class="filter-button" type="button" data-filter="windows">Windows</button>
+              <button class="filter-button" type="button" data-filter="linux">Linux</button>
+            </div>
+            <label class="search-field" aria-label="Поиск по пакетам">
+              <span>Поиск</span>
+              <input id="package-search" type="search" placeholder="@creator/package или версия" />
+            </label>
+          </div>
+          <div class="catalog-meta" id="catalog-meta"></div>
+          <div class="package-grid package-grid-wide" id="package-list" aria-live="polite"></div>
+          <p class="empty-state" id="package-empty" hidden>По этому фильтру ничего не найдено.</p>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/nv/app.js"></script>
+  </body>
+</html>

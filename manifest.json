@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "generated_at": "2026-03-29T09:58:23Z",
+  "release_channel": "main",
+  "artifacts": [
+    {
+      "platform": "site",
+      "channel": "main",
+      "version": "a54d349",
+      "sha256": "8fd480fe33029b1da5476390d55b722d754d3882bcaa05ee3dfd4c49d75a80d4",
+      "download_url": "https://raw.githubusercontent.com/TPovesa/VirusBlock/site-builds/site/neuralv-site.zip",
+      "install_command": "",
+      "file_name": "neuralv-site.zip",
+      "notes": [
+        "Static web bundle for neuralvv.org root"
+      ],
+      "metadata": {}
+    }
+  ]
+}
