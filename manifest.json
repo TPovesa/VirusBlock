@@ -1,0 +1,68 @@
+{
+  "success": true,
+  "generated_at": "2026-03-29T12:36:55Z",
+  "release_channel": "beta",
+  "artifacts": [
+    {
+      "platform": "windows",
+      "channel": "beta",
+      "version": "1.5.33",
+      "sha256": "696282db1d42a25725cfc775458717ddcb459e951dc1d3a0653bcbd335448730",
+      "download_url": "https://github.com/TPovesa/VirusBlock/releases/download/windows-v1.5.33/neuralv-windows.zip",
+      "install_command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://raw.githubusercontent.com/TPovesa/VirusBlock/windows-builds/install/windows.ps1 | iex\"",
+      "file_name": "neuralv-windows.zip",
+      "notes": [
+        "WinUI Windows portable archive."
+      ],
+      "metadata": {
+        "setupUrl": "https://github.com/TPovesa/VirusBlock/releases/download/windows-v1.5.33/neuralv-setup.exe",
+        "bundledComponents": [
+          "gui",
+          "cli",
+          "updater"
+        ],
+        "layout": "root-bin-libs",
+        "rootEntries": [
+          "NeuralV.exe",
+          "log.txt",
+          "bin",
+          "libs"
+        ],
+        "cliBinaryName": "neuralv.exe",
+        "guiBinaryName": "NeuralV.Gui.exe",
+        "launcherBinaryName": "NeuralV.exe",
+        "updaterBinaryName": "neuralv-updater.exe",
+        "updaterHostBinaryName": "neuralv-updater-host.exe",
+        "guiRelativePath": "libs/NeuralV.Gui.exe",
+        "cliRelativePath": "bin/neuralv.exe",
+        "updaterRelativePath": "bin/neuralv-updater.exe",
+        "updaterHostRelativePath": "libs/neuralv-updater-host.exe",
+        "logRelativePath": "log.txt",
+        "binDirectory": "bin",
+        "libsDirectory": "libs",
+        "portableArtifactPath": "releases/windows-v{version}/neuralv-windows.zip",
+        "setupArtifactPath": "releases/windows-v{version}/neuralv-setup.exe",
+        "setupSha256": "2abf455a5c370de8a74d136b7ed900db4103416e1d79ce89f6771dc7afe42857",
+        "portableUrl": "https://github.com/TPovesa/VirusBlock/releases/download/windows-v1.5.33/neuralv-windows.zip",
+        "powershellInstallCommand": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://raw.githubusercontent.com/TPovesa/VirusBlock/windows-builds/install/windows.ps1 | iex\"",
+        "cmdInstallCommand": "curl.exe -L https://raw.githubusercontent.com/TPovesa/VirusBlock/windows-builds/install/windows.cmd -o %TEMP%\\neuralv-install.cmd && call %TEMP%\\neuralv-install.cmd",
+        "installScriptPs1": "https://raw.githubusercontent.com/TPovesa/VirusBlock/windows-builds/install/windows.ps1",
+        "installScriptCmd": "https://raw.githubusercontent.com/TPovesa/VirusBlock/windows-builds/install/windows.cmd",
+        "releaseTag": "windows-v1.5.33",
+        "wingetPackageId": "NeuralV.NeuralV",
+        "wingetInstallCommand": "winget install --id NeuralV.NeuralV -e",
+        "wingetUpgradeCommand": "winget upgrade --id NeuralV.NeuralV -e",
+        "wingetUninstallCommand": "winget uninstall --id NeuralV.NeuralV -e",
+        "directDownloadLabel": "Скачать portable",
+        "setupDownloadLabel": "Скачать setup",
+        "nativeClient": true,
+        "uiStack": "winui3",
+        "installMode": "bootstrap-setup",
+        "setupCreatesShortcuts": true,
+        "powershellCreatesShortcuts": true,
+        "cmdCreatesShortcuts": true,
+        "portableCreatesShortcuts": false
+      }
+    }
+  ]
+}
